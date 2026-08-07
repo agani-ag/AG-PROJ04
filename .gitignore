@@ -1,0 +1,48 @@
+# ---- Gradle ----
+.gradle/
+build/
+docs/
+!gradle/wrapper/gradle-wrapper.jar
+gradle-app.setting
+.gradletasknamecache
+
+# ---- Android build outputs ----
+*.apk
+*.aar
+*.ap_
+*.aab
+*.dex
+*.class
+bin/
+gen/
+out/
+release/
+
+# ---- Local config (machine-specific) ----
+local.properties
+
+# ---- Native build ----
+.externalNativeBuild/
+.cxx/
+
+# ---- Android Studio / IntelliJ ----
+*.iml
+.idea/
+captures/
+.navigation/
+*.hprof
+
+# ---- Keys & secrets (NEVER commit) ----
+*.jks
+*.keystore
+keystore.properties
+# Firebase config (contains project keys — add your own locally)
+google-services.json
+
+# ---- Logs & OS files ----
+*.log
+.DS_Store
+Thumbs.db
+
+# ---- Kotlin ----
+.kotlin/
