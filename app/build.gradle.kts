@@ -33,7 +33,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 }
 
 dependencies {
@@ -48,6 +51,10 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+
+    // WebView compatibility helpers (dark mode, feature detection across API levels)
+    implementation("androidx.webkit:webkit:1.11.0")
 
     // Networking (talks to the login API — mock-backed until the backend is live)
     implementation("com.squareup.retrofit2:retrofit:2.11.0")

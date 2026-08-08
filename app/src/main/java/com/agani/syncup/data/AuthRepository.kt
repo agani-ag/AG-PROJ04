@@ -62,6 +62,11 @@ class AuthRepository(private val tokenStore: TokenStore) {
             "https://www.w3schools.com/tags/tryit.asp?filename=tryhtml_input_type_file",
             description = "Opens the file picker",
         ),
+        UrlItem("5", "YouTube", "https://m.youtube.com", description = "Video playback test"),
+        UrlItem("6", "Notification Test", "https://www.bennish.net/web-notifications.html", description = "Web notifications"),
+        UrlItem("7", "Speed Test", "https://fast.com", description = "Network test"),
+        UrlItem("8", "My Website", "https://microman2000.pythonanywhere.com", description = "Test website"),
+
     )
 
     companion object {
