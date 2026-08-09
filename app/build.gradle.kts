@@ -55,6 +55,8 @@ dependencies {
 
     // WebView compatibility helpers (dark mode, feature detection across API levels)
     implementation("androidx.webkit:webkit:1.11.0")
+    // Chrome Custom Tabs (open external "new tab" links in the real browser)
+    implementation("androidx.browser:browser:1.8.0")
 
     // Networking (talks to the login API — mock-backed until the backend is live)
     implementation("com.squareup.retrofit2:retrofit:2.11.0")

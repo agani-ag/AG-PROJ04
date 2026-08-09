@@ -48,24 +48,15 @@ class AuthRepository(private val tokenStore: TokenStore) {
     /** Demo links (replaced by the API's URL list in production). Each exercises a permission. */
     private fun demoUrls(): List<UrlItem> = listOf(
         UrlItem("1", "Google", "https://www.google.com", description = "General web browsing"),
-        UrlItem(
-            "2", "Camera & Microphone Test",
-            "https://webrtc.github.io/samples/src/content/getusermedia/gum/",
-            description = "Grants camera + microphone",
-        ),
-        UrlItem(
-            "3", "Location Test", "https://browserleaks.com/geo",
-            description = "Grants device location",
-        ),
-        UrlItem(
-            "4", "File Upload Test",
-            "https://www.w3schools.com/tags/tryit.asp?filename=tryhtml_input_type_file",
-            description = "Opens the file picker",
-        ),
+        UrlItem("2", "Camera & Microphone Test", "https://webrtc.github.io/samples/src/content/getusermedia/gum/", description = "Grants camera + microphone"),
+        UrlItem("3", "Location Test", "https://browserleaks.com/geo", description = "Grants device location"),
+        UrlItem("4", "File Upload Test", "https://the-internet.herokuapp.com/upload", description = "Opens the file picker"),
         UrlItem("5", "YouTube", "https://m.youtube.com", description = "Video playback test"),
         UrlItem("6", "Notification Test", "https://www.bennish.net/web-notifications.html", description = "Web notifications"),
         UrlItem("7", "Speed Test", "https://fast.com", description = "Network test"),
         UrlItem("8", "My Website", "https://microman2000.pythonanywhere.com", description = "Test website"),
+        UrlItem("9", "New-Tab / Popup Test", "https://the-internet.herokuapp.com/windows", description = "Opens a new-tab link in a Custom Tab"),
+        UrlItem("10", "Print Test", "data:text/html;base64,PCFkb2N0eXBlIGh0bWw+PG1ldGEgbmFtZT12aWV3cG9ydCBjb250ZW50PSJ3aWR0aD1kZXZpY2Utd2lkdGgsaW5pdGlhbC1zY2FsZT0xIj48ZGl2IHN0eWxlPSJmb250LWZhbWlseTpzeXN0ZW0tdWksc2Fucy1zZXJpZjt0ZXh0LWFsaWduOmNlbnRlcjtwYWRkaW5nOjU2cHggMjRweDtjb2xvcjojMGYxNzJhIj48aDI+UHJpbnQgVGVzdDwvaDI+PHAgc3R5bGU9ImNvbG9yOiM1YjY0NzIiPlRhcCB0aGUgYnV0dG9uIHRvIHByaW50IHRoaXMgcGFnZSAob3IgU2F2ZSBhcyBQREYpLjwvcD48YnV0dG9uIG9uY2xpY2s9IndpbmRvdy5wcmludCgpIiBzdHlsZT0iZm9udC1zaXplOjE4cHg7cGFkZGluZzoxNHB4IDI2cHg7Ym9yZGVyOjA7Ym9yZGVyLXJhZGl1czoxMnB4O2JhY2tncm91bmQ6IzI1NjNFQjtjb2xvcjojZmZmIj5QcmludCB0aGlzIHBhZ2U8L2J1dHRvbj48L2Rpdj4=", description = "Page with a Print button"),
 
     )
 

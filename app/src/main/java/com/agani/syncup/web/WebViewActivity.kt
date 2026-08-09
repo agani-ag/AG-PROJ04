@@ -2,6 +2,7 @@ package com.agani.syncup.web
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.AlertDialog
 import android.app.DownloadManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -15,6 +16,9 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Message
+import android.print.PrintAttributes
+import android.print.PrintManager
+import android.provider.MediaStore
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -39,12 +43,16 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.browser.customtabs.CustomTabColorSchemeParams
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.agani.syncup.R
+import java.io.File
 import kotlin.math.abs
 
 /**
@@ -83,17 +91,29 @@ class WebViewActivity : ComponentActivity() {
     private var pendingGeoOrigin: String? = null
     private var pendingGeoCallback: GeolocationPermissions.Callback? = null
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private var cameraPhotoUri: Uri? = null
 
     private val fileChooserLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult ->
             val callback = filePathCallback
             filePathCallback = null
+            val camUri = cameraPhotoUri
+            cameraPhotoUri = null
             callback ?: return@registerForActivityResult
-            val uris: Array<Uri>? =
-                if (result.resultCode == RESULT_OK)
-                    WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data)
-                else null
-            callback.onReceiveValue(uris ?: emptyArray())
+            if (result.resultCode != RESULT_OK) {
+                callback.onReceiveValue(null) // cancelled — must report so the input can be reused
+                return@registerForActivityResult
+            }
+            val data = result.data
+            val uris: Array<Uri>? = when {
+                // A file/photo was picked (single via data.data, multiple via clipData)
+                data?.dataString != null || data?.clipData != null ->
+                    WebChromeClient.FileChooserParams.parseResult(result.resultCode, data)
+                // Camera capture: no result data, photo was written to our file Uri
+                camUri != null -> arrayOf(camUri)
+                else -> null
+            }
+            callback.onReceiveValue(uris)
         }
 
     private val webRtcPermissionLauncher =
@@ -180,7 +200,7 @@ class WebViewActivity : ComponentActivity() {
     @SuppressLint("ClickableViewAccessibility")
     private fun setupFloater() {
         val d = resources.displayMetrics.density
-        fabPx = (56 * d).toInt()
+        fabPx = (48 * d).toInt()
         miniPx = (48 * d).toInt()
         marginPx = 16 * d
         gapPx = 14 * d
@@ -214,7 +234,7 @@ class WebViewActivity : ComponentActivity() {
             setImageResource(R.drawable.ic_more)
             setColorFilter(0xFF334155.toInt())
             scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
-            val pad = (16 * d).toInt()
+            val pad = (13 * d).toInt()
             setPadding(pad, pad, pad, pad)
             elevation = 4 * d
             contentDescription = "Quick actions"
@@ -365,16 +385,18 @@ class WebViewActivity : ComponentActivity() {
 
         // Bridge web-page notifications (Notification API) to the Android status bar.
         webView.addJavascriptInterface(NotificationBridge(), "AndroidNotifyBridge")
+        webView.addJavascriptInterface(PrintBridge(), "AndroidPrintBridge")
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(webView, NOTIFICATION_SHIM_JS, setOf("*"))
+            WebViewCompat.addDocumentStartJavaScript(webView, PRINT_SHIM_JS, setOf("*"))
         }
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
-                // Fallback for older WebViews without document-start script support.
-                if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-                    view?.evaluateJavascript(NOTIFICATION_SHIM_JS, null)
-                }
+                // Ensure the shims are present (covers pages/frames the document-start
+                // script may miss, e.g. data: pages). The scripts self-guard against re-install.
+                view?.evaluateJavascript(NOTIFICATION_SHIM_JS, null)
+                view?.evaluateJavascript(PRINT_SHIM_JS, null)
             }
 
             override fun onReceivedSslError(
@@ -411,7 +433,14 @@ class WebViewActivity : ComponentActivity() {
                         req: WebResourceRequest?,
                     ): Boolean {
                         val target = req?.url
-                        if (target != null && !routeUrl(target)) webView.loadUrl(target.toString())
+                        if (target != null) {
+                            when (target.scheme?.lowercase()) {
+                                // New-window web link → let the user choose in-app or browser.
+                                "http", "https" -> promptOpenLocation(target)
+                                // App schemes (tel:, upi:, whatsapp:, intent:, …) → hand off.
+                                else -> routeUrl(target)
+                            }
+                        }
                         v?.post { v.destroy() }
                         return true
                     }
@@ -467,14 +496,7 @@ class WebViewActivity : ComponentActivity() {
             ): Boolean {
                 filePathCallback?.onReceiveValue(null)
                 filePathCallback = callback
-                val chooserIntent = fileChooserParams?.createIntent()
-                if (chooserIntent == null) {
-                    filePathCallback = null
-                    return false
-                }
-                return runCatching { fileChooserLauncher.launch(chooserIntent) }
-                    .onFailure { filePathCallback = null }
-                    .isSuccess
+                return openFileChooser(fileChooserParams)
             }
         }
 
@@ -537,6 +559,24 @@ class WebViewActivity : ComponentActivity() {
     }
 
     // ---------------------------------------------------------------------
+    // Printing: route the page's window.print() to Android's print system
+    // ---------------------------------------------------------------------
+
+    private inner class PrintBridge {
+        @JavascriptInterface
+        fun print() {
+            runOnUiThread { doPrint() }
+        }
+    }
+
+    private fun doPrint() {
+        val printManager = getSystemService(Context.PRINT_SERVICE) as? PrintManager ?: return
+        val jobName = getString(R.string.app_name) + " — " + (webView.title ?: "Document")
+        val adapter = webView.createPrintDocumentAdapter(jobName)
+        printManager.print(jobName, adapter, PrintAttributes.Builder().build())
+    }
+
+    // ---------------------------------------------------------------------
     // Link handling: web pages load in-app; other schemes hand off to apps
     // ---------------------------------------------------------------------
 
@@ -590,8 +630,89 @@ class WebViewActivity : ComponentActivity() {
         }
     }
 
+    /** For new-window links, ask whether to open in this app (WebView) or externally (Custom Tab). */
+    private fun promptOpenLocation(uri: Uri) {
+        AlertDialog.Builder(this)
+            .setTitle("Open link")
+            .setItems(arrayOf("Open in this app", "Open in browser")) { _, which ->
+                when (which) {
+                    0 -> webView.loadUrl(uri.toString())
+                    1 -> openCustomTab(uri)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** Opens a web URL in a Chrome Custom Tab (real browser overlay); falls back to the WebView. */
+    private fun openCustomTab(uri: Uri) {
+        val colors = CustomTabColorSchemeParams.Builder()
+            .setToolbarColor(0xFF2563EB.toInt())
+            .build()
+        val customTab = CustomTabsIntent.Builder()
+            .setDefaultColorSchemeParams(colors)
+            .setShowTitle(true)
+            .setUrlBarHidingEnabled(true)
+            .build()
+        runCatching { customTab.launchUrl(this, uri) }
+            .onFailure { webView.loadUrl(uri.toString()) }
+    }
+
     private fun toast(message: String) =
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+
+    // ---------------------------------------------------------------------
+    // File uploads (<input type="file">): reliable Files/Gallery + Camera chooser
+    // ---------------------------------------------------------------------
+
+    private fun openFileChooser(params: WebChromeClient.FileChooserParams?): Boolean {
+        cameraPhotoUri = null
+
+        // Files / gallery picker with the page's accepted MIME types.
+        val content = Intent(Intent.ACTION_GET_CONTENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            val mimes = params?.acceptTypes?.filter { it.contains("/") }?.toTypedArray()
+            if (mimes != null && mimes.size == 1) {
+                type = mimes[0]
+            } else {
+                type = "*/*"
+                if (!mimes.isNullOrEmpty()) putExtra(Intent.EXTRA_MIME_TYPES, mimes)
+            }
+            if (params?.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
+                putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            }
+        }
+
+        val chooser = Intent.createChooser(content, "Select")
+        // Offer the camera too (when permission is granted and a camera app exists).
+        createCameraIntent()?.let { camera ->
+            chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(camera))
+        }
+
+        val launched = runCatching { fileChooserLauncher.launch(chooser) }.isSuccess
+        if (!launched) {
+            filePathCallback?.onReceiveValue(null)
+            filePathCallback = null
+            cameraPhotoUri = null
+            toast("Couldn't open the file picker")
+        }
+        return launched
+    }
+
+    private fun createCameraIntent(): Intent? {
+        if (!hasPermission(Manifest.permission.CAMERA)) return null
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+        if (intent.resolveActivity(packageManager) == null) return null
+        val photo = runCatching { File.createTempFile("upload_", ".jpg", cacheDir) }.getOrNull()
+            ?: return null
+        val uri = runCatching {
+            FileProvider.getUriForFile(this, "$packageName.fileprovider", photo)
+        }.getOrNull() ?: return null
+        cameraPhotoUri = uri
+        intent.putExtra(MediaStore.EXTRA_OUTPUT, uri)
+        intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        return intent
+    }
 
     private fun hasPermission(permission: String): Boolean =
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
@@ -659,6 +780,17 @@ class WebViewActivity : ComponentActivity() {
                   value: N, configurable: true, writable: true
                 });
               } catch (e) { window.Notification = N; }
+            })();
+        """.trimIndent()
+
+        /** Injected: routes the page's window.print() to the native print bridge. */
+        private val PRINT_SHIM_JS = """
+            (function () {
+              if (window.__androidPrintInstalled) return;
+              window.__androidPrintInstalled = true;
+              window.print = function () {
+                try { AndroidPrintBridge.print(); } catch (e) {}
+              };
             })();
         """.trimIndent()
 
