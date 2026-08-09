@@ -8,10 +8,10 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
 object ApiClient {
-    // Fallback base URL used until Firebase Remote Config provides `api_base_url` at launch.
-    // (Temporary Cloudflare tunnel → local Django; changes when the tunnel restarts.)
+    // Fallback base URL — ONLY used if Firebase Remote Config `api_base_url` is empty/unreachable.
+    // The live value comes from Remote Config (set it in /mobile/remote-config), which wins over this.
     private const val FALLBACK_BASE_URL =
-        "https://numbers-rankings-jason-drug.trycloudflare.com/app/v1/"
+        "https://availability-wires-king-nikon.trycloudflare.com/app/v1/"
 
     @Volatile
     private var baseUrl: String = FALLBACK_BASE_URL

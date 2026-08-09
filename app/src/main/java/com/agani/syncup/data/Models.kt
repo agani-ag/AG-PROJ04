@@ -40,8 +40,16 @@ data class DeviceRegisterRequest(
     @SerializedName("app_version") val appVersion: String? = null,
 )
 
+data class AnnouncementDto(
+    val active: Boolean = false,
+    val title: String = "",
+    val message: String = "",
+)
+
 data class ConfigResponse(
     @SerializedName("min_supported_version") val minSupportedVersion: Int = 0,
     @SerializedName("latest_version") val latestVersion: Int = 0,
     @SerializedName("support_email") val supportEmail: String = "",
+    @SerializedName("support_phone") val supportPhone: String = "",
+    val announcement: AnnouncementDto? = null,
 )

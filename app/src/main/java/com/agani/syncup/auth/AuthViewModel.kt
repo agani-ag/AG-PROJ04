@@ -16,6 +16,7 @@ data class AuthState(
     val loading: Boolean = false,
     val refreshing: Boolean = false,
     val error: String? = null,
+    val message: String? = null,
     val user: User? = null,
     val urls: List<UrlItem> = emptyList(),
 ) {
@@ -58,9 +59,13 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             state = repository.refreshUrls().fold(
                 onSuccess = { state.copy(urls = it, refreshing = false) },
-                onFailure = { state.copy(refreshing = false, error = it.message ?: "Couldn't refresh") },
+                onFailure = { state.copy(refreshing = false, message = it.message ?: "Couldn't refresh") },
             )
         }
+    }
+
+    fun clearMessage() {
+        if (state.message != null) state = state.copy(message = null)
     }
 
     suspend fun changePassword(current: String, new: String): Result<Unit> =

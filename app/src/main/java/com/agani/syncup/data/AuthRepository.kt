@@ -28,7 +28,13 @@ class AuthRepository(private val tokenStore: TokenStore) {
                 urls = demoUrls(),
             ).also(::persist)
         } else {
-            val resp = ApiClient.service.login(LoginRequest(email.trim(), password))
+            val resp = try {
+                ApiClient.service.login(LoginRequest(email.trim(), password))
+            } catch (e: java.io.IOException) {
+                throw Exception("No internet connection. Check your network and try again.")
+            } catch (e: retrofit2.HttpException) {
+                throw Exception(if (e.code() == 401) "Invalid email or password" else "Login failed. Please try again.")
+            }
             Session(resp.accessToken, resp.user, resp.urls).also(::persist)
         }
     }
@@ -44,7 +50,11 @@ class AuthRepository(private val tokenStore: TokenStore) {
             delay(500)
             demoUrls()
         } else {
-            ApiClient.service.urls("Bearer ${tokenStore.token().orEmpty()}")
+            try {
+                ApiClient.service.urls("Bearer ${tokenStore.token().orEmpty()}")
+            } catch (e: java.io.IOException) {
+                throw Exception("No internet connection. Check your network and try again.")
+            }
         }
         // Persist so the refreshed list survives an app restart.
         restore()?.let { persist(it.copy(urls = newUrls)) }

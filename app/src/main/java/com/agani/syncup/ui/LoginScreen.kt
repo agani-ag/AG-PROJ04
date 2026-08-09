@@ -1,27 +1,38 @@
 package com.agani.syncup.ui
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MailOutline
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -30,6 +41,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +51,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -53,22 +67,27 @@ import com.agani.syncup.auth.AuthState
 fun LoginScreen(
     state: AuthState,
     onLogin: (String, String) -> Unit,
+    supportEmail: String = "",
+    supportPhone: String = "",
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
+    var showHelp by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(14.dp)
 
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
     ) {
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .imePadding()
-                .padding(horizontal = 24.dp),
-            contentAlignment = Alignment.Center,
+                .padding(horizontal = 24.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Column(
                 modifier = Modifier
@@ -171,6 +190,12 @@ fun LoginScreen(
                 }
             }
 
+            // After a failed login, offer admin help (passwords are reset by the admin).
+            if (state.error != null) {
+                Spacer(Modifier.height(6.dp))
+                TextButton(onClick = { showHelp = true }) { Text("Forgot password?") }
+            }
+
             if (com.agani.syncup.data.AuthRepository.USE_MOCK) {
                 Spacer(Modifier.height(16.dp))
                 Text(
@@ -182,5 +207,67 @@ fun LoginScreen(
             }
             }
         }
+    }
+
+    if (showHelp) {
+        AdminHelpDialog(
+            email = supportEmail.ifBlank { "support@syncup.app" },
+            phone = supportPhone,
+            onDismiss = { showHelp = false },
+        )
+    }
+}
+
+@Composable
+private fun AdminHelpDialog(email: String, phone: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Forgot password?", fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Text(
+                    "Passwords are reset by your admin. Contact them to reset it:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(14.dp))
+                ContactRow(icon = Icons.Rounded.Email, label = email) {
+                    val intent = Intent(Intent.ACTION_SENDTO).apply {
+                        data = Uri.parse("mailto:$email")
+                        putExtra(Intent.EXTRA_SUBJECT, "SyncUp — password reset")
+                    }
+                    runCatching { context.startActivity(intent) }.onFailure {
+                        Toast.makeText(context, "No email app found", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                if (phone.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    ContactRow(icon = Icons.Rounded.Call, label = phone) {
+                        val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone"))
+                        runCatching { context.startActivity(intent) }.onFailure {
+                            Toast.makeText(context, "Can't open dialer", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
+
+@Composable
+private fun ContactRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.size(12.dp))
+        Text(label, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
     }
 }

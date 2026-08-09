@@ -44,6 +44,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-process:2.8.7") // whole-app foreground/background for app-lock
     implementation("androidx.activity:activity-compose:1.9.3")
 
     val composeBom = platform("androidx.compose:compose-bom:2024.09.00")
@@ -67,10 +68,20 @@ dependencies {
     // Secure token storage
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
+    // Biometric (fingerprint/face) app lock — also provides FragmentActivity
+    implementation("androidx.biometric:biometric:1.1.0")
+    // Force a modern Fragment so FragmentActivity works with the Activity Result APIs
+    // (fixes "Can only use lower 16 bits for requestCode" crash on permission requests).
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
+
     // Firebase — Cloud Messaging (push) + Remote Config (dynamic base URL)
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-messaging")
     implementation("com.google.firebase:firebase-config")
+
+    // Location settings check — powers the in-app "Turn on location (GPS)" dialog
+    // for web pages that request geolocation.
+    implementation("com.google.android.gms:play-services-location:21.3.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

@@ -1,16 +1,15 @@
 package com.agani.syncup.push
 
 import com.agani.syncup.data.ApiClient
+import com.agani.syncup.data.ConfigResponse
 
-data class BootstrapResult(val minSupportedVersion: Int)
-
-/** Runs at launch: pulls the base URL from Remote Config, then the server config (version gate). */
 object AppBootstrap {
-    suspend fun run(): BootstrapResult {
-        // 1) Dynamic base URL (keeps the FALLBACK if Remote Config is unavailable).
+    /** Apply the dynamic base URL from Remote Config (caller bounds this for a snappy splash). */
+    suspend fun applyBaseUrl() {
         runCatching { RemoteConfigManager.fetchBaseUrl() }.getOrNull()?.let { ApiClient.setBaseUrl(it) }
-        // 2) Server-driven config for the force-update gate.
-        val cfg = runCatching { ApiClient.service.config() }.getOrNull()
-        return BootstrapResult(minSupportedVersion = cfg?.minSupportedVersion ?: 0)
     }
+
+    /** Fetch server-driven config (version gate + announcement). Not time-bounded to the splash. */
+    suspend fun fetchConfig(): ConfigResponse? =
+        runCatching { ApiClient.service.config() }.getOrNull()
 }

@@ -1,11 +1,16 @@
 package com.agani.syncup.ui.theme
 
+import android.app.Activity
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
 private val LightColors = lightColorScheme(
     primary = Color(0xFF2563EB),
@@ -45,13 +50,54 @@ private val DarkColors = darkColorScheme(
     onError = Color(0xFF3A0A0A),
 )
 
+// AMOLED: true-black background/surfaces to save power on OLED screens.
+private val AmoledColors = darkColorScheme(
+    primary = Color(0xFF9EB8FF),
+    onPrimary = Color(0xFF0A1F52),
+    primaryContainer = Color(0xFF1B2540),
+    onPrimaryContainer = Color(0xFFD9E2FF),
+    secondary = Color(0xFF9AA4B2),
+    onSecondary = Color(0xFF0F172A),
+    background = Color(0xFF000000),
+    onBackground = Color(0xFFE6EAF2),
+    surface = Color(0xFF000000),
+    onSurface = Color(0xFFE6EAF2),
+    surfaceVariant = Color(0xFF101216),
+    onSurfaceVariant = Color(0xFF9AA4B2),
+    outline = Color(0xFF2A2F3A),
+    outlineVariant = Color(0xFF17191F),
+    error = Color(0xFFFF6B6B),
+    onError = Color(0xFF3A0A0A),
+)
+
 @Composable
 fun AgHubTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    amoled: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    val scheme = when {
+        amoled -> AmoledColors
+        darkTheme -> DarkColors
+        else -> LightColors
+    }
+
+    // Make the status/navigation bars match the app theme (dark bg → light icons).
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        val lightIcons = !(amoled || darkTheme)
+        SideEffect {
+            val window = (view.context as Activity).window
+            window.statusBarColor = scheme.background.toArgb()
+            window.navigationBarColor = scheme.background.toArgb()
+            val controller = WindowCompat.getInsetsController(window, view)
+            controller.isAppearanceLightStatusBars = lightIcons
+            controller.isAppearanceLightNavigationBars = lightIcons
+        }
+    }
+
     MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
+        colorScheme = scheme,
         content = content,
     )
 }

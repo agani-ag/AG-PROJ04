@@ -3,7 +3,16 @@ package com.agani.syncup.web
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.AlertDialog
+import android.app.Dialog
 import android.app.DownloadManager
+import android.content.res.Configuration
+import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
+import android.text.TextUtils
+import android.view.Gravity
+import android.view.Window
+import com.agani.syncup.data.AppPrefs
+import com.agani.syncup.data.ThemeMode
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -18,6 +27,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Message
+import android.provider.Settings
 import android.print.PrintAttributes
 import android.print.PrintManager
 import android.provider.MediaStore
@@ -47,6 +57,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.ActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.browser.customtabs.CustomTabColorSchemeParams
 import androidx.browser.customtabs.CustomTabsIntent
@@ -57,6 +68,11 @@ import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.agani.syncup.R
+import com.google.android.gms.common.api.ResolvableApiException
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.LocationSettingsRequest
+import com.google.android.gms.location.Priority
 import java.io.File
 import kotlin.math.abs
 
@@ -138,14 +154,56 @@ class WebViewActivity : ComponentActivity() {
                     else -> true
                 }
             }
-            if (granted) request.grant(request.resources) else request.deny()
+            if (granted) {
+                request.grant(request.resources)
+            } else {
+                request.deny()
+                val needed = buildList {
+                    if (PermissionRequest.RESOURCE_VIDEO_CAPTURE in request.resources) add(Manifest.permission.CAMERA)
+                    if (PermissionRequest.RESOURCE_AUDIO_CAPTURE in request.resources) add(Manifest.permission.RECORD_AUDIO)
+                }
+                if (isAnyPermanentlyDenied(needed)) {
+                    showPermissionSettingsDialog(
+                        "Camera / microphone permission is off. Turn it on in Settings to use this feature.",
+                    )
+                }
+            }
         }
 
     private val geoPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            pendingGeoCallback?.invoke(pendingGeoOrigin, granted, false)
-            pendingGeoCallback = null
+            if (granted) {
+                // Permission just granted — now make sure GPS/Location is actually turned on.
+                ensureGpsThenGrant(pendingGeoOrigin, pendingGeoCallback)
+            } else {
+                pendingGeoCallback?.invoke(pendingGeoOrigin, false, false)
+                pendingGeoCallback = null
+                pendingGeoOrigin = null
+                if (isAnyPermanentlyDenied(
+                        listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+                    )
+                ) {
+                    showPermissionSettingsDialog(
+                        "Location permission is off. Turn it on in Settings to use this feature.",
+                    )
+                }
+            }
+        }
+
+    /** Result of the in-app "Turn on location (GPS)" system dialog. */
+    private val gpsResolutionLauncher =
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            val origin = pendingGeoOrigin
+            val callback = pendingGeoCallback
             pendingGeoOrigin = null
+            pendingGeoCallback = null
+            // Permission is already granted at this point; grant geolocation regardless of the
+            // GPS choice. If the user turned it on (RESULT_OK) the page gets a fix; if not,
+            // the page's own geolocation error handling takes over.
+            callback?.invoke(origin, true, false)
+            if (result.resultCode != RESULT_OK) {
+                toast("Location is off — turn on GPS to share your location.")
+            }
         }
 
     private var notifId = 1000
@@ -162,11 +220,15 @@ class WebViewActivity : ComponentActivity() {
         }
 
         val webContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val density = resources.displayMetrics.density
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
+            // Slim, brand-colored top loading bar (like a modern browser).
+            progressTintList = android.content.res.ColorStateList.valueOf(0xFF2563EB.toInt())
+            progressBackgroundTintList = android.content.res.ColorStateList.valueOf(0x00000000)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
+                (3 * density).toInt(),
             )
         }
         webView = WebView(this)
@@ -379,33 +441,60 @@ class WebViewActivity : ComponentActivity() {
         val d = resources.displayMetrics.density
         fun dp(v: Int) = (v * d).toInt()
 
+        val dark = isDarkTheme()
+        val amoled = isAmoled()
+        val bg = when {
+            amoled -> 0xFF000000.toInt()
+            dark -> 0xFF0B0F17.toInt()
+            else -> 0xFFF6F8FB.toInt()
+        }
+        val onBg = if (dark) 0xFFE6EAF2.toInt() else 0xFF0F172A.toInt()
+        val muted = if (dark) 0xFF9AA4B2.toInt() else 0xFF5B6472.toInt()
+        val tileBg = when {
+            amoled -> 0xFF1B2540.toInt()
+            dark -> 0xFF25345C.toInt()
+            else -> 0xFFDCE7FF.toInt()
+        }
+        val iconTint = if (dark) 0xFF9EB8FF.toInt() else 0xFF2563EB.toInt()
+
         errorView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = android.view.Gravity.CENTER
-            setBackgroundColor(0xFFF8FAFC.toInt()) // opaque so it fully covers the page
+            setBackgroundColor(bg) // opaque so it fully covers the page
             setPadding(dp(32), dp(32), dp(32), dp(32))
             visibility = View.GONE
             isClickable = true // swallow taps so the page underneath isn't touched
             elevation = 8 * d // above the floating bubble (elevation 4dp) so it covers everything
         }
 
-        val icon = TextView(this).apply {
-            text = "📴"
-            textSize = 48f
-            gravity = android.view.Gravity.CENTER
+        // Rounded tile with a clean cloud-off icon.
+        val iconTile = FrameLayout(this).apply {
+            background = GradientDrawable().apply {
+                cornerRadius = dp(22).toFloat()
+                setColor(tileBg)
+            }
         }
+        val iconView = android.widget.ImageView(this).apply {
+            setImageResource(R.drawable.ic_cloud_off)
+            setColorFilter(iconTint)
+        }
+        iconTile.addView(
+            iconView,
+            FrameLayout.LayoutParams(dp(40), dp(40)).apply { gravity = android.view.Gravity.CENTER },
+        )
+
         val title = TextView(this).apply {
             text = "Can't load this page"
             textSize = 20f
-            setTextColor(0xFF0F172A.toInt())
+            setTextColor(onBg)
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             gravity = android.view.Gravity.CENTER
-            setPadding(0, dp(16), 0, 0)
+            setPadding(0, dp(18), 0, 0)
         }
         errorMessage = TextView(this).apply {
             text = "Check your internet connection and try again."
             textSize = 15f
-            setTextColor(0xFF5B6472.toInt())
+            setTextColor(muted)
             gravity = android.view.Gravity.CENTER
             setPadding(0, dp(8), 0, 0)
         }
@@ -415,17 +504,17 @@ class WebViewActivity : ComponentActivity() {
             textSize = 16f
             setTextColor(Color.WHITE)
             background = GradientDrawable().apply {
-                cornerRadius = dp(12).toFloat()
+                cornerRadius = dp(14).toFloat()
                 setColor(0xFF2563EB.toInt())
             }
-            setPadding(dp(28), dp(12), dp(28), dp(12))
+            setPadding(dp(30), dp(13), dp(30), dp(13))
             setOnClickListener {
                 hideErrorPage()
                 webView.reload()
             }
         }
 
-        errorView.addView(icon)
+        errorView.addView(iconTile, LinearLayout.LayoutParams(dp(80), dp(80)))
         errorView.addView(title)
         errorView.addView(errorMessage)
         errorView.addView(
@@ -578,7 +667,14 @@ class WebViewActivity : ComponentActivity() {
 
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 progressBar.progress = newProgress
-                progressBar.visibility = if (newProgress in 1..99) View.VISIBLE else View.GONE
+                if (newProgress in 1..99) {
+                    progressBar.alpha = 1f
+                    progressBar.visibility = View.VISIBLE
+                } else {
+                    // Fade out smoothly when the page finishes.
+                    progressBar.animate().alpha(0f).setDuration(200)
+                        .withEndAction { progressBar.visibility = View.GONE }.start()
+                }
             }
 
             override fun onPermissionRequest(request: PermissionRequest) {
@@ -606,9 +702,13 @@ class WebViewActivity : ComponentActivity() {
                 callback: GeolocationPermissions.Callback?,
             ) {
                 callback ?: return
-                if (hasPermission(Manifest.permission.ACCESS_FINE_LOCATION)) {
-                    callback.invoke(origin, true, false)
+                if (hasPermission(Manifest.permission.ACCESS_FINE_LOCATION) ||
+                    hasPermission(Manifest.permission.ACCESS_COARSE_LOCATION)
+                ) {
+                    // Permission already granted → just make sure GPS/Location is on.
+                    ensureGpsThenGrant(origin, callback)
                 } else {
+                    // Not granted → ask for permission first; GPS is checked afterwards.
                     pendingGeoOrigin = origin
                     pendingGeoCallback = callback
                     geoPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
@@ -757,17 +857,105 @@ class WebViewActivity : ComponentActivity() {
     }
 
     /** For new-window links, ask whether to open in this app (WebView) or externally (Custom Tab). */
+    private fun isDarkTheme(): Boolean = when (AppPrefs(this).themeMode()) {
+        ThemeMode.DARK, ThemeMode.BLACK -> true
+        ThemeMode.LIGHT -> false
+        ThemeMode.SYSTEM ->
+            (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+    }
+
+    private fun isAmoled(): Boolean = AppPrefs(this).themeMode() == ThemeMode.BLACK
+
+    /** Modern, theme-aware "open where?" chooser for target=_blank / window.open() links. */
     private fun promptOpenLocation(uri: Uri) {
-        AlertDialog.Builder(this)
-            .setTitle("Open link")
-            .setItems(arrayOf("Open in this app", "Open in browser")) { _, which ->
-                when (which) {
-                    0 -> webView.loadUrl(uri.toString())
-                    1 -> openCustomTab(uri)
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+
+        val dark = isDarkTheme()
+        val bg = when {
+            isAmoled() -> 0xFF0D0D0D.toInt()
+            dark -> 0xFF121826.toInt()
+            else -> 0xFFFFFFFF.toInt()
+        }
+        val onBg = if (dark) 0xFFE6EAF2.toInt() else 0xFF0F172A.toInt()
+        val muted = if (dark) 0xFF9AA4B2.toInt() else 0xFF5B6472.toInt()
+        val outline = if (dark) 0xFF33405A.toInt() else 0xFFCED5E0.toInt()
+        val primary = 0xFF2563EB.toInt()
+
+        val dialog = Dialog(this)
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(22), dp(22), dp(14))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(24).toFloat()
+                setColor(bg)
+            }
+            elevation = dp(12).toFloat()
+        }
+        container.addView(TextView(this).apply {
+            text = "Open link"
+            textSize = 19f
+            setTextColor(onBg)
+            typeface = Typeface.DEFAULT_BOLD
+        })
+        container.addView(TextView(this).apply {
+            text = uri.host ?: uri.toString()
+            textSize = 13f
+            setTextColor(muted)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(0, dp(4), 0, dp(18))
+        })
+
+        fun option(label: String, filled: Boolean, onClick: () -> Unit) = TextView(this).apply {
+            text = label
+            textSize = 16f
+            gravity = Gravity.CENTER
+            setPadding(dp(16), dp(15), dp(16), dp(15))
+            if (filled) {
+                setTextColor(0xFFFFFFFF.toInt())
+                background = GradientDrawable().apply { cornerRadius = dp(14).toFloat(); setColor(primary) }
+            } else {
+                setTextColor(onBg)
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(14).toFloat()
+                    setColor(0x00000000)
+                    setStroke(dp(1), outline)
                 }
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick(); dialog.dismiss() }
+        }
+
+        val gap = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(10) }
+
+        container.addView(
+            option("Open in this app", filled = true) { webView.loadUrl(uri.toString()) },
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
+        )
+        container.addView(option("Open in browser", filled = false) { openCustomTab(uri) }, gap)
+        container.addView(TextView(this).apply {
+            text = "Cancel"
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setTextColor(muted)
+            setPadding(dp(16), dp(14), dp(16), dp(6))
+            isClickable = true
+            setOnClickListener { dialog.dismiss() }
+        }, gap)
+
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(container)
+        dialog.window?.setBackgroundDrawable(ColorDrawable(0x00000000))
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.88).toInt(),
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        )
+        dialog.show()
     }
 
     /** Opens a web URL in a Chrome Custom Tab (real browser overlay); falls back to the WebView. */
@@ -840,8 +1028,71 @@ class WebViewActivity : ComponentActivity() {
         return intent
     }
 
+    /**
+     * With location permission already granted, verify the device's Location/GPS toggle is on.
+     * If it's off, Google Play Services shows an in-app dialog that turns it on without leaving
+     * the app. Either way the geolocation [callback] is then honored (see [gpsResolutionLauncher]).
+     */
+    private fun ensureGpsThenGrant(origin: String?, callback: GeolocationPermissions.Callback?) {
+        callback ?: return
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L).build()
+        val settingsRequest = LocationSettingsRequest.Builder()
+            .addLocationRequest(locationRequest)
+            .setAlwaysShow(true)
+            .build()
+        LocationServices.getSettingsClient(this)
+            .checkLocationSettings(settingsRequest)
+            .addOnSuccessListener {
+                // GPS is already on — share location immediately.
+                callback.invoke(origin, true, false)
+            }
+            .addOnFailureListener { e ->
+                if (e is ResolvableApiException) {
+                    // GPS is off but can be turned on via the system dialog.
+                    pendingGeoOrigin = origin
+                    pendingGeoCallback = callback
+                    val handled = runCatching {
+                        gpsResolutionLauncher.launch(
+                            IntentSenderRequest.Builder(e.resolution).build(),
+                        )
+                    }.isSuccess
+                    if (!handled) {
+                        pendingGeoOrigin = null
+                        pendingGeoCallback = null
+                        callback.invoke(origin, true, false)
+                    }
+                } else {
+                    // Settings can't be changed via dialog — grant anyway and let the page cope.
+                    callback.invoke(origin, true, false)
+                }
+            }
+    }
+
     private fun hasPermission(permission: String): Boolean =
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+
+    /** A permission is "permanently denied" if it's not granted and the OS won't show the prompt anymore. */
+    private fun isAnyPermanentlyDenied(perms: List<String>): Boolean =
+        perms.any { !hasPermission(it) && !shouldShowRequestPermissionRationale(it) }
+
+    /** Explains that a permission is off and offers to open the app's settings to re-enable it. */
+    private fun showPermissionSettingsDialog(message: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Permission needed")
+            .setMessage(message)
+            .setPositiveButton("Open settings") { _, _ ->
+                runCatching {
+                    startActivity(
+                        Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.fromParts("package", packageName, null),
+                        ),
+                    )
+                }
+            }
+            .setNegativeButton("Not now", null)
+            .show()
+    }
 
     override fun onPause() {
         if (::webView.isInitialized) {
