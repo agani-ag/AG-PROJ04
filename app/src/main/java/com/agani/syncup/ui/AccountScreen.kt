@@ -20,13 +20,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.LocationOn
-import androidx.compose.material.icons.rounded.Logout
 import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.UploadFile
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,7 +55,9 @@ fun AccountScreen(
     user: User,
     urls: List<UrlItem>,
     onOpenUrl: (UrlItem) -> Unit,
-    onLogout: () -> Unit,
+    onOpenProfile: () -> Unit,
+    onRefresh: () -> Unit,
+    refreshing: Boolean,
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -67,8 +71,19 @@ fun AccountScreen(
                     )
                 },
                 actions = {
-                    IconButton(onClick = onLogout) {
-                        Icon(Icons.Rounded.Logout, contentDescription = "Log out")
+                    IconButton(onClick = onRefresh, enabled = !refreshing) {
+                        if (refreshing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            Icon(Icons.Rounded.Refresh, contentDescription = "Refresh links")
+                        }
+                    }
+                    IconButton(onClick = onOpenProfile) {
+                        Icon(Icons.Rounded.AccountCircle, contentDescription = "Profile")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -86,7 +101,7 @@ fun AccountScreen(
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { ProfileHeader(user) }
+            item { ProfileHeader(user, onClick = onOpenProfile) }
             item {
                 Text(
                     "AVAILABLE LINKS",
@@ -105,12 +120,14 @@ fun AccountScreen(
 }
 
 @Composable
-private fun ProfileHeader(user: User) {
+private fun ProfileHeader(user: User, onClick: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp, horizontal = 4.dp),
     ) {
         Box(
             modifier = Modifier

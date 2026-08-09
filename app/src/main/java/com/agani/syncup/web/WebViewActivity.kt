@@ -11,6 +11,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -30,14 +32,17 @@ import android.webkit.PermissionRequest
 import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -75,6 +80,11 @@ class WebViewActivity : ComponentActivity() {
     private lateinit var actionHome: ImageButton
     private lateinit var actionRefresh: ImageButton
     private lateinit var scrim: View
+
+    // Custom offline / error page shown when a main-frame load fails.
+    private lateinit var errorView: LinearLayout
+    private lateinit var errorMessage: TextView
+    private var loadFailed = false
     private var floaterExpanded = false
     private var fabPx = 0
     private var miniPx = 0
@@ -175,6 +185,7 @@ class WebViewActivity : ComponentActivity() {
             ),
         )
         setupFloater()
+        setupErrorView()
         setContentView(root)
 
         ensureNotificationChannel()
@@ -360,6 +371,100 @@ class WebViewActivity : ComponentActivity() {
     }
 
     @Suppress("SetJavaScriptEnabled")
+    // ---------------------------------------------------------------------
+    // Custom offline / error page
+    // ---------------------------------------------------------------------
+
+    private fun setupErrorView() {
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+
+        errorView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setBackgroundColor(0xFFF8FAFC.toInt()) // opaque so it fully covers the page
+            setPadding(dp(32), dp(32), dp(32), dp(32))
+            visibility = View.GONE
+            isClickable = true // swallow taps so the page underneath isn't touched
+            elevation = 8 * d // above the floating bubble (elevation 4dp) so it covers everything
+        }
+
+        val icon = TextView(this).apply {
+            text = "📴"
+            textSize = 48f
+            gravity = android.view.Gravity.CENTER
+        }
+        val title = TextView(this).apply {
+            text = "Can't load this page"
+            textSize = 20f
+            setTextColor(0xFF0F172A.toInt())
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, dp(16), 0, 0)
+        }
+        errorMessage = TextView(this).apply {
+            text = "Check your internet connection and try again."
+            textSize = 15f
+            setTextColor(0xFF5B6472.toInt())
+            gravity = android.view.Gravity.CENTER
+            setPadding(0, dp(8), 0, 0)
+        }
+        val retry = Button(this).apply {
+            text = "Retry"
+            isAllCaps = false
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(0xFF2563EB.toInt())
+            }
+            setPadding(dp(28), dp(12), dp(28), dp(12))
+            setOnClickListener {
+                hideErrorPage()
+                webView.reload()
+            }
+        }
+
+        errorView.addView(icon)
+        errorView.addView(title)
+        errorView.addView(errorMessage)
+        errorView.addView(
+            retry,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(24) },
+        )
+
+        // Added last → sits on top of the WebView and the floating button.
+        root.addView(
+            errorView,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+    }
+
+    private fun showErrorPage(message: String) {
+        loadFailed = true
+        errorMessage.text = message
+        errorView.visibility = View.VISIBLE
+        errorView.bringToFront()
+    }
+
+    private fun hideErrorPage() {
+        loadFailed = false
+        errorView.visibility = View.GONE
+    }
+
+    private fun isOffline(): Boolean {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+        val network = cm.activeNetwork ?: return true
+        val caps = cm.getNetworkCapabilities(network) ?: return true
+        return !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
     private fun configureWebView() {
         webView.settings.apply {
             javaScriptEnabled = true
@@ -392,11 +497,32 @@ class WebViewActivity : ComponentActivity() {
         }
 
         webView.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                // A fresh navigation is starting — clear any stale error page.
+                if (loadFailed) hideErrorPage()
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 // Ensure the shims are present (covers pages/frames the document-start
                 // script may miss, e.g. data: pages). The scripts self-guard against re-install.
                 view?.evaluateJavascript(NOTIFICATION_SHIM_JS, null)
                 view?.evaluateJavascript(PRINT_SHIM_JS, null)
+            }
+
+            override fun onReceivedError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                error: WebResourceError?,
+            ) {
+                // Only the main page failing warrants the full-screen error; ignore sub-resources.
+                if (request?.isForMainFrame == true) {
+                    val message = if (isOffline()) {
+                        "You're offline. Check your internet connection and try again."
+                    } else {
+                        "Something went wrong loading this page. Please try again."
+                    }
+                    showErrorPage(message)
+                }
             }
 
             override fun onReceivedSslError(

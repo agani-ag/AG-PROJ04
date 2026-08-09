@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -65,6 +66,11 @@ dependencies {
 
     // Secure token storage
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // Firebase — Cloud Messaging (push) + Remote Config (dynamic base URL)
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-messaging")
+    implementation("com.google.firebase:firebase-config")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

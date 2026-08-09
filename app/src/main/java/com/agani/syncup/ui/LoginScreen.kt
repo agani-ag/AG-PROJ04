@@ -171,13 +171,15 @@ fun LoginScreen(
                 }
             }
 
-            Spacer(Modifier.height(16.dp))
-            Text(
-                "Demo mode — any email + password works",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
+            if (com.agani.syncup.data.AuthRepository.USE_MOCK) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Demo mode — any email + password works",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
             }
         }
     }

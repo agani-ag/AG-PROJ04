@@ -8,23 +8,41 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
 object ApiClient {
-    // TODO: replace with the real backend base URL when the API is live.
-    private const val BASE_URL = "https://api.example.com/api/v1/"
+    // Fallback base URL used until Firebase Remote Config provides `api_base_url` at launch.
+    // (Temporary Cloudflare tunnel → local Django; changes when the tunnel restarts.)
+    private const val FALLBACK_BASE_URL =
+        "https://numbers-rankings-jason-drug.trycloudflare.com/app/v1/"
 
-    val service: ApiService by lazy {
+    @Volatile
+    private var baseUrl: String = FALLBACK_BASE_URL
+
+    @Volatile
+    private var cached: ApiService? = null
+
+    /** Set the base URL (e.g. from Remote Config). Rebuilds the client on next use if changed. */
+    fun setBaseUrl(url: String) {
+        val normalized = if (url.endsWith("/")) url else "$url/"
+        if (normalized != baseUrl) {
+            baseUrl = normalized
+            cached = null
+        }
+    }
+
+    val service: ApiService
+        get() = cached ?: build().also { cached = it }
+
+    private fun build(): ApiService {
         val builder = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
-        // Network logging only in debug builds (no overhead or data leak in release).
         if (BuildConfig.DEBUG) {
             builder.addInterceptor(
                 HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC },
             )
         }
-        val client = builder.build()
-        Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .client(client)
+        return Retrofit.Builder()
+            .baseUrl(baseUrl)
+            .client(builder.build())
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(ApiService::class.java)

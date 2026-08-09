@@ -27,3 +27,21 @@ data class LoginResponse(
     val user: User,
     val urls: List<UrlItem> = emptyList(),
 )
+
+data class ChangePasswordRequest(
+    @SerializedName("current_password") val currentPassword: String,
+    @SerializedName("new_password") val newPassword: String,
+)
+
+data class DeviceRegisterRequest(
+    @SerializedName("device_id") val deviceId: String,
+    @SerializedName("fcm_token") val fcmToken: String,
+    val platform: String = "android",
+    @SerializedName("app_version") val appVersion: String? = null,
+)
+
+data class ConfigResponse(
+    @SerializedName("min_supported_version") val minSupportedVersion: Int = 0,
+    @SerializedName("latest_version") val latestVersion: Int = 0,
+    @SerializedName("support_email") val supportEmail: String = "",
+)
