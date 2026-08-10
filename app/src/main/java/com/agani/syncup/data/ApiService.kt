@@ -20,6 +20,10 @@ interface ApiService {
         @Body body: ChangePasswordRequest,
     )
 
+    /** User-initiated account deletion (backend deactivates the account + revokes tokens). */
+    @POST("account/delete")
+    suspend fun deleteAccount(@Header("Authorization") auth: String)
+
     /** Server-driven config: version gate, announcement, support email. Unauthenticated. */
     @GET("config")
     suspend fun config(): ConfigResponse
@@ -30,4 +34,8 @@ interface ApiService {
         @Header("Authorization") auth: String,
         @Body body: DeviceRegisterRequest,
     )
+
+    /** Reminders for the current user (+ broadcasts). Scheduled locally on the device. */
+    @GET("reminders")
+    suspend fun reminders(@Header("Authorization") auth: String): List<ReminderDto>
 }

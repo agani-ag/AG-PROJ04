@@ -35,6 +35,16 @@ object ApiClient {
         val builder = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
+        // A 401 on an *authenticated* request means our token is invalid/expired → force re-login.
+        // (Login itself has no Authorization header, so bad-credentials 401s never trigger this.)
+        builder.addInterceptor { chain ->
+            val request = chain.request()
+            val response = chain.proceed(request)
+            if (response.code == 401 && request.header("Authorization") != null) {
+                SessionManager.notifyUnauthorized()
+            }
+            response
+        }
         if (BuildConfig.DEBUG) {
             builder.addInterceptor(
                 HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC },

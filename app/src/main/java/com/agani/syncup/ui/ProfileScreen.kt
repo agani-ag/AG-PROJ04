@@ -88,8 +88,10 @@ fun ProfileScreen(
     onBack: () -> Unit,
     onLogout: () -> Unit,
     onChangePassword: suspend (current: String, new: String) -> Result<Unit>,
+    onDeleteAccount: suspend () -> Result<Unit>,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val security = remember { SecurityStore(context) }
     val prefs = remember { AppPrefs(context) }
     val biometricAvailable = remember {
@@ -104,6 +106,8 @@ fun ProfileScreen(
     var showSetPin by remember { mutableStateOf(false) }
     var showRemovePin by remember { mutableStateOf(false) }
     var showHelp by remember { mutableStateOf(false) }
+    var showDeleteAccount by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -213,6 +217,13 @@ fun ProfileScreen(
             SectionLabel("ACCOUNT")
             SettingsGroup {
                 SettingRow(icon = Icons.Rounded.Lock, title = "Change password", onClick = { showChangePassword = true })
+                RowDivider()
+                SettingRow(
+                    icon = Icons.Rounded.DeleteOutline,
+                    title = "Delete account",
+                    subtitle = "Deactivate your account and sign out",
+                    onClick = { showDeleteAccount = true },
+                )
             }
 
             // ---------------- About ----------------
@@ -285,6 +296,47 @@ fun ProfileScreen(
             phone = supportPhone,
             appVersion = appVersion,
             onDismiss = { showHelp = false },
+        )
+    }
+    if (showDeleteAccount) {
+        AlertDialog(
+            onDismissRequest = { if (!deleting) showDeleteAccount = false },
+            title = { Text("Delete account?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "This deactivates your account and signs you out on all devices. " +
+                        "Your links and reminders will stop. Contact your admin to restore access.",
+                )
+            },
+            confirmButton = {
+                Button(
+                    enabled = !deleting,
+                    onClick = {
+                        deleting = true
+                        scope.launch {
+                            val result = onDeleteAccount()
+                            deleting = false
+                            result.onFailure {
+                                showDeleteAccount = false
+                                Toast.makeText(
+                                    context,
+                                    it.message ?: "Couldn't delete account",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                            // On success the screen returns to Login automatically (state change).
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                ) {
+                    if (deleting) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                    } else {
+                        Text("Delete")
+                    }
+                }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteAccount = false }, enabled = !deleting) { Text("Cancel") } },
         )
     }
 }

@@ -1,6 +1,7 @@
 package com.agani.syncup
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -21,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.agani.syncup.auth.AuthViewModel
 import com.agani.syncup.data.AppPrefs
@@ -28,6 +30,9 @@ import com.agani.syncup.data.SecurityStore
 import com.agani.syncup.data.ThemeMode
 import com.agani.syncup.push.AppBootstrap
 import com.agani.syncup.push.DeviceRegistrar
+import com.agani.syncup.reminders.ReminderContract
+import com.agani.syncup.reminders.ReminderSync
+import com.agani.syncup.reminders.ReminderSyncWorker
 import com.agani.syncup.ui.AccountScreen
 import com.agani.syncup.ui.ForceUpdateScreen
 import com.agani.syncup.ui.LockScreen
@@ -38,6 +43,7 @@ import com.agani.syncup.ui.theme.AgHubTheme
 import com.agani.syncup.web.WebViewActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -49,9 +55,15 @@ class MainActivity : FragmentActivity() {
     private val appPrefs by lazy { AppPrefs(this) }
     private val lockedState = mutableStateOf(false)
 
+    // A link a notification/reminder tap wants opened — honored once unlocked & logged in.
+    private data class PendingLink(val url: String, val title: String)
+    private val pendingLink = mutableStateOf<PendingLink?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lockedState.value = security.hasPin() // lock on cold start if a PIN is set
+        readDeepLink(intent)
+        ReminderSyncWorker.schedulePeriodic(this) // daily safety-net reminder sync
 
         setContent {
             var themeMode by remember { mutableStateOf(appPrefs.themeMode()) }
@@ -99,6 +111,23 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        readDeepLink(intent)
+    }
+
+    /** Pull a link (from a reminder/push tap) off the launch intent so we can open it after unlock. */
+    private fun readDeepLink(intent: Intent?) {
+        val url = intent?.getStringExtra(ReminderContract.EXTRA_LINK_URL)
+        if (!url.isNullOrBlank()) {
+            pendingLink.value = PendingLink(url, intent.getStringExtra(ReminderContract.EXTRA_LINK_TITLE) ?: "")
+            // Consume it so a config change / re-onStart doesn't reopen the link.
+            intent.removeExtra(ReminderContract.EXTRA_LINK_URL)
+            intent.removeExtra(ReminderContract.EXTRA_LINK_TITLE)
+        }
+    }
+
     @Composable
     private fun AppContent(themeMode: ThemeMode, onThemeChange: (ThemeMode) -> Unit) {
         val vm: AuthViewModel = viewModel()
@@ -129,6 +158,24 @@ class MainActivity : FragmentActivity() {
         }
 
         val state = vm.state
+
+        // Sync reminders once booted (base URL applied) and whenever the user logs in.
+        LaunchedEffect(booted, state.isLoggedIn) {
+            if (booted && state.isLoggedIn) {
+                withContext(Dispatchers.IO) { ReminderSync.sync(applicationContext) }
+            }
+        }
+
+        // A reminder/push tap wants a link opened — do it once unlocked (this branch only
+        // composes when unlocked) and logged in.
+        LaunchedEffect(pendingLink.value, state.isLoggedIn, state.user) {
+            val link = pendingLink.value
+            if (link != null && state.isLoggedIn && state.user != null) {
+                pendingLink.value = null
+                startActivity(WebViewActivity.intent(this@MainActivity, link.url, link.title))
+            }
+        }
+
         val screen = when {
             !booted -> AppScreen.Splash
             forceUpdate -> AppScreen.ForceUpdate
@@ -161,6 +208,11 @@ class MainActivity : FragmentActivity() {
                             vm.logout()
                         },
                         onChangePassword = { current, new -> vm.changePassword(current, new) },
+                        onDeleteAccount = {
+                            val result = vm.deleteAccount()
+                            if (result.isSuccess) showProfile = false
+                            result
+                        },
                     )
                 }
                 AppScreen.Account -> state.user?.let { user ->
@@ -175,7 +227,11 @@ class MainActivity : FragmentActivity() {
                             startActivity(WebViewActivity.intent(this, item.url, item.title))
                         },
                         onOpenProfile = { showProfile = true },
-                        onRefresh = { vm.refresh() },
+                        onRefresh = {
+                            vm.refresh()
+                            // Collect reminders alongside the links refresh.
+                            lifecycleScope.launch(Dispatchers.IO) { ReminderSync.sync(applicationContext) }
+                        },
                         refreshing = state.refreshing,
                     )
                 }

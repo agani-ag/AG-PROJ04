@@ -53,3 +53,14 @@ data class ConfigResponse(
     @SerializedName("support_phone") val supportPhone: String = "",
     val announcement: AnnouncementDto? = null,
 )
+
+/** A reminder authored on the server, fired locally on the device via AlarmManager. */
+data class ReminderDto(
+    val id: String,
+    val title: String = "",
+    val body: String = "",
+    @SerializedName("link_url") val linkUrl: String = "",
+    @SerializedName("link_title") val linkTitle: String = "",
+    @SerializedName("scheduled_at_ms") val scheduledAtMs: Long = 0L,
+    val recurrence: String = "once", // once | daily | weekly | weekdays
+)

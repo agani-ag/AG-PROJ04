@@ -562,7 +562,9 @@ class WebViewActivity : ComponentActivity() {
             mediaPlaybackRequiresUserGesture = false
             javaScriptCanOpenWindowsAutomatically = true
             setSupportMultipleWindows(true)
-            allowFileAccess = true
+            // Keep file:// access off — uploads use the system picker, so it's unneeded and
+            // reduces the attack surface for remotely-loaded content (Play security hardening).
+            allowFileAccess = false
             loadWithOverviewMode = true
             useWideViewPort = true
             builtInZoomControls = true
@@ -708,10 +710,18 @@ class WebViewActivity : ComponentActivity() {
                     // Permission already granted → just make sure GPS/Location is on.
                     ensureGpsThenGrant(origin, callback)
                 } else {
-                    // Not granted → ask for permission first; GPS is checked afterwards.
+                    // Not granted → show a plain-language disclosure BEFORE the system prompt
+                    // (Google Play location-permission requirement), then request it.
                     pendingGeoOrigin = origin
                     pendingGeoCallback = callback
-                    geoPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                    showLocationDisclosure(
+                        onContinue = { geoPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
+                        onCancel = {
+                            pendingGeoCallback?.invoke(origin, false, false)
+                            pendingGeoCallback = null
+                            pendingGeoOrigin = null
+                        },
+                    )
                 }
             }
 
@@ -1074,6 +1084,24 @@ class WebViewActivity : ComponentActivity() {
     /** A permission is "permanently denied" if it's not granted and the OS won't show the prompt anymore. */
     private fun isAnyPermanentlyDenied(perms: List<String>): Boolean =
         perms.any { !hasPermission(it) && !shouldShowRequestPermissionRationale(it) }
+
+    /**
+     * Plain-language disclosure shown before the OS location prompt (Play policy): explains why
+     * location is requested and that the app itself doesn't collect or store it.
+     */
+    private fun showLocationDisclosure(onContinue: () -> Unit, onCancel: () -> Unit) {
+        AlertDialog.Builder(this)
+            .setTitle("Share your location?")
+            .setMessage(
+                "This page is requesting your location. SyncUp will ask for the location " +
+                    "permission and prompt to turn on GPS so your location can be shared with the " +
+                    "page you opened. SyncUp does not collect or store your location.",
+            )
+            .setPositiveButton("Continue") { _, _ -> onContinue() }
+            .setNegativeButton("Not now") { _, _ -> onCancel() }
+            .setCancelable(false)
+            .show()
+    }
 
     /** Explains that a permission is off and offers to open the app's settings to re-enable it. */
     private fun showPermissionSettingsDialog(message: String) {

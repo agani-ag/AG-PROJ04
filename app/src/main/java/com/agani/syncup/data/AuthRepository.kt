@@ -74,6 +74,20 @@ class AuthRepository(private val tokenStore: TokenStore) {
         }
     }
 
+    /** Deletes (deactivates) the account server-side, then clears the local session. */
+    suspend fun deleteAccount(): Result<Unit> = runCatching {
+        if (USE_MOCK) {
+            delay(400)
+        } else {
+            try {
+                ApiClient.service.deleteAccount("Bearer ${tokenStore.token().orEmpty()}")
+            } catch (e: java.io.IOException) {
+                throw Exception("No internet connection. Check your network and try again.")
+            }
+        }
+        tokenStore.clear()
+    }
+
     fun logout() = tokenStore.clear()
 
     private fun persist(session: Session) {

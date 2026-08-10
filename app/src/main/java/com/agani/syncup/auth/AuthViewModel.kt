@@ -6,10 +6,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.agani.syncup.data.AppPrefs
 import com.agani.syncup.data.AuthRepository
+import com.agani.syncup.data.ReminderStore
+import com.agani.syncup.data.SecurityStore
+import com.agani.syncup.data.SessionManager
 import com.agani.syncup.data.TokenStore
 import com.agani.syncup.data.UrlItem
 import com.agani.syncup.data.User
+import com.agani.syncup.reminders.ReminderScheduler
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 data class AuthState(
@@ -33,6 +39,16 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
     init {
         repository.restore()?.let { session ->
             state = state.copy(user = session.user, urls = session.urls)
+        }
+        // A 401 on any authenticated call → token expired/revoked → sign out to Login.
+        // The app-lock PIN is preserved, so the user can log back in quickly.
+        viewModelScope.launch {
+            SessionManager.unauthorized.collect { expired ->
+                if (expired) {
+                    if (state.isLoggedIn) logout()
+                    SessionManager.reset()
+                }
+            }
         }
     }
 
@@ -74,5 +90,19 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
     fun logout() {
         repository.logout()
         state = AuthState()
+    }
+
+    /** Deletes the account server-side, then wipes local session, PIN, and reminders. */
+    suspend fun deleteAccount(): Result<Unit> {
+        val result = repository.deleteAccount()
+        if (result.isSuccess) {
+            val ctx = getApplication<Application>()
+            SecurityStore(ctx).clearPin()
+            AppPrefs(ctx).setBiometricEnabled(false)
+            ReminderStore(ctx).clear()
+            ReminderScheduler.rescheduleAll(ctx, emptyList())
+            state = AuthState()
+        }
+        return result
     }
 }
