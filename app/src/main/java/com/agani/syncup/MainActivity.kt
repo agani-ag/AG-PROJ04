@@ -138,6 +138,7 @@ class MainActivity : FragmentActivity() {
         var announcement by remember { mutableStateOf<com.agani.syncup.data.AnnouncementDto?>(null) }
         var supportEmail by remember { mutableStateOf("") }
         var supportPhone by remember { mutableStateOf("") }
+        var privacyUrl by remember { mutableStateOf("") }
 
         LaunchedEffect(Unit) {
             val started = SystemClock.elapsedRealtime()
@@ -154,6 +155,7 @@ class MainActivity : FragmentActivity() {
                 announcement = cfg.announcement
                 supportEmail = cfg.supportEmail
                 supportPhone = cfg.supportPhone
+                privacyUrl = cfg.privacyPolicyUrl
             }
         }
 
@@ -202,6 +204,7 @@ class MainActivity : FragmentActivity() {
                         onThemeChange = onThemeChange,
                         supportEmail = supportEmail,
                         supportPhone = supportPhone,
+                        privacyPolicyUrl = privacyUrl,
                         onBack = { showProfile = false },
                         onLogout = {
                             showProfile = false

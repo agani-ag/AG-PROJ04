@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Policy
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -74,6 +75,7 @@ import com.agani.syncup.data.AppPrefs
 import com.agani.syncup.data.SecurityStore
 import com.agani.syncup.data.ThemeMode
 import com.agani.syncup.data.User
+import com.agani.syncup.web.WebViewActivity
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -85,6 +87,7 @@ fun ProfileScreen(
     onThemeChange: (ThemeMode) -> Unit,
     supportEmail: String = "",
     supportPhone: String = "",
+    privacyPolicyUrl: String = "",
     onBack: () -> Unit,
     onLogout: () -> Unit,
     onChangePassword: suspend (current: String, new: String) -> Result<Unit>,
@@ -236,6 +239,24 @@ fun ProfileScreen(
                     subtitle = "Contact admin (password / PIN help)",
                     onClick = { showHelp = true },
                 )
+                if (privacyPolicyUrl.isNotBlank()) {
+                    RowDivider()
+                    SettingRow(
+                        icon = Icons.Rounded.Policy,
+                        title = "Privacy policy",
+                        subtitle = "How your data is handled",
+                        onClick = {
+                            // Open inside the app (in-app WebView), not an external browser.
+                            runCatching {
+                                context.startActivity(
+                                    WebViewActivity.intent(context, privacyPolicyUrl, "Privacy Policy"),
+                                )
+                            }.onFailure {
+                                Toast.makeText(context, "Can't open the privacy policy", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                    )
+                }
                 RowDivider()
                 SettingRow(icon = Icons.Rounded.Info, title = "App version", subtitle = appVersion, onClick = null)
             }

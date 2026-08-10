@@ -8,6 +8,8 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.agani.syncup.MainActivity
 import com.agani.syncup.R
+import com.agani.syncup.reminders.ReminderContract
+import com.agani.syncup.reminders.ReminderImages
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
@@ -23,29 +25,51 @@ class SyncUpMessagingService : FirebaseMessagingService() {
         val notif = message.notification
         val title = notif?.title ?: message.data["title"] ?: "SyncUp"
         val body = notif?.body ?: message.data["body"] ?: ""
-        showNotification(title, body)
+        // Image from the notification payload or a `data.image` key. (When the app is backgrounded,
+        // Android shows notification-payload images itself; this covers the foreground case.)
+        val imageUrl = notif?.imageUrl?.toString() ?: message.data["image"]
+        showNotification(title, body, imageUrl, message.data["link_url"], message.data["link_title"])
     }
 
-    private fun showNotification(title: String, body: String) {
+    private fun showNotification(
+        title: String,
+        body: String,
+        imageUrl: String?,
+        linkUrl: String?,
+        linkTitle: String?,
+    ) {
         ensureChannel()
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            // Tap opens this URL in the in-app WebView (campaign / form / any page).
+            if (!linkUrl.isNullOrBlank()) {
+                putExtra(ReminderContract.EXTRA_LINK_URL, linkUrl)
+                putExtra(ReminderContract.EXTRA_LINK_TITLE, linkTitle ?: "")
+            }
         }
         val pending = PendingIntent.getActivity(
-            this, 0, intent,
+            this, System.currentTimeMillis().toInt(), intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        // onMessageReceived runs off the main thread, so downloading here is safe.
+        val image = if (!imageUrl.isNullOrBlank()) ReminderImages.load(imageUrl) else null
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_sync)
             .setContentTitle(title)
             .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pending)
-            .build()
+        if (image != null) {
+            builder.setLargeIcon(image)
+                .setStyle(
+                    NotificationCompat.BigPictureStyle().bigPicture(image).bigLargeIcon(null as android.graphics.Bitmap?),
+                )
+        } else {
+            builder.setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        }
         getSystemService(NotificationManager::class.java)
-            .notify(System.currentTimeMillis().toInt(), notification)
+            .notify(System.currentTimeMillis().toInt(), builder.build())
     }
 
     private fun ensureChannel() {

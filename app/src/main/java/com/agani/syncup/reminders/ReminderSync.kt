@@ -21,6 +21,8 @@ object ReminderSync {
             val list = ApiClient.service.reminders("Bearer $token")
             ReminderStore(context).save(list)
             ReminderScheduler.rescheduleAll(context, list)
+            // Tell the backend which reminders this device now has ("picked up").
+            ReminderAck.report(context, list.map { it.id }, ReminderAck.SYNCED)
             true
         }.getOrElse {
             // Network/parse failure — keep alarms alive from the last cached list.

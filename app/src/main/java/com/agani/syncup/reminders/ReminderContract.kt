@@ -8,6 +8,7 @@ object ReminderContract {
     const val EXTRA_TITLE = "reminder_title"
     const val EXTRA_BODY = "reminder_body"
     const val EXTRA_RECURRENCE = "reminder_recurrence"
+    const val EXTRA_IMAGE_URL = "reminder_image_url"
 
     // These two match the FCM `data` keys, so MainActivity handles reminder taps and
     // push taps with the same code path.

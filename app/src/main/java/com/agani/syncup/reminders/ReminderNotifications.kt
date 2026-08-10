@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -34,6 +35,7 @@ object ReminderNotifications {
         body: String,
         linkUrl: String,
         linkTitle: String,
+        image: Bitmap? = null,
     ) {
         ensureChannel(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -52,16 +54,25 @@ object ReminderNotifications {
             context, notifId(id), tap,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val notification = NotificationCompat.Builder(context, ReminderContract.CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, ReminderContract.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_sync)
             .setContentTitle(title.ifBlank { "Reminder" })
             .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pending)
-            .build()
-        context.getSystemService(NotificationManager::class.java).notify(notifId(id), notification)
+        if (image != null) {
+            // Big-picture: thumbnail when collapsed, full image when expanded.
+            builder.setLargeIcon(image)
+                .setStyle(
+                    NotificationCompat.BigPictureStyle()
+                        .bigPicture(image)
+                        .bigLargeIcon(null as Bitmap?),
+                )
+        } else {
+            builder.setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        }
+        context.getSystemService(NotificationManager::class.java).notify(notifId(id), builder.build())
     }
 
     private fun notifId(id: String): Int = id.toIntOrNull() ?: id.hashCode()

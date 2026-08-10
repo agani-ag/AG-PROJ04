@@ -24,6 +24,12 @@ class ReminderStore(context: Context) {
 
     fun clear() = prefs.edit().remove(KEY_LIST).remove(KEY_SCHEDULED_IDS).apply()
 
+    /** Drop a single reminder from the cache (e.g. a completed one-time reminder). */
+    fun remove(id: String) {
+        save(load().filterNot { it.id == id })
+        setScheduledIds(scheduledIds() - id)
+    }
+
     /** Ids of reminders that currently have an alarm set (used to cancel on re-sync). */
     fun scheduledIds(): Set<String> = prefs.getStringSet(KEY_SCHEDULED_IDS, emptySet()) ?: emptySet()
 

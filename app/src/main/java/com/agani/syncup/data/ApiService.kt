@@ -38,4 +38,11 @@ interface ApiService {
     /** Reminders for the current user (+ broadcasts). Scheduled locally on the device. */
     @GET("reminders")
     suspend fun reminders(@Header("Authorization") auth: String): List<ReminderDto>
+
+    /** Report reminder delivery back to the backend (synced / fired). */
+    @POST("reminders/ack")
+    suspend fun ackReminders(
+        @Header("Authorization") auth: String,
+        @Body body: ReminderAckRequest,
+    )
 }

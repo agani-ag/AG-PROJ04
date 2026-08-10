@@ -63,6 +63,7 @@ object ReminderScheduler {
             putExtra(ReminderContract.EXTRA_BODY, r.body)
             putExtra(ReminderContract.EXTRA_LINK_URL, r.linkUrl)
             putExtra(ReminderContract.EXTRA_LINK_TITLE, r.linkTitle)
+            putExtra(ReminderContract.EXTRA_IMAGE_URL, r.imageUrl)
             putExtra(ReminderContract.EXTRA_RECURRENCE, r.recurrence)
         }
         return PendingIntent.getBroadcast(
