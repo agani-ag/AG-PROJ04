@@ -31,13 +31,19 @@ object ReminderScheduler {
         store.setScheduledIds(scheduled)
     }
 
-    /** Re-arm a single (recurring) reminder for its next occurrence after it fires. */
-    fun scheduleNext(context: Context, r: ReminderDto) {
-        val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-        val trigger = nextTrigger(r) ?: return
+    /**
+     * Re-arm a single (recurring) reminder for its next occurrence after it fires.
+     * Returns true if another occurrence was armed, false if the reminder is finished
+     * (one-time, or a counted "Repeat N times" that has fired its last time).
+     * Uses `now + 1s` with no grace so it never re-arms the occurrence that just fired.
+     */
+    fun scheduleNext(context: Context, r: ReminderDto): Boolean {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return false
+        val trigger = nextTrigger(r, now = System.currentTimeMillis() + 1_000L, graceMs = 0L) ?: return false
         am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, trigger, pendingIntent(context, r))
         val store = ReminderStore(context)
         store.setScheduledIds(store.scheduledIds() + r.id)
+        return true
     }
 
     private fun cancelOne(context: Context, id: String) {
@@ -75,31 +81,43 @@ object ReminderScheduler {
     private fun requestCode(id: String): Int = id.toIntOrNull() ?: id.hashCode()
 
     /**
-     * Next fire time (epoch millis) at/after now, or null if there's nothing to schedule
-     * (a one-time reminder already in the past). Recurrence is computed in the device's
-     * local timezone using the reminder's original time-of-day / weekday.
+     * Next fire time (epoch millis) at/after now, or null if there's nothing more to schedule.
+     * `graceMs` lets a just-passed occurrence still fire (used on initial scheduling / after reboot);
+     * pass 0 when re-arming so the occurrence that just fired isn't picked again.
+     *
+     *  - "daily"    → the reminder's time-of-day, every day (unlimited), in the device's local tz.
+     *  - "interval" → occurrences at scheduledAt + k·interval for k = 0…count-1 (stateless: the
+     *                 count limit is derived from k, so it survives reboots and re-syncs).
+     *  - "once" / anything else → the single scheduled instant.
      */
-    fun nextTrigger(r: ReminderDto, now: Long = System.currentTimeMillis()): Long? {
+    fun nextTrigger(r: ReminderDto, now: Long = System.currentTimeMillis(), graceMs: Long = 60_000L): Long? {
         if (r.scheduledAtMs <= 0L) return null
-        // A one-time reminder that just passed (within a small grace) still fires.
-        val grace = 60_000L
 
-        val base = Calendar.getInstance().apply { timeInMillis = r.scheduledAtMs }
-        val hour = base.get(Calendar.HOUR_OF_DAY)
-        val minute = base.get(Calendar.MINUTE)
-
-        fun todayAt(): Calendar = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, hour)
-            set(Calendar.MINUTE, minute)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
+        if (r.recurrence == "daily") {
+            val base = Calendar.getInstance().apply { timeInMillis = r.scheduledAtMs }
+            val hour = base.get(Calendar.HOUR_OF_DAY)
+            val minute = base.get(Calendar.MINUTE)
+            return Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, hour)
+                set(Calendar.MINUTE, minute)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+                if (timeInMillis <= now) add(Calendar.DAY_OF_YEAR, 1)
+            }.timeInMillis
         }
 
-        return when (r.recurrence) {
-            // "Everyday" — fire at the reminder's time-of-day, every day.
-            "daily" -> todayAt().apply { if (timeInMillis <= now) add(Calendar.DAY_OF_YEAR, 1) }.timeInMillis
-            // "Once" — fire at the exact scheduled instant (skip if already well past).
-            else -> if (r.scheduledAtMs >= now - grace) r.scheduledAtMs else null
+        val interval = r.repeatIntervalMs
+        if (interval > 0L) {
+            // "Repeat N times": find the earliest occurrence at/after (now - grace).
+            val count = r.repeatCount // 0 = unlimited
+            val lower = now - graceMs
+            val k = if (r.scheduledAtMs >= lower) 0L
+            else (lower - r.scheduledAtMs + interval - 1) / interval // ceil division
+            if (count > 0 && k > count - 1) return null // all occurrences done
+            return r.scheduledAtMs + k * interval
         }
+
+        // "Once" — fire at the exact scheduled instant (skip if already well past).
+        return if (r.scheduledAtMs >= now - graceMs) r.scheduledAtMs else null
     }
 }

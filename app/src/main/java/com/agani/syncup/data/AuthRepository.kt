@@ -61,6 +61,53 @@ class AuthRepository(private val tokenStore: TokenStore) {
         newUrls
     }
 
+    /** One-time signed URL for the web chat page (opened in the in-app WebView). */
+    suspend fun chatSessionUrl(): Result<String> =
+        // No runCatching here: it would also swallow coroutine CancellationException and surface it
+        // as a bogus "coroutine scope left the composition" error. Catch only real network/HTTP errors.
+        try {
+            Result.success(ApiClient.service.chatSession("Bearer ${tokenStore.token().orEmpty()}").url)
+        } catch (e: retrofit2.HttpException) {
+            // 404 → the server this app is pointed at has no chat endpoint (e.g. still production).
+            Result.failure(Exception("Chat unavailable (HTTP ${e.code()}). The app may be pointed at a server without chat."))
+        } catch (e: java.io.IOException) {
+            Result.failure(Exception("Can't reach the server. Check the connection / base URL."))
+        }
+
+    /** Unread admin-message count for the chat badge. */
+    suspend fun chatUnread(): Result<Int> = runCatching {
+        ApiClient.service.chatUnread("Bearer ${tokenStore.token().orEmpty()}").count
+    }
+
+    /** Add a self-managed link; persists + returns the refreshed list. */
+    suspend fun addLink(title: String, url: String, description: String): Result<List<UrlItem>> = runCatching {
+        val newUrls = try {
+            ApiClient.service.addLink(
+                "Bearer ${tokenStore.token().orEmpty()}",
+                AddLinkRequest(title.trim(), url.trim(), description.trim()),
+            )
+        } catch (e: retrofit2.HttpException) {
+            throw Exception("Couldn't add the link. Check the title and an https:// URL.")
+        } catch (e: java.io.IOException) {
+            throw Exception("No internet connection. Try again.")
+        }
+        restore()?.let { persist(it.copy(urls = newUrls)) }
+        newUrls
+    }
+
+    /** Remove a user-added link; persists + returns the refreshed list. */
+    suspend fun removeLink(id: String): Result<List<UrlItem>> = runCatching {
+        val newUrls = try {
+            ApiClient.service.removeLink("Bearer ${tokenStore.token().orEmpty()}", id)
+        } catch (e: retrofit2.HttpException) {
+            throw Exception("Couldn't remove the link.")
+        } catch (e: java.io.IOException) {
+            throw Exception("No internet connection. Try again.")
+        }
+        restore()?.let { persist(it.copy(urls = newUrls)) }
+        newUrls
+    }
+
     suspend fun changePassword(current: String, new: String): Result<Unit> = runCatching {
         require(current.isNotBlank()) { "Enter your current password" }
         require(new.length >= 6) { "New password must be at least 6 characters" }

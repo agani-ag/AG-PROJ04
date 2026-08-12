@@ -27,8 +27,11 @@ import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Campaign
+import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Home
@@ -46,6 +49,10 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.UploadFile
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -55,6 +62,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -64,7 +72,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -91,8 +101,16 @@ fun AccountScreen(
     announcement: AnnouncementDto? = null,
     message: String? = null,
     onMessageShown: () -> Unit = {},
+    chatUnread: Int = 0,
+    onOpenChat: () -> Unit = {},
+    canManageLinks: Boolean = false,
+    onAddLink: suspend (title: String, url: String, description: String) -> Result<Unit> = { _, _, _ -> Result.success(Unit) },
+    onRemoveLink: suspend (id: String) -> Result<Unit> = { Result.success(Unit) },
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var showAddLink by remember { mutableStateOf(false) }
+    var linkToRemove by remember { mutableStateOf<UrlItem?>(null) }
     androidx.compose.runtime.LaunchedEffect(message) {
         if (message != null) {
             android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
@@ -120,6 +138,14 @@ fun AccountScreen(
                     )
                 },
                 actions = {
+                    IconButton(onClick = onOpenChat) {
+                        BadgedBox(
+                            // Simple unread dot — no count.
+                            badge = { if (chatUnread > 0) Badge() },
+                        ) {
+                            Icon(Icons.Rounded.ChatBubbleOutline, contentDescription = "Chat with admin")
+                        }
+                    }
                     IconButton(onClick = onRefresh, enabled = !refreshing) {
                         if (refreshing) {
                             CircularProgressIndicator(
@@ -171,17 +197,43 @@ fun AccountScreen(
                     item { SearchField(query = query, onQueryChange = { query = it }, autoFocus = true) }
                 }
                 item {
-                    Text(
-                        "AVAILABLE LINKS",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = 1.sp,
-                        modifier = Modifier.padding(start = 4.dp, top = 8.dp),
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    ) {
+                        Text(
+                            "AVAILABLE LINKS",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.weight(1f).padding(start = 4.dp),
+                        )
+                        if (canManageLinks) {
+                            IconButton(
+                                onClick = { showAddLink = true },
+                                modifier = Modifier.size(32.dp),
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Add,
+                                    contentDescription = "Add link",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        }
+                    }
                 }
                 items(filtered, key = { it.id }) { item ->
-                    LinkCard(item = item, onClick = { onOpenUrl(item) })
+                    LinkCard(
+                        item = item,
+                        onClick = { onOpenUrl(item) },
+                        onRemove = if (canManageLinks && item.canRemove) {
+                            { linkToRemove = item }
+                        } else {
+                            null
+                        },
+                    )
                 }
                 if (filtered.isEmpty()) {
                     item { EmptyLinks(searching = query.isNotBlank()) }
@@ -189,6 +241,93 @@ fun AccountScreen(
             }
         }
     }
+
+    if (showAddLink) {
+        AddLinkDialog(
+            onDismiss = { showAddLink = false },
+            onSubmit = onAddLink,
+        )
+    }
+    linkToRemove?.let { link ->
+        AlertDialog(
+            onDismissRequest = { linkToRemove = null },
+            title = { Text("Remove link?", fontWeight = FontWeight.Bold) },
+            text = { Text("Remove \"${link.title}\" from your links?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        linkToRemove = null
+                        scope.launch {
+                            onRemoveLink(link.id).onFailure {
+                                android.widget.Toast.makeText(context, it.message ?: "Couldn't remove", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                ) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { linkToRemove = null }) { Text("Cancel") } },
+        )
+    }
+}
+
+@Composable
+private fun AddLinkDialog(
+    onDismiss: () -> Unit,
+    onSubmit: suspend (title: String, url: String, description: String) -> Result<Unit>,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var title by remember { mutableStateOf("") }
+    var url by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var submitting by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = { if (!submitting) onDismiss() },
+        title = { Text("Add link", fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                OutlinedTextField(title, { title = it }, label = { Text("Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(url, { url = it }, label = { Text("URL (https://…)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(description, { description = it }, label = { Text("Description (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                if (error != null) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = {
+            Button(enabled = !submitting, onClick = {
+                error = null
+                val t = title.trim(); val u = url.trim()
+                if (t.isBlank() || u.isBlank()) { error = "Title and URL are required"; return@Button }
+                if (!u.lowercase().startsWith("https://")) { error = "URL must start with https://"; return@Button }
+                submitting = true
+                scope.launch {
+                    val result = onSubmit(t, u, description.trim())
+                    submitting = false
+                    result.fold(
+                        onSuccess = {
+                            android.widget.Toast.makeText(context, "Link added", android.widget.Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        },
+                        onFailure = { error = it.message ?: "Couldn't add link" },
+                    )
+                }
+            }) {
+                if (submitting) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                } else {
+                    Text("Add")
+                }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !submitting) { Text("Cancel") } },
+    )
 }
 
 @Composable
@@ -339,7 +478,7 @@ private fun ProfileHeader(user: User, onClick: () -> Unit) {
 }
 
 @Composable
-private fun LinkCard(item: UrlItem, onClick: () -> Unit) {
+private fun LinkCard(item: UrlItem, onClick: () -> Unit, onRemove: (() -> Unit)? = null) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.97f else 1f, label = "cardScale")
@@ -390,11 +529,21 @@ private fun LinkCard(item: UrlItem, onClick: () -> Unit) {
                     )
                 }
             }
-            Icon(
-                Icons.Rounded.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (onRemove != null) {
+                IconButton(onClick = onRemove) {
+                    Icon(
+                        Icons.Rounded.DeleteOutline,
+                        contentDescription = "Remove link",
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
+            } else {
+                Icon(
+                    Icons.Rounded.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

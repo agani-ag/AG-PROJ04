@@ -1,0 +1,4 @@
+<resources>
+    <!-- System (Android 12+) splash background — dark value (device in dark mode). -->
+    <color name="splash_background">#0B0F17</color>
+</resources>

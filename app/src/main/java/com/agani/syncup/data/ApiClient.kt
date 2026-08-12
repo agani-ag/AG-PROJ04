@@ -11,7 +11,7 @@ object ApiClient {
     // Fallback base URL — ONLY used if Firebase Remote Config `api_base_url` is empty/unreachable.
     // The live value comes from Remote Config (set it in /mobile/remote-config), which wins over this.
     private const val FALLBACK_BASE_URL =
-        "https://availability-wires-king-nikon.trycloudflare.com/app/v1/"
+        "https://microman2000.pythonanywhere.com/app/v1/"
 
     @Volatile
     private var baseUrl: String = FALLBACK_BASE_URL

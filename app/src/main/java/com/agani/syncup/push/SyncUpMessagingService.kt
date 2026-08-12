@@ -28,7 +28,8 @@ class SyncUpMessagingService : FirebaseMessagingService() {
         // Image from the notification payload or a `data.image` key. (When the app is backgrounded,
         // Android shows notification-payload images itself; this covers the foreground case.)
         val imageUrl = notif?.imageUrl?.toString() ?: message.data["image"]
-        showNotification(title, body, imageUrl, message.data["link_url"], message.data["link_title"])
+        val isChat = message.data["type"] == "chat"
+        showNotification(title, body, imageUrl, message.data["link_url"], message.data["link_title"], isChat)
     }
 
     private fun showNotification(
@@ -37,14 +38,19 @@ class SyncUpMessagingService : FirebaseMessagingService() {
         imageUrl: String?,
         linkUrl: String?,
         linkTitle: String?,
+        openChat: Boolean = false,
     ) {
         ensureChannel()
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            // Tap opens this URL in the in-app WebView (campaign / form / any page).
-            if (!linkUrl.isNullOrBlank()) {
-                putExtra(ReminderContract.EXTRA_LINK_URL, linkUrl)
-                putExtra(ReminderContract.EXTRA_LINK_TITLE, linkTitle ?: "")
+            when {
+                // A chat reply — tap opens the chat-with-admin screen.
+                openChat -> putExtra(MainActivity.EXTRA_OPEN_CHAT, true)
+                // Otherwise tap opens this URL in the in-app WebView (campaign / form / any page).
+                !linkUrl.isNullOrBlank() -> {
+                    putExtra(ReminderContract.EXTRA_LINK_URL, linkUrl)
+                    putExtra(ReminderContract.EXTRA_LINK_TITLE, linkTitle ?: "")
+                }
             }
         }
         val pending = PendingIntent.getActivity(
@@ -59,6 +65,8 @@ class SyncUpMessagingService : FirebaseMessagingService() {
             .setContentText(body)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            // Image shows in the notification shade when unlocked; hidden on the lock screen.
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setContentIntent(pending)
         if (image != null) {
             builder.setLargeIcon(image)

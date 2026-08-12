@@ -5,12 +5,18 @@ import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.app.Dialog
 import android.app.DownloadManager
+import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.Window
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.WindowInsetsCompat
+import com.agani.syncup.MainActivity
 import com.agani.syncup.data.AppPrefs
 import com.agani.syncup.data.ThemeMode
 import android.app.NotificationChannel
@@ -94,8 +100,26 @@ class WebViewActivity : ComponentActivity() {
     // Floater views + state
     private lateinit var mainFab: ImageButton
     private lateinit var actionHome: ImageButton
+    private lateinit var actionSettings: ImageButton
     private lateinit var actionRefresh: ImageButton
     private lateinit var scrim: View
+
+    // Speed-dial buttons currently shown, ordered nearest-to-FAB first.
+    private var menuButtons: List<ImageButton> = emptyList()
+
+    // Single-link (kiosk) mode hides "Home" — there's no list to go back to.
+    private var showHome = true
+
+    // Some pages (e.g. the chat screen) hide the floating bubble entirely.
+    private var showBubble = true
+
+    // Signed per-link token exposed to partner pages as window.SyncUp.token (empty if not enabled).
+    private var notifyToken = ""
+
+    // HTML5 fullscreen video (onShowCustomView / onHideCustomView).
+    private var customView: View? = null
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+    private var savedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 
     // Custom offline / error page shown when a main-frame load fails.
     private lateinit var errorView: LinearLayout
@@ -218,6 +242,7 @@ class WebViewActivity : ComponentActivity() {
             finish()
             return
         }
+        notifyToken = intent.getStringExtra(EXTRA_NOTIFY_TOKEN).orEmpty()
 
         val webContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val density = resources.displayMetrics.density
@@ -250,6 +275,15 @@ class WebViewActivity : ComponentActivity() {
         setupErrorView()
         setContentView(root)
 
+        // Keep the page above the soft keyboard: on edge-to-edge (API 35+) `adjustResize` alone
+        // doesn't shrink the WebView, so pad the bottom by the IME inset height. This lifts any
+        // bottom input (chat composer, web forms) above the keyboard instead of hiding it.
+        ViewCompat.setOnApplyWindowInsetsListener(webContainer) { v, insets ->
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+            v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, ime)
+            insets
+        }
+
         ensureNotificationChannel()
         requestNotificationPermissionIfNeeded()
         configureWebView()
@@ -258,6 +292,7 @@ class WebViewActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 when {
+                    customView != null -> exitFullscreenVideo()
                     floaterExpanded -> collapseFloater()
                     webView.canGoBack() -> webView.goBack()
                     else -> finish()
@@ -272,6 +307,9 @@ class WebViewActivity : ComponentActivity() {
 
     @SuppressLint("ClickableViewAccessibility")
     private fun setupFloater() {
+        showBubble = intent.getBooleanExtra(EXTRA_SHOW_BUBBLE, true)
+        if (!showBubble) return // e.g. the chat screen — no floating bubble at all
+
         val d = resources.displayMetrics.density
         fabPx = (48 * d).toInt()
         miniPx = (48 * d).toInt()
@@ -293,12 +331,24 @@ class WebViewActivity : ComponentActivity() {
             ),
         )
 
+        showHome = intent.getBooleanExtra(EXTRA_SHOW_HOME, true)
+
         actionRefresh = miniButton(R.drawable.ic_refresh, "Refresh") {
             collapseFloater()
             webView.reload()
         }
+        actionSettings = miniButton(R.drawable.ic_settings, "Settings") {
+            collapseFloater()
+            openSettings() // open the Profile / Settings screen (Chat lives inside Profile)
+        }
         actionHome = miniButton(R.drawable.ic_home, "Home") {
             finish() // return to the links list
+        }
+        // Nearest-to-FAB first. Kiosk (single-link) users have no list, so Home is omitted.
+        menuButtons = buildList {
+            if (showHome) add(actionHome)
+            add(actionSettings)
+            add(actionRefresh)
         }
 
         mainFab = ImageButton(this).apply {
@@ -389,7 +439,7 @@ class WebViewActivity : ComponentActivity() {
         scrim.alpha = 0f
         scrim.visibility = View.VISIBLE
         scrim.animate().alpha(1f).setDuration(120).start()
-        listOf(actionHome, actionRefresh).forEach {
+        menuButtons.forEach {
             it.alpha = 0f
             it.visibility = View.VISIBLE
             it.animate().alpha(1f).setDuration(140).start()
@@ -400,8 +450,7 @@ class WebViewActivity : ComponentActivity() {
 
     private fun collapseFloater() {
         scrim.visibility = View.GONE
-        actionHome.visibility = View.GONE
-        actionRefresh.visibility = View.GONE
+        menuButtons.forEach { it.visibility = View.GONE }
         mainFab.setImageResource(R.drawable.ic_more)
         floaterExpanded = false
     }
@@ -412,17 +461,23 @@ class WebViewActivity : ComponentActivity() {
         val maxX = (root.width - miniPx) - marginPx
         val itemX = (cx - miniPx / 2f).coerceIn(minX, maxX.coerceAtLeast(minX))
         val openUp = mainFab.y > root.height / 2f
-        if (openUp) {
-            actionHome.x = itemX
-            actionHome.y = mainFab.y - gapPx - miniPx
-            actionRefresh.x = itemX
-            actionRefresh.y = actionHome.y - gapPx - miniPx
-        } else {
-            actionHome.x = itemX
-            actionHome.y = mainFab.y + fabPx + gapPx
-            actionRefresh.x = itemX
-            actionRefresh.y = actionHome.y + miniPx + gapPx
+        menuButtons.forEachIndexed { i, btn ->
+            btn.x = itemX
+            btn.y = if (openUp) {
+                mainFab.y - (gapPx + miniPx) * (i + 1)
+            } else {
+                mainFab.y + fabPx + gapPx + (miniPx + gapPx) * i
+            }
         }
+    }
+
+    /** Bring the (single-instance) MainActivity forward and ask it to open the Profile screen. */
+    private fun openSettings() {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            putExtra(MainActivity.EXTRA_OPEN_PROFILE, true)
+            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        startActivity(intent)
     }
 
     private fun snapToEdge() {
@@ -585,6 +640,9 @@ class WebViewActivity : ComponentActivity() {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(webView, NOTIFICATION_SHIM_JS, setOf("*"))
             WebViewCompat.addDocumentStartJavaScript(webView, PRINT_SHIM_JS, setOf("*"))
+            if (notifyToken.isNotBlank()) {
+                WebViewCompat.addDocumentStartJavaScript(webView, syncUpJs(), setOf("*"))
+            }
         }
 
         webView.webViewClient = object : WebViewClient() {
@@ -598,6 +656,7 @@ class WebViewActivity : ComponentActivity() {
                 // script may miss, e.g. data: pages). The scripts self-guard against re-install.
                 view?.evaluateJavascript(NOTIFICATION_SHIM_JS, null)
                 view?.evaluateJavascript(PRINT_SHIM_JS, null)
+                if (notifyToken.isNotBlank()) view?.evaluateJavascript(syncUpJs(), null)
             }
 
             override fun onReceivedError(
@@ -665,6 +724,14 @@ class WebViewActivity : ComponentActivity() {
                 transport.webView = temp
                 resultMsg.sendToTarget()
                 return true
+            }
+
+            override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+                enterFullscreenVideo(view, callback)
+            }
+
+            override fun onHideCustomView() {
+                exitFullscreenVideo()
             }
 
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
@@ -1150,9 +1217,65 @@ class WebViewActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    // ---------------------------------------------------------------------
+    // HTML5 fullscreen video
+    // ---------------------------------------------------------------------
+    private fun enterFullscreenVideo(view: View, callback: WebChromeClient.CustomViewCallback) {
+        if (customView != null) {
+            callback.onCustomViewHidden()
+            return
+        }
+        customView = view
+        customViewCallback = callback
+        savedOrientation = requestedOrientation
+        webView.visibility = View.GONE
+        if (::mainFab.isInitialized) mainFab.visibility = View.GONE
+        view.setBackgroundColor(android.graphics.Color.BLACK)
+        root.addView(
+            view,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        setSystemBarsVisible(false)
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    }
+
+    private fun exitFullscreenVideo() {
+        val v = customView ?: return
+        root.removeView(v)
+        customView = null
+        webView.visibility = View.VISIBLE
+        if (showBubble && ::mainFab.isInitialized) mainFab.visibility = View.VISIBLE
+        setSystemBarsVisible(true)
+        requestedOrientation = savedOrientation
+        customViewCallback?.onCustomViewHidden()
+        customViewCallback = null
+    }
+
+    private fun setSystemBarsVisible(visible: Boolean) {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        if (visible) {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        } else {
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
+    /** Exposes the per-link token to the page as window.SyncUp.token (partner push handshake). */
+    private fun syncUpJs(): String {
+        val safe = notifyToken.replace("\\", "\\\\").replace("\"", "\\\"")
+        return "window.SyncUp=Object.assign(window.SyncUp||{},{token:\"$safe\"});"
+    }
+
     companion object {
         private const val EXTRA_URL = "extra_url"
         private const val EXTRA_TITLE = "extra_title"
+        private const val EXTRA_SHOW_HOME = "extra_show_home"
+        private const val EXTRA_SHOW_BUBBLE = "extra_show_bubble"
+        private const val EXTRA_NOTIFY_TOKEN = "extra_notify_token"
         private const val NOTIF_CHANNEL_ID = "web_notifications"
 
         /**
@@ -1199,10 +1322,20 @@ class WebViewActivity : ComponentActivity() {
             })();
         """.trimIndent()
 
-        fun intent(context: Context, url: String, title: String?): Intent =
+        fun intent(
+            context: Context,
+            url: String,
+            title: String?,
+            showHome: Boolean = true,
+            showBubble: Boolean = true,
+            notifyToken: String = "",
+        ): Intent =
             Intent(context, WebViewActivity::class.java).apply {
                 putExtra(EXTRA_URL, url)
                 putExtra(EXTRA_TITLE, title)
+                putExtra(EXTRA_SHOW_HOME, showHome)
+                putExtra(EXTRA_SHOW_BUBBLE, showBubble)
+                putExtra(EXTRA_NOTIFY_TOKEN, notifyToken)
             }
     }
 }

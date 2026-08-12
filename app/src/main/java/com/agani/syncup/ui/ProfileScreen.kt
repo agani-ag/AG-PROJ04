@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Email
@@ -88,6 +89,8 @@ fun ProfileScreen(
     supportEmail: String = "",
     supportPhone: String = "",
     privacyPolicyUrl: String = "",
+    chatUnread: Int = 0,
+    onOpenChat: () -> Unit = {},
     onBack: () -> Unit,
     onLogout: () -> Unit,
     onChangePassword: suspend (current: String, new: String) -> Result<Unit>,
@@ -257,6 +260,17 @@ fun ProfileScreen(
                         },
                     )
                 }
+                RowDivider()
+                SettingRow(
+                    icon = Icons.Rounded.ChatBubbleOutline,
+                    title = "Chat with admin",
+                    subtitle = if (chatUnread > 0) {
+                        "$chatUnread new message${if (chatUnread == 1) "" else "s"}"
+                    } else {
+                        "Message support directly"
+                    },
+                    onClick = onOpenChat,
+                )
                 RowDivider()
                 SettingRow(icon = Icons.Rounded.Info, title = "App version", subtitle = appVersion, onClick = null)
             }

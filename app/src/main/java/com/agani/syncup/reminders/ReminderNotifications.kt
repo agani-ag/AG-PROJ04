@@ -60,6 +60,8 @@ object ReminderNotifications {
             .setContentText(body)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            // Image shows in the notification shade when unlocked; hidden on the lock screen.
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setContentIntent(pending)
         if (image != null) {
             // Big-picture: thumbnail when collapsed, full image when expanded.

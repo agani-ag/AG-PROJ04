@@ -11,6 +11,7 @@ data class User(
     val id: String,
     val name: String,
     val email: String,
+    @SerializedName("can_manage_links") val canManageLinks: Boolean = false,
 )
 
 data class UrlItem(
@@ -19,6 +20,16 @@ data class UrlItem(
     val url: String,
     val icon: String? = null,
     val description: String? = null,
+    @SerializedName("can_remove") val canRemove: Boolean = false,
+    // Non-empty when the link opts into partner push — injected as window.SyncUp.token.
+    @SerializedName("notify_token") val notifyToken: String = "",
+)
+
+/** Body for adding a self-managed link. */
+data class AddLinkRequest(
+    val title: String,
+    val url: String,
+    val description: String = "",
 )
 
 data class LoginResponse(
@@ -44,11 +55,14 @@ data class AnnouncementDto(
     val active: Boolean = false,
     val title: String = "",
     val message: String = "",
+    // When true, show a full-screen announcement (like the update screen) instead of the banner.
+    val fullscreen: Boolean = false,
+    // Full-screen only: no dismiss button; shows every launch (maintenance/outage notice).
+    val blocking: Boolean = false,
 )
 
 data class ConfigResponse(
     @SerializedName("min_supported_version") val minSupportedVersion: Int = 0,
-    @SerializedName("latest_version") val latestVersion: Int = 0,
     @SerializedName("support_email") val supportEmail: String = "",
     @SerializedName("support_phone") val supportPhone: String = "",
     @SerializedName("privacy_policy_url") val privacyPolicyUrl: String = "",
@@ -62,6 +76,12 @@ data class ReminderAckRequest(
     @SerializedName("reminder_ids") val reminderIds: List<String>,
 )
 
+/** Response of GET chat/session — a one-time signed URL the app opens in its WebView. */
+data class ChatSessionResponse(val url: String = "")
+
+/** Response of GET chat/unread — count of unread admin messages (drives the chat badge). */
+data class ChatUnreadResponse(val count: Int = 0)
+
 /** A reminder authored on the server, fired locally on the device via AlarmManager. */
 data class ReminderDto(
     val id: String,
@@ -71,5 +91,8 @@ data class ReminderDto(
     @SerializedName("link_title") val linkTitle: String = "",
     @SerializedName("image_url") val imageUrl: String = "",
     @SerializedName("scheduled_at_ms") val scheduledAtMs: Long = 0L,
-    val recurrence: String = "once", // once | daily
+    val recurrence: String = "once", // once | daily | interval
+    // "Repeat N times" mode: gap between fires (ms) and total fire count (0 = unlimited).
+    @SerializedName("repeat_interval_ms") val repeatIntervalMs: Long = 0L,
+    @SerializedName("repeat_count") val repeatCount: Int = 0,
 )

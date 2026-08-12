@@ -58,6 +58,7 @@
             android:name=".web.WebViewActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.AGHub" />
 
         <provider

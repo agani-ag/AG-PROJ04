@@ -25,6 +25,11 @@ data class AuthState(
     val message: String? = null,
     val user: User? = null,
     val urls: List<UrlItem> = emptyList(),
+    // False until the links have been fetched fresh from the server this session (login or a
+    // refresh). On a cold start we only have cached links until the first auto-refresh completes.
+    val urlsLoaded: Boolean = false,
+    // Unread admin chat messages — drives the chat button badge.
+    val chatUnread: Int = 0,
 ) {
     val isLoggedIn: Boolean get() = user != null
 }
@@ -58,7 +63,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val result = repository.login(email, password)
             state = result.fold(
-                onSuccess = { AuthState(user = it.user, urls = it.urls) },
+                onSuccess = { AuthState(user = it.user, urls = it.urls, urlsLoaded = true) },
                 onFailure = { state.copy(loading = false, error = it.message ?: "Login failed") },
             )
             if (result.isSuccess) {
@@ -68,16 +73,50 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Re-fetches the link list so newly added links appear without logging out. */
-    fun refresh() {
+    /**
+     * Re-fetches the link list so newly added links appear without logging out.
+     * [silent] = triggered automatically on app open: no spinner, and failures are swallowed
+     * (we keep the cached links) so opening the app offline doesn't flash an error.
+     */
+    fun refresh(silent: Boolean = false) {
         if (state.refreshing || state.loading) return
-        state = state.copy(refreshing = true, error = null)
+        if (!silent) state = state.copy(refreshing = true, error = null)
         viewModelScope.launch {
             state = repository.refreshUrls().fold(
-                onSuccess = { state.copy(urls = it, refreshing = false) },
-                onFailure = { state.copy(refreshing = false, message = it.message ?: "Couldn't refresh") },
+                onSuccess = { state.copy(urls = it, refreshing = false, urlsLoaded = true) },
+                onFailure = {
+                    // Mark loaded either way so the UI (and kiosk decision) can proceed on cached data.
+                    if (silent) state.copy(refreshing = false, urlsLoaded = true)
+                    else state.copy(refreshing = false, urlsLoaded = true, message = it.message ?: "Couldn't refresh")
+                },
             )
         }
+    }
+
+    /** Refresh the unread chat badge (silent — called on app open / foreground). */
+    fun refreshChatUnread() {
+        viewModelScope.launch {
+            repository.chatUnread().onSuccess { count ->
+                if (count != state.chatUnread) state = state.copy(chatUnread = count)
+            }
+        }
+    }
+
+    /** Fetch the one-time chat URL to open in the WebView. */
+    suspend fun chatSessionUrl(): Result<String> = repository.chatSessionUrl()
+
+    /** Self-manage: add a link, then update the list. */
+    suspend fun addLink(title: String, url: String, description: String): Result<Unit> {
+        val result = repository.addLink(title, url, description)
+        result.onSuccess { state = state.copy(urls = it, urlsLoaded = true) }
+        return result.map { }
+    }
+
+    /** Self-manage: remove a user-added link, then update the list. */
+    suspend fun removeLink(id: String): Result<Unit> {
+        val result = repository.removeLink(id)
+        result.onSuccess { state = state.copy(urls = it) }
+        return result.map { }
     }
 
     fun clearMessage() {

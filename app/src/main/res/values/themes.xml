@@ -1,6 +1,6 @@
 <resources>
     <style name="Theme.AGHub" parent="android:Theme.Material.Light.NoActionBar">
-        <!-- Android 12+ splash: black background, white sync logo -->
-        <item name="android:windowSplashScreenBackground">#000000</item>
+        <!-- Android 12+ system splash background — adapts to light/dark (see values-night). -->
+        <item name="android:windowSplashScreenBackground">@color/splash_background</item>
     </style>
 </resources>

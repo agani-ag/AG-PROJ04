@@ -15,11 +15,17 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
@@ -34,6 +40,7 @@ import com.agani.syncup.reminders.ReminderContract
 import com.agani.syncup.reminders.ReminderSync
 import com.agani.syncup.reminders.ReminderSyncWorker
 import com.agani.syncup.ui.AccountScreen
+import com.agani.syncup.ui.AnnouncementScreen
 import com.agani.syncup.ui.ForceUpdateScreen
 import com.agani.syncup.ui.LockScreen
 import com.agani.syncup.ui.LoginScreen
@@ -47,7 +54,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-private enum class AppScreen { Splash, ForceUpdate, Login, Account, Profile }
+private enum class AppScreen { Splash, ForceUpdate, Login, Announcement, Account, Profile }
 
 class MainActivity : FragmentActivity() {
 
@@ -58,6 +65,12 @@ class MainActivity : FragmentActivity() {
     // A link a notification/reminder tap wants opened — honored once unlocked & logged in.
     private data class PendingLink(val url: String, val title: String)
     private val pendingLink = mutableStateOf<PendingLink?>(null)
+
+    // Set when the WebView's floating "Settings" action asks us to open the Profile screen.
+    private val openProfileRequest = mutableStateOf(false)
+
+    // Set when a chat entry point (button / bubble / push tap) asks us to open the chat screen.
+    private val openChatRequest = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -126,6 +139,18 @@ class MainActivity : FragmentActivity() {
             intent.removeExtra(ReminderContract.EXTRA_LINK_URL)
             intent.removeExtra(ReminderContract.EXTRA_LINK_TITLE)
         }
+        if (intent?.getBooleanExtra(EXTRA_OPEN_PROFILE, false) == true) {
+            openProfileRequest.value = true
+            intent.removeExtra(EXTRA_OPEN_PROFILE)
+        }
+        // EXTRA_OPEN_CHAT = our own foreground path (SyncUpMessagingService / bubble).
+        // "type" == "chat" = the FCM data payload delivered by the system tray when the app was
+        // backgrounded (onMessageReceived isn't called then, so our extra isn't set).
+        if (intent?.getBooleanExtra(EXTRA_OPEN_CHAT, false) == true || intent?.getStringExtra("type") == "chat") {
+            openChatRequest.value = true
+            intent.removeExtra(EXTRA_OPEN_CHAT)
+            intent.removeExtra("type")
+        }
     }
 
     @Composable
@@ -161,11 +186,40 @@ class MainActivity : FragmentActivity() {
 
         val state = vm.state
 
-        // Sync reminders once booted (base URL applied) and whenever the user logs in.
+        // Full-screen announcement: shown when the server marks it full-screen. A blocking one has
+        // no dismiss and reappears every launch; a normal one shows once per unique content
+        // (identified by a content hash stored in AppPrefs).
+        var announcementDismissed by remember { mutableStateOf(false) }
+        val ann = announcement
+        val annHash = if (ann != null) "${ann.title}\n${ann.message}".hashCode().toString() else ""
+        val showAnnouncement = ann != null && ann.active && ann.fullscreen &&
+            !announcementDismissed &&
+            (ann.blocking || annHash != appPrefs.acknowledgedAnnouncement())
+
+        // Once booted (base URL applied) and logged in: pull fresh links + sync reminders.
+        // This makes newly added/removed links appear on app open without tapping Refresh.
         LaunchedEffect(booted, state.isLoggedIn) {
             if (booted && state.isLoggedIn) {
+                vm.refresh(silent = true)
+                vm.refreshChatUnread()
                 withContext(Dispatchers.IO) { ReminderSync.sync(applicationContext) }
             }
+        }
+
+        // Also refresh links every time the app returns to the foreground (not just cold start),
+        // so a link added while the app was backgrounded shows up when the user comes back.
+        val lifecycleOwner = LocalLifecycleOwner.current
+        val bootedNow by rememberUpdatedState(booted)
+        val loggedInNow by rememberUpdatedState(state.isLoggedIn)
+        DisposableEffect(lifecycleOwner) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_START && bootedNow && loggedInNow) {
+                    vm.refresh(silent = true)
+                    vm.refreshChatUnread()
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
 
         // A reminder/push tap wants a link opened — do it once unlocked (this branch only
@@ -178,10 +232,64 @@ class MainActivity : FragmentActivity() {
             }
         }
 
+        // The WebView floating "Settings" action asked us to open Profile.
+        LaunchedEffect(openProfileRequest.value, state.isLoggedIn, state.user) {
+            if (openProfileRequest.value && state.isLoggedIn && state.user != null) {
+                openProfileRequest.value = false
+                showProfile = true
+            }
+        }
+
+        // A chat entry point (button / bubble / push tap) wants the chat screen: fetch the one-time
+        // chat URL and open it in the WebView (no Home, no nested Chat action).
+        // NOTE: do the suspend call FIRST and reset the flag AFTER — resetting first would change
+        // this effect's key and cancel the coroutine mid-request.
+        LaunchedEffect(openChatRequest.value, state.isLoggedIn, state.user) {
+            if (openChatRequest.value && state.isLoggedIn && state.user != null) {
+                val result = vm.chatSessionUrl()
+                openChatRequest.value = false
+                result.onSuccess { url ->
+                    if (url.isNotBlank()) {
+                        startActivity(
+                            WebViewActivity.intent(
+                                this@MainActivity, url, "Chat", showHome = false, showBubble = false,
+                            ),
+                        )
+                        vm.refreshChatUnread()
+                    }
+                }.onFailure {
+                    android.widget.Toast.makeText(
+                        this@MainActivity, it.message ?: "Couldn't open chat.",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
+        }
+
+        // Single-link (kiosk) mode: a user with exactly one link lands straight in it, skipping
+        // the list. Fires once per launch; Back from the WebView reveals the list as a fallback.
+        // A notification-tap link takes priority over this.
+        var didAutoOpenSingleLink by rememberSaveable { mutableStateOf(false) }
+        LaunchedEffect(booted, state.isLoggedIn, state.user, state.urls, state.urlsLoaded, pendingLink.value, showAnnouncement) {
+            if (booted && state.isLoggedIn && state.user != null && state.urlsLoaded &&
+                pendingLink.value == null && !showAnnouncement &&
+                !didAutoOpenSingleLink && state.urls.size == 1
+            ) {
+                didAutoOpenSingleLink = true
+                val only = state.urls.first()
+                startActivity(
+                    WebViewActivity.intent(
+                        this@MainActivity, only.url, only.title, showHome = false, notifyToken = only.notifyToken,
+                    ),
+                )
+            }
+        }
+
         val screen = when {
             !booted -> AppScreen.Splash
             forceUpdate -> AppScreen.ForceUpdate
             !state.isLoggedIn || state.user == null -> AppScreen.Login
+            showAnnouncement -> AppScreen.Announcement
             showProfile -> AppScreen.Profile
             else -> AppScreen.Account
         }
@@ -196,6 +304,15 @@ class MainActivity : FragmentActivity() {
                     supportEmail = supportEmail,
                     supportPhone = supportPhone,
                 )
+                AppScreen.Announcement -> AnnouncementScreen(
+                    title = ann?.title ?: "",
+                    message = ann?.message ?: "",
+                    blocking = ann?.blocking ?: false,
+                    onDismiss = {
+                        appPrefs.setAcknowledgedAnnouncement(annHash)
+                        announcementDismissed = true
+                    },
+                )
                 AppScreen.Profile -> state.user?.let { user ->
                     ProfileScreen(
                         user = user,
@@ -205,6 +322,8 @@ class MainActivity : FragmentActivity() {
                         supportEmail = supportEmail,
                         supportPhone = supportPhone,
                         privacyPolicyUrl = privacyUrl,
+                        chatUnread = state.chatUnread,
+                        onOpenChat = { openChatRequest.value = true },
                         onBack = { showProfile = false },
                         onLogout = {
                             showProfile = false
@@ -227,9 +346,14 @@ class MainActivity : FragmentActivity() {
                         message = state.message,
                         onMessageShown = { vm.clearMessage() },
                         onOpenUrl = { item ->
-                            startActivity(WebViewActivity.intent(this, item.url, item.title))
+                            startActivity(WebViewActivity.intent(this, item.url, item.title, notifyToken = item.notifyToken))
                         },
                         onOpenProfile = { showProfile = true },
+                        chatUnread = state.chatUnread,
+                        onOpenChat = { openChatRequest.value = true },
+                        canManageLinks = user.canManageLinks,
+                        onAddLink = { title, url, desc -> vm.addLink(title, url, desc) },
+                        onRemoveLink = { id -> vm.removeLink(id) },
                         onRefresh = {
                             vm.refresh()
                             // Collect reminders alongside the links refresh.
@@ -277,5 +401,13 @@ class MainActivity : FragmentActivity() {
             ) == PackageManager.PERMISSION_GRANTED
             if (!granted) launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+
+    companion object {
+        /** Intent extra: when true, MainActivity opens the Profile screen (used by the WebView bubble). */
+        const val EXTRA_OPEN_PROFILE = "extra_open_profile"
+
+        /** Intent extra: when true, MainActivity opens the chat screen (used by chat push taps). */
+        const val EXTRA_OPEN_CHAT = "extra_open_chat"
     }
 }

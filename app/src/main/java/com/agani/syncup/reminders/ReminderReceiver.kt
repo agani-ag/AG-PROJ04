@@ -16,16 +16,11 @@ class ReminderReceiver : BroadcastReceiver() {
         val linkUrl = intent.getStringExtra(ReminderContract.EXTRA_LINK_URL) ?: ""
         val linkTitle = intent.getStringExtra(ReminderContract.EXTRA_LINK_TITLE) ?: ""
         val imageUrl = intent.getStringExtra(ReminderContract.EXTRA_IMAGE_URL) ?: ""
-        val recurrence = intent.getStringExtra(ReminderContract.EXTRA_RECURRENCE) ?: "once"
-
-        if (recurrence != "once") {
-            // Recurring: schedule the next occurrence (one-shot alarms don't repeat).
-            val reminder = ReminderStore(context).load().find { it.id == id }
-            if (reminder != null) ReminderScheduler.scheduleNext(context, reminder)
-        } else {
-            // One-time reminder is now complete — drop it from the local cache.
-            ReminderStore(context).remove(id)
-        }
+        // Re-arm the next occurrence (daily / "Repeat N times"); if there isn't one — a one-time
+        // reminder, or a counted reminder that just fired its last time — drop it from the cache.
+        val reminder = ReminderStore(context).load().find { it.id == id }
+        val rescheduled = reminder != null && ReminderScheduler.scheduleNext(context, reminder)
+        if (!rescheduled) ReminderStore(context).remove(id)
 
         // Report "shown" back to the backend (reliable, survives the app being closed).
         ReminderAckWorker.reportFired(context, id)
