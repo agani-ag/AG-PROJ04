@@ -23,6 +23,8 @@ data class UrlItem(
     @SerializedName("can_remove") val canRemove: Boolean = false,
     // Non-empty when the link opts into partner push — injected as window.SyncUp.token.
     @SerializedName("notify_token") val notifyToken: String = "",
+    // Keep the screen awake on this page so its audio keeps playing (radio/music links).
+    @SerializedName("keep_screen_on") val keepScreenOn: Boolean = false,
 )
 
 /** Body for adding a self-managed link. */
@@ -66,6 +68,8 @@ data class ConfigResponse(
     @SerializedName("support_email") val supportEmail: String = "",
     @SerializedName("support_phone") val supportPhone: String = "",
     @SerializedName("privacy_policy_url") val privacyPolicyUrl: String = "",
+    // Global on/off for the in-app chat button (users + support agents).
+    @SerializedName("chat_enabled") val chatEnabled: Boolean = true,
     val announcement: AnnouncementDto? = null,
 )
 
@@ -74,6 +78,14 @@ data class ReminderAckRequest(
     @SerializedName("device_id") val deviceId: String,
     val event: String,
     @SerializedName("reminder_ids") val reminderIds: List<String>,
+)
+
+/** Response of GET /sync — one call that refreshes user details, links, chat badge and config. */
+data class SyncResponse(
+    val user: User,
+    val urls: List<UrlItem> = emptyList(),
+    @SerializedName("chat_unread") val chatUnread: Int = 0,
+    val config: ConfigResponse = ConfigResponse(),
 )
 
 /** Response of GET chat/session — a one-time signed URL the app opens in its WebView. */

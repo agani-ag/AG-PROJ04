@@ -39,8 +39,13 @@ import com.agani.syncup.push.DeviceRegistrar
 import com.agani.syncup.reminders.ReminderContract
 import com.agani.syncup.reminders.ReminderSync
 import com.agani.syncup.reminders.ReminderSyncWorker
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import com.agani.syncup.ui.AccountScreen
 import com.agani.syncup.ui.AnnouncementScreen
+import com.agani.syncup.ui.ConnectivityBanner
 import com.agani.syncup.ui.ForceUpdateScreen
 import com.agani.syncup.ui.LockScreen
 import com.agani.syncup.ui.LoginScreen
@@ -86,40 +91,45 @@ class MainActivity : FragmentActivity() {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
             }
             AgHubTheme(darkTheme = dark, amoled = themeMode == ThemeMode.BLACK) {
-                com.agani.syncup.ui.CrashReportDialog()
-                if (lockedState.value) {
-                    LockScreen(
-                        biometricEnabled = appPrefs.biometricEnabled(),
-                        onCheckPin = { security.checkPin(it) },
-                        onUnlock = { lockedState.value = false },
-                        onBiometric = { promptBiometric { lockedState.value = false } },
-                        onForgotPin = {
-                            // No admin PIN recovery — clear the on-device PIN + session and restart to Login.
-                            security.clearPin()
-                            appPrefs.setBiometricEnabled(false)
-                            com.agani.syncup.data.TokenStore(this).clear()
-                            lockedState.value = false
-                            recreate()
-                        },
-                    )
-                } else {
-                    AppContent(
-                        themeMode = themeMode,
-                        onThemeChange = {
-                            appPrefs.setThemeMode(it)
-                            themeMode = it
-                        },
-                    )
+                Box(Modifier.fillMaxSize()) {
+                    com.agani.syncup.ui.CrashReportDialog()
+                    if (lockedState.value) {
+                        LockScreen(
+                            biometricEnabled = appPrefs.biometricEnabled(),
+                            onCheckPin = { security.checkPin(it) },
+                            onUnlock = { lockedState.value = false },
+                            onBiometric = { promptBiometric { lockedState.value = false } },
+                            onForgotPin = {
+                                // No admin PIN recovery — clear the on-device PIN + session and restart to Login.
+                                security.clearPin()
+                                appPrefs.setBiometricEnabled(false)
+                                com.agani.syncup.data.TokenStore(this@MainActivity).clear()
+                                lockedState.value = false
+                                recreate()
+                            },
+                        )
+                    } else {
+                        AppContent(
+                            themeMode = themeMode,
+                            onThemeChange = {
+                                appPrefs.setThemeMode(it)
+                                themeMode = it
+                            },
+                        )
+                    }
+                    // Live "you're offline" strip across all app screens.
+                    ConnectivityBanner(Modifier.align(Alignment.BottomCenter))
                 }
             }
         }
     }
 
     override fun onStart() {
-        super.onStart()
-        // Re-lock only if the whole app was backgrounded (not on internal navigation).
-        if (AppLock.lockPending) {
-            AppLock.lockPending = false
+        super.onStart()  // runs ProcessLifecycleOwner.onStart → AppLock.onForeground() first
+        // Re-lock only when the app was away longer than the grace (AppLock decides), never on
+        // rotation or a quick round-trip to a picker/camera/external link.
+        if (AppLock.pendingLock) {
+            AppLock.pendingLock = false
             if (security.hasPin()) lockedState.value = true
         }
     }
@@ -164,6 +174,26 @@ class MainActivity : FragmentActivity() {
         var supportEmail by remember { mutableStateOf("") }
         var supportPhone by remember { mutableStateOf("") }
         var privacyUrl by remember { mutableStateOf("") }
+        var chatEnabled by remember { mutableStateOf(true) }
+
+        // Apply a freshly-fetched server config to the screen state (force-update, announcement,
+        // support contacts, privacy URL, chat toggle).
+        fun applyConfig(cfg: com.agani.syncup.data.ConfigResponse) {
+            forceUpdate = cfg.minSupportedVersion > BuildConfig.VERSION_CODE
+            announcement = cfg.announcement
+            supportEmail = cfg.supportEmail
+            supportPhone = cfg.supportPhone
+            privacyUrl = cfg.privacyPolicyUrl
+            chatEnabled = cfg.chatEnabled
+        }
+
+        // One refresh that pulls everything the server can change. Two calls total: a combined
+        // GET /sync (user details + links + chat badge + config) and the separate reminders sync
+        // (it has its own scheduling/ack flow). Used by pull-to-refresh + foreground return.
+        fun runFullRefresh(silent: Boolean) {
+            vm.syncAll(silent = silent) { cfg -> applyConfig(cfg) }                          // GET /sync
+            lifecycleScope.launch(Dispatchers.IO) { ReminderSync.sync(applicationContext) }  // GET /reminders
+        }
 
         LaunchedEffect(Unit) {
             val started = SystemClock.elapsedRealtime()
@@ -175,13 +205,7 @@ class MainActivity : FragmentActivity() {
             booted = true
             // Server config (announcement + force-update + support contacts) — after the splash, non-blocking.
             val cfg = withContext(Dispatchers.IO) { AppBootstrap.fetchConfig() }
-            if (cfg != null) {
-                forceUpdate = cfg.minSupportedVersion > BuildConfig.VERSION_CODE
-                announcement = cfg.announcement
-                supportEmail = cfg.supportEmail
-                supportPhone = cfg.supportPhone
-                privacyUrl = cfg.privacyPolicyUrl
-            }
+            if (cfg != null) applyConfig(cfg)
         }
 
         val state = vm.state
@@ -214,8 +238,7 @@ class MainActivity : FragmentActivity() {
         DisposableEffect(lifecycleOwner) {
             val observer = LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_START && bootedNow && loggedInNow) {
-                    vm.refresh(silent = true)
-                    vm.refreshChatUnread()
+                    runFullRefresh(silent = true)
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
@@ -279,7 +302,8 @@ class MainActivity : FragmentActivity() {
                 val only = state.urls.first()
                 startActivity(
                     WebViewActivity.intent(
-                        this@MainActivity, only.url, only.title, showHome = false, notifyToken = only.notifyToken,
+                        this@MainActivity, only.url, only.title, showHome = false,
+                        notifyToken = only.notifyToken, keepScreenOn = only.keepScreenOn,
                     ),
                 )
             }
@@ -322,6 +346,7 @@ class MainActivity : FragmentActivity() {
                         supportEmail = supportEmail,
                         supportPhone = supportPhone,
                         privacyPolicyUrl = privacyUrl,
+                        chatEnabled = chatEnabled,
                         chatUnread = state.chatUnread,
                         onOpenChat = { openChatRequest.value = true },
                         onBack = { showProfile = false },
@@ -346,18 +371,18 @@ class MainActivity : FragmentActivity() {
                         message = state.message,
                         onMessageShown = { vm.clearMessage() },
                         onOpenUrl = { item ->
-                            startActivity(WebViewActivity.intent(this, item.url, item.title, notifyToken = item.notifyToken))
+                            startActivity(WebViewActivity.intent(this, item.url, item.title, notifyToken = item.notifyToken, keepScreenOn = item.keepScreenOn))
                         },
                         onOpenProfile = { showProfile = true },
+                        chatEnabled = chatEnabled,
                         chatUnread = state.chatUnread,
                         onOpenChat = { openChatRequest.value = true },
                         canManageLinks = user.canManageLinks,
                         onAddLink = { title, url, desc -> vm.addLink(title, url, desc) },
                         onRemoveLink = { id -> vm.removeLink(id) },
                         onRefresh = {
-                            vm.refresh()
-                            // Collect reminders alongside the links refresh.
-                            lifecycleScope.launch(Dispatchers.IO) { ReminderSync.sync(applicationContext) }
+                            // Full refresh: links + reminders + chat + config + user details.
+                            runFullRefresh(silent = false)
                         },
                         refreshing = state.refreshing,
                     )

@@ -22,9 +22,15 @@ class AppPrefs(context: Context) {
     fun setAcknowledgedAnnouncement(hash: String) =
         prefs.edit().putString(KEY_ANNOUNCEMENT_ACK, hash).apply()
 
+    /** Auto-lock grace, in seconds: how long the app can be backgrounded before it re-locks. */
+    fun lockGraceSeconds(): Int = prefs.getInt(KEY_LOCK_GRACE, DEFAULT_LOCK_GRACE)
+    fun setLockGraceSeconds(seconds: Int) = prefs.edit().putInt(KEY_LOCK_GRACE, seconds).apply()
+
     private companion object {
         const val KEY_THEME = "theme_mode"
         const val KEY_BIOMETRIC = "biometric_enabled"
         const val KEY_ANNOUNCEMENT_ACK = "announcement_ack"
+        const val KEY_LOCK_GRACE = "lock_grace_seconds"
+        const val DEFAULT_LOCK_GRACE = 30
     }
 }

@@ -90,7 +90,9 @@ fun LockScreen(
             PinInput(
                 value = pin,
                 isError = error,
-                autoFocus = true,
+                // Don't grab focus (and pop the keyboard) when biometric is the primary method —
+                // the fingerprint/face prompt shows instead. Tapping the field still types a PIN.
+                autoFocus = !biometricEnabled,
                 onValueChange = { v ->
                     error = false
                     pin = v

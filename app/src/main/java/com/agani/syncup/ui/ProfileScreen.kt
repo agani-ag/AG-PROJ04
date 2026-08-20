@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.Fingerprint
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Palette
@@ -72,12 +73,25 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.RadioButton
+import com.agani.syncup.AppLock
 import com.agani.syncup.data.AppPrefs
 import com.agani.syncup.data.SecurityStore
 import com.agani.syncup.data.ThemeMode
 import com.agani.syncup.data.User
 import com.agani.syncup.web.WebViewActivity
 import kotlinx.coroutines.launch
+
+// Auto-lock choices: seconds of background allowed before the app re-locks.
+private val LOCK_GRACE_OPTIONS = listOf(
+    0 to "Immediately",
+    30 to "After 30 seconds",
+    60 to "After 1 minute",
+    300 to "After 5 minutes",
+)
+
+private fun lockGraceLabel(seconds: Int): String =
+    LOCK_GRACE_OPTIONS.firstOrNull { it.first == seconds }?.second ?: "After $seconds seconds"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,6 +103,7 @@ fun ProfileScreen(
     supportEmail: String = "",
     supportPhone: String = "",
     privacyPolicyUrl: String = "",
+    chatEnabled: Boolean = true,
     chatUnread: Int = 0,
     onOpenChat: () -> Unit = {},
     onBack: () -> Unit,
@@ -108,6 +123,8 @@ fun ProfileScreen(
 
     var hasPin by remember { mutableStateOf(security.hasPin()) }
     var biometricEnabled by remember { mutableStateOf(prefs.biometricEnabled()) }
+    var lockGrace by remember { mutableStateOf(prefs.lockGraceSeconds()) }
+    var showLockGrace by remember { mutableStateOf(false) }
     var showChangePassword by remember { mutableStateOf(false) }
     var showSetPin by remember { mutableStateOf(false) }
     var showRemovePin by remember { mutableStateOf(false) }
@@ -216,6 +233,15 @@ fun ProfileScreen(
                         prefs.setBiometricEnabled(it)
                     },
                 )
+                if (hasPin) {
+                    RowDivider()
+                    SettingRow(
+                        icon = Icons.Rounded.Timer,
+                        title = "Auto-lock",
+                        subtitle = lockGraceLabel(lockGrace),
+                        onClick = { showLockGrace = true },
+                    )
+                }
             }
 
             // ---------------- Account ----------------
@@ -260,17 +286,19 @@ fun ProfileScreen(
                         },
                     )
                 }
-                RowDivider()
-                SettingRow(
-                    icon = Icons.Rounded.ChatBubbleOutline,
-                    title = "Chat with admin",
-                    subtitle = if (chatUnread > 0) {
-                        "$chatUnread new message${if (chatUnread == 1) "" else "s"}"
-                    } else {
-                        "Message support directly"
-                    },
-                    onClick = onOpenChat,
-                )
+                if (chatEnabled) {
+                    RowDivider()
+                    SettingRow(
+                        icon = Icons.Rounded.ChatBubbleOutline,
+                        title = "Chat with admin",
+                        subtitle = if (chatUnread > 0) {
+                            "$chatUnread new message${if (chatUnread == 1) "" else "s"}"
+                        } else {
+                            "Message support directly"
+                        },
+                        onClick = onOpenChat,
+                    )
+                }
                 RowDivider()
                 SettingRow(icon = Icons.Rounded.Info, title = "App version", subtitle = appVersion, onClick = null)
             }
@@ -291,6 +319,40 @@ fun ProfileScreen(
 
     if (showChangePassword) {
         ChangePasswordDialog(onDismiss = { showChangePassword = false }, onSubmit = onChangePassword)
+    }
+    if (showLockGrace) {
+        AlertDialog(
+            onDismissRequest = { showLockGrace = false },
+            title = { Text("Auto-lock", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text(
+                        "Re-lock the app after it's been in the background for:",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    LOCK_GRACE_OPTIONS.forEach { (seconds, label) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    lockGrace = seconds
+                                    prefs.setLockGraceSeconds(seconds)
+                                    AppLock.graceMs = seconds * 1000L
+                                    showLockGrace = false
+                                }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = lockGrace == seconds, onClick = null)
+                            Spacer(Modifier.width(10.dp))
+                            Text(label)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showLockGrace = false }) { Text("Close") } },
+        )
     }
     if (showSetPin) {
         SetPinDialog(

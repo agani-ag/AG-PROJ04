@@ -10,10 +10,18 @@ class SyncUpApp : Application() {
         super.onCreate()
         CrashReporter.install(this)
 
-        // Fires only when the WHOLE app goes to the background (not on internal navigation).
+        // Load the user's auto-lock grace preference so the lock decision uses it from the start.
+        AppLock.graceMs = com.agani.syncup.data.AppPrefs(this).lockGraceSeconds() * 1000L
+
+        // Fires only when the WHOLE app goes to the background/foreground (not on internal
+        // navigation). The grace period in AppLock decides whether a return actually re-locks.
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) {
-                AppLock.lockPending = true
+                AppLock.onBackground()
+            }
+
+            override fun onStart(owner: LifecycleOwner) {
+                AppLock.onForeground()
             }
         })
     }

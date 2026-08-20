@@ -102,6 +102,40 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Refresh the signed-in user's details (name/email) — silent; picks up admin edits. */
+    fun refreshUser() {
+        viewModelScope.launch {
+            repository.refreshUser().onSuccess { user ->
+                if (user != state.user) state = state.copy(user = user)
+            }
+        }
+    }
+
+    /**
+     * One combined refresh: user details + links + chat badge (updated in state), and the server
+     * config handed to [onConfig]. Used by pull-to-refresh and foreground return.
+     */
+    fun syncAll(silent: Boolean, onConfig: (com.agani.syncup.data.ConfigResponse) -> Unit) {
+        if (state.refreshing || state.loading) return
+        if (!silent) state = state.copy(refreshing = true, error = null)
+        viewModelScope.launch {
+            repository.sync().fold(
+                onSuccess = { s ->
+                    state = state.copy(
+                        user = s.user, urls = s.urls, chatUnread = s.chatUnread,
+                        refreshing = false, urlsLoaded = true,
+                    )
+                    onConfig(s.config)
+                },
+                onFailure = {
+                    // Keep cached data; just clear the spinner (mark loaded so the UI can proceed).
+                    state = if (silent) state.copy(refreshing = false, urlsLoaded = true)
+                    else state.copy(refreshing = false, urlsLoaded = true, message = it.message ?: "Couldn't refresh")
+                },
+            )
+        }
+    }
+
     /** Fetch the one-time chat URL to open in the WebView. */
     suspend fun chatSessionUrl(): Result<String> = repository.chatSessionUrl()
 

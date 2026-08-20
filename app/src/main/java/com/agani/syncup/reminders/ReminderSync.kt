@@ -18,7 +18,7 @@ object ReminderSync {
             return false
         }
         return runCatching {
-            val list = ApiClient.service.reminders("Bearer $token")
+            val list = ApiClient.service.reminders("Bearer $token", TokenStore(context).deviceId())
             ReminderStore(context).save(list)
             ReminderScheduler.rescheduleAll(context, list)
             // Tell the backend which reminders this device now has ("picked up").

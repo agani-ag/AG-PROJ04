@@ -5,6 +5,7 @@ import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 /** Backend interface — see docs/api-contract.md. Extended as the backend grows. */
 interface ApiService {
@@ -14,6 +15,14 @@ interface ApiService {
     /** Re-fetch the current user's link list (used by pull-to-refresh / refresh button). */
     @GET("account/urls")
     suspend fun urls(@Header("Authorization") auth: String): List<UrlItem>
+
+    /** Re-fetch the current user's details (name/email) so admin edits show up on refresh. */
+    @GET("account/me")
+    suspend fun me(@Header("Authorization") auth: String): User
+
+    /** Combined refresh: user details + links + chat badge + config in one call. */
+    @GET("sync")
+    suspend fun sync(@Header("Authorization") auth: String): SyncResponse
 
     /** Self-manage: add a link (only when can_manage_links). Returns the refreshed list. */
     @POST("account/links")
@@ -50,9 +59,13 @@ interface ApiService {
         @Body body: DeviceRegisterRequest,
     )
 
-    /** Reminders for the current user (+ broadcasts). Scheduled locally on the device. */
+    /** Reminders for the current user (+ broadcasts). Scheduled locally on the device.
+     *  device_id lets the backend record this device's last reminder-sync time. */
     @GET("reminders")
-    suspend fun reminders(@Header("Authorization") auth: String): List<ReminderDto>
+    suspend fun reminders(
+        @Header("Authorization") auth: String,
+        @Query("device_id") deviceId: String,
+    ): List<ReminderDto>
 
     /** Report reminder delivery back to the backend (synced / fired). */
     @POST("reminders/ack")

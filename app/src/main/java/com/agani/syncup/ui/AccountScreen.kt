@@ -101,6 +101,7 @@ fun AccountScreen(
     announcement: AnnouncementDto? = null,
     message: String? = null,
     onMessageShown: () -> Unit = {},
+    chatEnabled: Boolean = true,
     chatUnread: Int = 0,
     onOpenChat: () -> Unit = {},
     canManageLinks: Boolean = false,
@@ -138,12 +139,14 @@ fun AccountScreen(
                     )
                 },
                 actions = {
-                    IconButton(onClick = onOpenChat) {
-                        BadgedBox(
-                            // Simple unread dot — no count.
-                            badge = { if (chatUnread > 0) Badge() },
-                        ) {
-                            Icon(Icons.Rounded.ChatBubbleOutline, contentDescription = "Chat with admin")
+                    if (chatEnabled) {
+                        IconButton(onClick = onOpenChat) {
+                            BadgedBox(
+                                // Simple unread dot — no count.
+                                badge = { if (chatUnread > 0) Badge() },
+                            ) {
+                                Icon(Icons.Rounded.ChatBubbleOutline, contentDescription = "Chat with admin")
+                            }
                         }
                     }
                     IconButton(onClick = onRefresh, enabled = !refreshing) {

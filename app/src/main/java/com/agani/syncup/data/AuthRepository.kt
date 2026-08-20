@@ -61,6 +61,35 @@ class AuthRepository(private val tokenStore: TokenStore) {
         newUrls
     }
 
+    /** Combined refresh (user + links + chat badge + config) in one request. */
+    suspend fun sync(): Result<SyncResponse> = runCatching {
+        val resp = try {
+            ApiClient.service.sync("Bearer ${tokenStore.token().orEmpty()}")
+        } catch (e: java.io.IOException) {
+            throw Exception("No internet connection. Check your network and try again.")
+        }
+        // Persist the fresh user + links so they survive an app restart.
+        restore()?.let { persist(it.copy(user = resp.user, urls = resp.urls)) }
+        resp
+    }
+
+    /** Re-fetch the current user's details (name/email) so admin edits show up on refresh. */
+    suspend fun refreshUser(): Result<User> = runCatching {
+        if (USE_MOCK) {
+            delay(300)
+            restore()?.user ?: throw Exception("No session")
+        } else {
+            val user = try {
+                ApiClient.service.me("Bearer ${tokenStore.token().orEmpty()}")
+            } catch (e: java.io.IOException) {
+                throw Exception("No internet connection. Check your network and try again.")
+            }
+            // Persist so the refreshed details survive an app restart.
+            restore()?.let { persist(it.copy(user = user)) }
+            user
+        }
+    }
+
     /** One-time signed URL for the web chat page (opened in the in-app WebView). */
     suspend fun chatSessionUrl(): Result<String> =
         // No runCatching here: it would also swallow coroutine CancellationException and surface it

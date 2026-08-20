@@ -2,4 +2,6 @@
     <color name="ic_launcher_background">#000000</color>
     <!-- System (Android 12+) splash background — light value; dark value in values-night. -->
     <color name="splash_background">#F6F8FB</color>
+    <!-- Accent tint for the small notification icon (FCM + local). Brand blue. -->
+    <color name="notification_color">#2563EB</color>
 </resources>

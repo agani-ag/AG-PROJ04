@@ -94,6 +94,7 @@ import kotlin.math.abs
 class WebViewActivity : ComponentActivity() {
 
     private lateinit var root: FrameLayout
+    private lateinit var webContainer: LinearLayout
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
 
@@ -142,6 +143,14 @@ class WebViewActivity : ComponentActivity() {
     private var pendingGeoCallback: GeolocationPermissions.Callback? = null
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var cameraPhotoUri: Uri? = null
+
+    // Bottom "you're offline" strip + the callback that drives it while this screen is visible.
+    private var offlineBanner: android.widget.TextView? = null
+    private var netCallback: ConnectivityManager.NetworkCallback? = null
+
+    // Keep-screen-on ("radio/music") links + the dim "Radio mode" overlay.
+    private var keepScreenOn = false
+    private var dimOverlay: View? = null
 
     private val fileChooserLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult ->
@@ -244,7 +253,7 @@ class WebViewActivity : ComponentActivity() {
         }
         notifyToken = intent.getStringExtra(EXTRA_NOTIFY_TOKEN).orEmpty()
 
-        val webContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        webContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val density = resources.displayMetrics.density
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
@@ -262,6 +271,23 @@ class WebViewActivity : ComponentActivity() {
             webView,
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0).apply { weight = 1f },
         )
+        // Offline strip below the page (inside webContainer so it sits above the nav bar inset).
+        offlineBanner = android.widget.TextView(this).apply {
+            text = "You're offline — check your connection"
+            setTextColor(android.graphics.Color.WHITE)
+            setBackgroundColor(0xFFB00020.toInt())
+            gravity = android.view.Gravity.CENTER
+            val padH = (16 * density).toInt()
+            val padV = (10 * density).toInt()
+            setPadding(padH, padV, padH, padV)
+            visibility = View.GONE
+        }
+        webContainer.addView(
+            offlineBanner,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ),
+        )
 
         root = FrameLayout(this)
         root.addView(
@@ -271,18 +297,31 @@ class WebViewActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
             ),
         )
+        // Radio/music links keep the screen awake so their audio keeps playing (screen never
+        // times out → the activity never pauses the WebView). A dim "Radio mode" limits the drain.
+        keepScreenOn = intent.getBooleanExtra(EXTRA_KEEP_SCREEN_ON, false)
+        if (keepScreenOn) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
         setupFloater()
         setupErrorView()
         setContentView(root)
 
-        // Keep the page above the soft keyboard: on edge-to-edge (API 35+) `adjustResize` alone
-        // doesn't shrink the WebView, so pad the bottom by the IME inset height. This lifts any
-        // bottom input (chat composer, web forms) above the keyboard instead of hiding it.
+        // Fit the page inside the system bars. On edge-to-edge (API 35+, forced when targeting
+        // SDK 35+) the WebView otherwise draws BEHIND the status bar (top) and navigation bar
+        // (bottom) — content gets clipped by them on those devices. Pad by the system-bar insets
+        // (top + sides), and by the larger of the nav bar / keyboard on the bottom so a bottom
+        // input (chat composer, web form) still lifts above the keyboard. Insets are 0 on older
+        // phones (opaque bars) and while a fullscreen video hides the bars, so this is a no-op there.
         ViewCompat.setOnApplyWindowInsetsListener(webContainer) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
-            v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, ime)
+            v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime))
             insets
         }
+        // A clean strip behind the (now transparent, edge-to-edge) bars. Starts on the app theme
+        // color; onPageFinished upgrades it to the page's theme-color when the page provides one.
+        applyBarColor(themeFallbackColor())
 
         ensureNotificationChannel()
         requestNotificationPermissionIfNeeded()
@@ -293,6 +332,7 @@ class WebViewActivity : ComponentActivity() {
             override fun handleOnBackPressed() {
                 when {
                     customView != null -> exitFullscreenVideo()
+                    dimOverlay != null -> exitRadioMode()
                     floaterExpanded -> collapseFloater()
                     webView.canGoBack() -> webView.goBack()
                     else -> finish()
@@ -344,11 +384,21 @@ class WebViewActivity : ComponentActivity() {
         actionHome = miniButton(R.drawable.ic_home, "Home") {
             finish() // return to the links list
         }
+        // Only for keep-screen-on (radio/music) pages: dim to a dark, battery-saving "Radio mode".
+        val actionDim = if (keepScreenOn) {
+            miniButton(R.drawable.ic_moon, "Dim screen") {
+                collapseFloater()
+                enterRadioMode()
+            }
+        } else {
+            null
+        }
         // Nearest-to-FAB first. Kiosk (single-link) users have no list, so Home is omitted.
         menuButtons = buildList {
             if (showHome) add(actionHome)
             add(actionSettings)
             add(actionRefresh)
+            actionDim?.let { add(it) }
         }
 
         mainFab = ImageButton(this).apply {
@@ -400,10 +450,10 @@ class WebViewActivity : ComponentActivity() {
             }
         }
 
-        // Initial position: bottom-right, clear of the nav bar.
+        // Initial position: bottom-right, lifted a little higher above the nav bar.
         root.post {
             mainFab.x = root.width - fabPx - marginPx
-            mainFab.y = root.height - fabPx - marginPx * 3
+            mainFab.y = root.height - fabPx - marginPx * 5
         }
     }
 
@@ -657,6 +707,10 @@ class WebViewActivity : ComponentActivity() {
                 view?.evaluateJavascript(NOTIFICATION_SHIM_JS, null)
                 view?.evaluateJavascript(PRINT_SHIM_JS, null)
                 if (notifyToken.isNotBlank()) view?.evaluateJavascript(syncUpJs(), null)
+                // Tint the status bar to the page's theme-color if it sets one, else the app theme.
+                view?.evaluateJavascript(THEME_COLOR_JS) { result ->
+                    applyBarColor(parseCssRgb(result) ?: themeFallbackColor())
+                }
             }
 
             override fun onReceivedError(
@@ -747,22 +801,23 @@ class WebViewActivity : ComponentActivity() {
             }
 
             override fun onPermissionRequest(request: PermissionRequest) {
-                runOnUiThread {
-                    val needed = mutableListOf<String>()
-                    val resources = request.resources
-                    if (resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE) &&
-                        !hasPermission(Manifest.permission.CAMERA)
-                    ) needed.add(Manifest.permission.CAMERA)
-                    if (resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE) &&
-                        !hasPermission(Manifest.permission.RECORD_AUDIO)
-                    ) needed.add(Manifest.permission.RECORD_AUDIO)
+                // Delivered on the UI thread already — grant synchronously here. Deferring the
+                // grant (e.g. via runOnUiThread) lets the page's getUserMedia start before the
+                // grant lands, which some WebView builds report as a NotReadableError.
+                val needed = mutableListOf<String>()
+                val resources = request.resources
+                if (resources.contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE) &&
+                    !hasPermission(Manifest.permission.CAMERA)
+                ) needed.add(Manifest.permission.CAMERA)
+                if (resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE) &&
+                    !hasPermission(Manifest.permission.RECORD_AUDIO)
+                ) needed.add(Manifest.permission.RECORD_AUDIO)
 
-                    if (needed.isEmpty()) {
-                        request.grant(request.resources)
-                    } else {
-                        pendingWebRtcRequest = request
-                        webRtcPermissionLauncher.launch(needed.toTypedArray())
-                    }
+                if (needed.isEmpty()) {
+                    request.grant(request.resources)
+                } else {
+                    pendingWebRtcRequest = request
+                    webRtcPermissionLauncher.launch(needed.toTypedArray())
                 }
             }
 
@@ -1194,6 +1249,13 @@ class WebViewActivity : ComponentActivity() {
             webView.onPause()
             webView.pauseTimers()
         }
+        netCallback?.let {
+            runCatching {
+                (getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager)
+                    ?.unregisterNetworkCallback(it)
+            }
+        }
+        netCallback = null
         super.onPause()
     }
 
@@ -1202,6 +1264,60 @@ class WebViewActivity : ComponentActivity() {
         if (::webView.isInitialized) {
             webView.onResume()
             webView.resumeTimers()
+        }
+        updateOfflineBanner()
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        netCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) = updateOfflineBanner()
+            override fun onLost(network: android.net.Network) = updateOfflineBanner()
+        }.also { runCatching { cm?.registerDefaultNetworkCallback(it) } }
+    }
+
+    /** Show the bottom strip whenever the device has no internet, hide it otherwise. */
+    private fun updateOfflineBanner() {
+        runOnUiThread {
+            offlineBanner?.visibility = if (isOffline()) View.VISIBLE else View.GONE
+        }
+    }
+
+    /**
+     * "Radio mode": cover the page with an opaque black layer and drop brightness to the minimum,
+     * while the WebView keeps running underneath so its audio keeps playing. On OLED the black
+     * screen draws almost nothing, so playback continues at near-idle power. Tap to exit.
+     */
+    private fun enterRadioMode() {
+        if (dimOverlay != null) return
+        val overlay = FrameLayout(this).apply {
+            setBackgroundColor(android.graphics.Color.BLACK)
+            isClickable = true
+            setOnClickListener { exitRadioMode() }
+        }
+        val hint = android.widget.TextView(this).apply {
+            text = "🎵  Playing — tap to show"
+            setTextColor(0x66FFFFFF)  // very dim white so it barely lights the screen
+            textSize = 15f
+        }
+        overlay.addView(
+            hint,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { gravity = android.view.Gravity.CENTER },
+        )
+        root.addView(
+            overlay,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        dimOverlay = overlay
+        window.attributes = window.attributes.apply { screenBrightness = 0.02f }
+    }
+
+    private fun exitRadioMode() {
+        dimOverlay?.let { root.removeView(it) }
+        dimOverlay = null
+        window.attributes = window.attributes.apply {
+            screenBrightness = android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         }
     }
 
@@ -1264,6 +1380,42 @@ class WebViewActivity : ComponentActivity() {
         }
     }
 
+    /** Paint the system bars this color and flip the bar icons to stay legible on it. */
+    private fun applyBarColor(color: Int) {
+        webContainer.setBackgroundColor(color)  // the strip behind the (edge-to-edge) bars on API 35+
+        // On API ≤34 the bars are opaque and coloured by the window, so set that too. Deprecated
+        // and ignored on API 35+, where the strip above does the job — harmless to set on both.
+        @Suppress("DEPRECATION")
+        run {
+            window.statusBarColor = color
+            window.navigationBarColor = color
+        }
+        // Perceived brightness (ITU-R BT.601). Light background → dark icons, and vice versa.
+        val luminance = (0.299 * android.graphics.Color.red(color) +
+            0.587 * android.graphics.Color.green(color) +
+            0.114 * android.graphics.Color.blue(color)) / 255.0
+        val lightBackground = luminance > 0.5
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.isAppearanceLightStatusBars = lightBackground
+        controller.isAppearanceLightNavigationBars = lightBackground
+    }
+
+    /** App-theme bar color used until (or unless) the page supplies its own theme-color. */
+    private fun themeFallbackColor(): Int {
+        val night = resources.configuration.uiMode and
+            Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+        return if (night) 0xFF0B0F17.toInt() else android.graphics.Color.WHITE
+    }
+
+    /** Parse the "rgb(r, g, b)" / "rgba(...)" that THEME_COLOR_JS returns; null if absent/unparseable. */
+    private fun parseCssRgb(evalResult: String?): Int? {
+        if (evalResult.isNullOrBlank()) return null
+        val match = Regex("""rgba?\((\d+),\s*(\d+),\s*(\d+)""").find(evalResult.trim().trim('"'))
+            ?: return null
+        val (r, g, b) = match.destructured
+        return android.graphics.Color.rgb(r.toInt(), g.toInt(), b.toInt())
+    }
+
     /** Exposes the per-link token to the page as window.SyncUp.token (partner push handshake). */
     private fun syncUpJs(): String {
         val safe = notifyToken.replace("\\", "\\\\").replace("\"", "\\\"")
@@ -1276,7 +1428,28 @@ class WebViewActivity : ComponentActivity() {
         private const val EXTRA_SHOW_HOME = "extra_show_home"
         private const val EXTRA_SHOW_BUBBLE = "extra_show_bubble"
         private const val EXTRA_NOTIFY_TOKEN = "extra_notify_token"
+        private const val EXTRA_KEEP_SCREEN_ON = "extra_keep_screen_on"
         private const val NOTIF_CHANNEL_ID = "web_notifications"
+
+        /**
+         * Reads the page's <meta name="theme-color"> and resolves it (named/hex/rgb/hsl) to a
+         * plain "rgb(r, g, b)" string the app can parse, or "" if the page sets none. Used to tint
+         * the status bar to match the page (falling back to the app theme when empty).
+         */
+        private val THEME_COLOR_JS = """
+            (function () {
+              try {
+                var m = document.querySelector('meta[name="theme-color"]');
+                if (!m || !m.content) return '';
+                var d = document.createElement('div');
+                d.style.color = m.content;
+                document.documentElement.appendChild(d);
+                var c = getComputedStyle(d).color;
+                d.remove();
+                return c || '';
+              } catch (e) { return ''; }
+            })();
+        """.trimIndent()
 
         /**
          * Injected before page scripts run: replaces the (missing) WebView Notification
@@ -1329,6 +1502,7 @@ class WebViewActivity : ComponentActivity() {
             showHome: Boolean = true,
             showBubble: Boolean = true,
             notifyToken: String = "",
+            keepScreenOn: Boolean = false,
         ): Intent =
             Intent(context, WebViewActivity::class.java).apply {
                 putExtra(EXTRA_URL, url)
@@ -1336,6 +1510,7 @@ class WebViewActivity : ComponentActivity() {
                 putExtra(EXTRA_SHOW_HOME, showHome)
                 putExtra(EXTRA_SHOW_BUBBLE, showBubble)
                 putExtra(EXTRA_NOTIFY_TOKEN, notifyToken)
+                putExtra(EXTRA_KEEP_SCREEN_ON, keepScreenOn)
             }
     }
 }
