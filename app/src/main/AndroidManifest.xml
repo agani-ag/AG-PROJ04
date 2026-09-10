@@ -10,9 +10,20 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Required by the WebRTC/getUserMedia audio stack in the WebView to configure the mic
+         (audio mode / echo cancellation). Without it, mic capture fails with NotReadableError.
+         Normal permission — granted at install, no runtime prompt. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Pre-scoped-storage (API ≤28): DownloadManager writing to the public Downloads folder
+         needs this. Not requested on Android 10+ (scoped storage handles it). -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- HIGH-importance notification channels (reminders, chat, push) vibrate by default, but
+         Android silently drops the vibration unless this is declared. Normal permission. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Re-arm reminder alarms after a device reboot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 

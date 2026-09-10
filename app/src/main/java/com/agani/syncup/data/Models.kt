@@ -88,6 +88,30 @@ data class SyncResponse(
     val config: ConfigResponse = ConfigResponse(),
 )
 
+/** A partner verification prompt shown on the phone (GET /action/{id}). */
+data class ActionParams(
+    val code: String? = null,          // type = otp
+    val length: Int? = null,           // type = code
+    val numbers: List<String>? = null, // type = number
+)
+
+data class ActionDto(
+    val id: String = "",
+    val type: String = "",             // otp | code | number
+    val title: String = "",
+    val message: String = "",
+    val params: ActionParams = ActionParams(),
+    val status: String = "pending",
+)
+
+data class ActionEnvelope(val action: ActionDto? = null)
+
+/** Body for POST /action/{id}/respond — the code entered or number selected. */
+data class ActionRespondRequest(val value: String)
+
+/** Minimal success response for endpoints that just acknowledge. */
+data class SimpleOk(val success: Boolean = false)
+
 /** Response of GET chat/session — a one-time signed URL the app opens in its WebView. */
 data class ChatSessionResponse(val url: String = "")
 

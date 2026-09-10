@@ -74,6 +74,18 @@ interface ApiService {
         @Body body: ReminderAckRequest,
     )
 
+    /** Fetch a partner verification prompt to render on the phone. */
+    @GET("action/{id}")
+    suspend fun getAction(@Header("Authorization") auth: String, @Path("id") id: String): ActionEnvelope
+
+    /** Submit the user's response (entered code / selected number) to a verification prompt. */
+    @POST("action/{id}/respond")
+    suspend fun respondAction(
+        @Header("Authorization") auth: String,
+        @Path("id") id: String,
+        @Body body: ActionRespondRequest,
+    ): SimpleOk
+
     /** Mint a one-time signed URL for the web chat page (opened in the WebView). */
     @GET("chat/session")
     suspend fun chatSession(@Header("Authorization") auth: String): ChatSessionResponse

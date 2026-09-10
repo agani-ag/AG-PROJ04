@@ -90,6 +90,30 @@ class AuthRepository(private val tokenStore: TokenStore) {
         }
     }
 
+    /** Fetch a partner verification prompt (OTP / code / number) by id.
+     *  No runCatching — it would also swallow the coroutine CancellationException and surface it
+     *  as a bogus "coroutine scope left the composition" error. Catch only real failures. */
+    suspend fun fetchAction(id: String): Result<ActionDto> = try {
+        val resp = ApiClient.service.getAction("Bearer ${tokenStore.token().orEmpty()}", id)
+        Result.success(resp.action ?: throw Exception("This verification is no longer available."))
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    /** Submit the user's response to a verification prompt. */
+    suspend fun respondAction(id: String, value: String): Result<Unit> = try {
+        ApiClient.service.respondAction(
+            "Bearer ${tokenStore.token().orEmpty()}", id, ActionRespondRequest(value),
+        )
+        Result.success(Unit)
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
     /** One-time signed URL for the web chat page (opened in the in-app WebView). */
     suspend fun chatSessionUrl(): Result<String> =
         // No runCatching here: it would also swallow coroutine CancellationException and surface it

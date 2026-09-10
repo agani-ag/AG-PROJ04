@@ -203,6 +203,16 @@ class WebViewActivity : ComponentActivity() {
             }
         }
 
+    // Pre-scoped-storage (API ≤28) downloads need WRITE_EXTERNAL_STORAGE; run the queued download
+    // once the user grants it.
+    private var pendingDownload: (() -> Unit)? = null
+    private val storagePermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            val action = pendingDownload
+            pendingDownload = null
+            if (granted) action?.invoke() else toast("Storage permission is needed to download files")
+        }
+
     private val geoPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
@@ -859,15 +869,29 @@ class WebViewActivity : ComponentActivity() {
         }
 
         webView.setDownloadListener { downloadUrl, userAgent, contentDisposition, mimeType, _ ->
-            val fileName = URLUtil.guessFileName(downloadUrl, contentDisposition, mimeType)
-            val request = DownloadManager.Request(Uri.parse(downloadUrl)).apply {
-                setMimeType(mimeType)
-                addRequestHeader("User-Agent", userAgent)
-                setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+            val enqueue = {
+                val fileName = URLUtil.guessFileName(downloadUrl, contentDisposition, mimeType)
+                val request = DownloadManager.Request(Uri.parse(downloadUrl)).apply {
+                    setMimeType(mimeType)
+                    addRequestHeader("User-Agent", userAgent)
+                    // Forward the WebView's session cookies so downloads behind a login work.
+                    CookieManager.getInstance().getCookie(downloadUrl)
+                        ?.takeIf { it.isNotEmpty() }?.let { addRequestHeader("Cookie", it) }
+                    setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+                }
+                (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+                Toast.makeText(this, "Downloading …", Toast.LENGTH_SHORT).show()
             }
-            (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
-            Toast.makeText(this, "Downloading …", Toast.LENGTH_SHORT).show()
+            // On API ≤28, writing to the public Downloads dir needs the storage permission first.
+            if (android.os.Build.VERSION.SDK_INT <= android.os.Build.VERSION_CODES.P &&
+                !hasPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            ) {
+                pendingDownload = enqueue
+                storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            } else {
+                enqueue()
+            }
         }
     }
 

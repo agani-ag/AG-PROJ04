@@ -139,6 +139,10 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
     /** Fetch the one-time chat URL to open in the WebView. */
     suspend fun chatSessionUrl(): Result<String> = repository.chatSessionUrl()
 
+    /** Partner verification prompt: fetch the prompt / submit the user's response. */
+    suspend fun fetchAction(id: String) = repository.fetchAction(id)
+    suspend fun respondAction(id: String, value: String) = repository.respondAction(id, value)
+
     /** Self-manage: add a link, then update the list. */
     suspend fun addLink(title: String, url: String, description: String): Result<Unit> {
         val result = repository.addLink(title, url, description)

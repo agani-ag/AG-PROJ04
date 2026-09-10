@@ -77,6 +77,9 @@ class MainActivity : FragmentActivity() {
     // Set when a chat entry point (button / bubble / push tap) asks us to open the chat screen.
     private val openChatRequest = mutableStateOf(false)
 
+    // Id of a partner verification prompt to open (from an action push tap).
+    private val pendingActionId = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lockedState.value = security.hasPin() // lock on cold start if a PIN is set
@@ -91,6 +94,25 @@ class MainActivity : FragmentActivity() {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
             }
             AgHubTheme(darkTheme = dark, amoled = themeMode == ThemeMode.BLACK) {
+                // Verification prompts (OTP / code / number) are handled at the top level so they
+                // can appear ON TOP of the lock screen — the app PIN is skipped for these only,
+                // and the app stays locked underneath once the prompt is closed.
+                val actionVm: AuthViewModel = viewModel()
+                var activeAction by remember { mutableStateOf<com.agani.syncup.data.ActionDto?>(null) }
+                LaunchedEffect(pendingActionId.value, actionVm.state.isLoggedIn) {
+                    val aid = pendingActionId.value
+                    if (aid != null && actionVm.state.isLoggedIn) {
+                        val result = actionVm.fetchAction(aid)
+                        result.onSuccess { activeAction = it }
+                            .onFailure {
+                                android.widget.Toast.makeText(
+                                    this@MainActivity, it.message ?: "This verification is no longer available.",
+                                    android.widget.Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        pendingActionId.value = null
+                    }
+                }
                 Box(Modifier.fillMaxSize()) {
                     com.agani.syncup.ui.CrashReportDialog()
                     if (lockedState.value) {
@@ -119,6 +141,16 @@ class MainActivity : FragmentActivity() {
                     }
                     // Live "you're offline" strip across all app screens.
                     ConnectivityBanner(Modifier.align(Alignment.BottomCenter))
+
+                    // Verification prompt — drawn last so it overlays everything, including the
+                    // lock screen (so the user isn't blocked by the app PIN for a time-sensitive code).
+                    activeAction?.let { act ->
+                        com.agani.syncup.ui.ActionScreen(
+                            action = act,
+                            onSubmit = { value -> actionVm.respondAction(act.id, value) },
+                            onClose = { activeAction = null },
+                        )
+                    }
                 }
             }
         }
@@ -160,6 +192,16 @@ class MainActivity : FragmentActivity() {
             openChatRequest.value = true
             intent.removeExtra(EXTRA_OPEN_CHAT)
             intent.removeExtra("type")
+        }
+        // A verification prompt: our foreground extra, or the system-tray data payload when the
+        // app was backgrounded (type=action + action_id).
+        val actionId = intent?.getStringExtra(EXTRA_ACTION_ID)
+            ?: intent?.takeIf { it.getStringExtra("type") == "action" }?.getStringExtra("action_id")
+        if (!actionId.isNullOrBlank()) {
+            pendingActionId.value = actionId
+            intent?.removeExtra(EXTRA_ACTION_ID)
+            intent?.removeExtra("type")
+            intent?.removeExtra("action_id")
         }
     }
 
@@ -389,6 +431,7 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
+
     }
 
     private fun promptBiometric(onSuccess: () -> Unit) {
@@ -434,5 +477,8 @@ class MainActivity : FragmentActivity() {
 
         /** Intent extra: when true, MainActivity opens the chat screen (used by chat push taps). */
         const val EXTRA_OPEN_CHAT = "extra_open_chat"
+
+        /** Intent extra: id of a partner verification prompt to open (used by action push taps). */
+        const val EXTRA_ACTION_ID = "extra_action_id"
     }
 }
