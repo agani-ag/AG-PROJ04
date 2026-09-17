@@ -1,0 +1,96 @@
+package com.agani.syncup.data
+
+import retrofit2.http.Body
+import retrofit2.http.GET
+import retrofit2.http.Header
+import retrofit2.http.POST
+import retrofit2.http.Path
+import retrofit2.http.Query
+
+/** Backend interface — see docs/api-contract.md. Extended as the backend grows. */
+interface ApiService {
+    @POST("auth/login")
+    suspend fun login(@Body body: LoginRequest): LoginResponse
+
+    /** Re-fetch the current user's link list (used by pull-to-refresh / refresh button). */
+    @GET("account/urls")
+    suspend fun urls(@Header("Authorization") auth: String): List<UrlItem>
+
+    /** Re-fetch the current user's details (name/email) so admin edits show up on refresh. */
+    @GET("account/me")
+    suspend fun me(@Header("Authorization") auth: String): User
+
+    /** Combined refresh: user details + links + chat badge + config in one call. */
+    @GET("sync")
+    suspend fun sync(@Header("Authorization") auth: String): SyncResponse
+
+    /** Self-manage: add a link (only when can_manage_links). Returns the refreshed list. */
+    @POST("account/links")
+    suspend fun addLink(
+        @Header("Authorization") auth: String,
+        @Body body: AddLinkRequest,
+    ): List<UrlItem>
+
+    /** Self-manage: remove a user-added link. Returns the refreshed list. */
+    @POST("account/links/{id}/delete")
+    suspend fun removeLink(
+        @Header("Authorization") auth: String,
+        @Path("id") id: String,
+    ): List<UrlItem>
+
+    @POST("account/change-password")
+    suspend fun changePassword(
+        @Header("Authorization") auth: String,
+        @Body body: ChangePasswordRequest,
+    )
+
+    /** User-initiated account deletion (backend deactivates the account + revokes tokens). */
+    @POST("account/delete")
+    suspend fun deleteAccount(@Header("Authorization") auth: String)
+
+    /** Server-driven config: version gate, announcement, support email. Unauthenticated. */
+    @GET("config")
+    suspend fun config(): ConfigResponse
+
+    /** Register this device's FCM token for push. */
+    @POST("devices/register")
+    suspend fun deviceRegister(
+        @Header("Authorization") auth: String,
+        @Body body: DeviceRegisterRequest,
+    )
+
+    /** Reminders for the current user (+ broadcasts). Scheduled locally on the device.
+     *  device_id lets the backend record this device's last reminder-sync time. */
+    @GET("reminders")
+    suspend fun reminders(
+        @Header("Authorization") auth: String,
+        @Query("device_id") deviceId: String,
+    ): List<ReminderDto>
+
+    /** Report reminder delivery back to the backend (synced / fired). */
+    @POST("reminders/ack")
+    suspend fun ackReminders(
+        @Header("Authorization") auth: String,
+        @Body body: ReminderAckRequest,
+    )
+
+    /** Fetch a partner verification prompt to render on the phone. */
+    @GET("action/{id}")
+    suspend fun getAction(@Header("Authorization") auth: String, @Path("id") id: String): ActionEnvelope
+
+    /** Submit the user's response (entered code / selected number) to a verification prompt. */
+    @POST("action/{id}/respond")
+    suspend fun respondAction(
+        @Header("Authorization") auth: String,
+        @Path("id") id: String,
+        @Body body: ActionRespondRequest,
+    ): SimpleOk
+
+    /** Mint a one-time signed URL for the web chat page (opened in the WebView). */
+    @GET("chat/session")
+    suspend fun chatSession(@Header("Authorization") auth: String): ChatSessionResponse
+
+    /** Unread admin-message count for the chat button badge. */
+    @GET("chat/unread")
+    suspend fun chatUnread(@Header("Authorization") auth: String): ChatUnreadResponse
+}

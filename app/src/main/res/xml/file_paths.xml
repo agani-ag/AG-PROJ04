@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="uploads" path="." />
+    <external-cache-path name="ext_uploads" path="." />
+    <files-path name="app_files" path="." />
+</paths>

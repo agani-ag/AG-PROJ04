@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Cleartext (http://) is allowed so the in-app WebView can browse plain-http pages like a
+         normal browser. https pages stay protected from insecure sub-resources by the WebView's
+         mixedContentMode = MIXED_CONTENT_NEVER_ALLOW (see WebViewActivity.configureWebView). -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
