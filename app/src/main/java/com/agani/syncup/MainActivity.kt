@@ -149,6 +149,10 @@ class MainActivity : FragmentActivity() {
                             action = act,
                             onSubmit = { value -> actionVm.respondAction(act.id, value) },
                             onClose = { activeAction = null },
+                            // A notice's optional CTA opens in the in-app browser.
+                            onOpenLink = { url ->
+                                startActivity(WebViewActivity.intent(this@MainActivity, url, act.title))
+                            },
                         )
                     }
                 }

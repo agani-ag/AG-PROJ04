@@ -93,11 +93,16 @@ data class ActionParams(
     val code: String? = null,          // type = otp
     val length: Int? = null,           // type = code
     val numbers: List<String>? = null, // type = number
+    val body: String? = null,                              // type = notice — full text to read
+    @SerializedName("cta_url") val ctaUrl: String? = null, // type = notice — optional button link
+    @SerializedName("cta_label") val ctaLabel: String? = null,
+    @SerializedName("approve_label") val approveLabel: String? = null, // type = approve
+    @SerializedName("reject_label") val rejectLabel: String? = null,
 )
 
 data class ActionDto(
     val id: String = "",
-    val type: String = "",             // otp | code | number
+    val type: String = "",             // otp | code | number | notice | approve
     val title: String = "",
     val message: String = "",
     val params: ActionParams = ActionParams(),

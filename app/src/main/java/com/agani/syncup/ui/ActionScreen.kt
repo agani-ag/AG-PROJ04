@@ -10,11 +10,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -47,9 +50,9 @@ import com.agani.syncup.data.ActionDto
 import kotlinx.coroutines.launch
 
 /**
- * Full-screen partner verification prompt (OTP shown / code entered / number selected).
- * Push-only and one-time — closing or completing dismisses it; if the user missed the push,
- * the partner simply re-requests.
+ * Full-screen partner verification prompt (OTP shown / code entered / number selected / notice
+ * read + acknowledged). Push-only and one-time — closing or completing dismisses it; if the user
+ * missed the push, the partner simply re-requests.
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -57,6 +60,7 @@ fun ActionScreen(
     action: ActionDto,
     onSubmit: suspend (value: String) -> Result<Unit>,
     onClose: () -> Unit,
+    onOpenLink: (String) -> Unit = {},
 ) {
     var submitting by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf(false) }
@@ -79,6 +83,20 @@ fun ActionScreen(
     }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
+        // A "notice" (info + acknowledge) gets its own top-aligned, scrollable layout — the user
+        // must read to the bottom before the Acknowledge button enables.
+        if (action.type == "notice" && !done) {
+            NoticeContent(
+                action = action,
+                padding = padding,
+                submitting = submitting,
+                error = error,
+                onOpenLink = onOpenLink,
+                onAcknowledge = { submit("") },
+                onClose = onClose,
+            )
+            return@Scaffold
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -197,6 +215,25 @@ fun ActionScreen(
                     }
                 }
 
+                action.type == "approve" -> {
+                    Button(
+                        onClick = { submit("approved") },
+                        enabled = !submitting,
+                        modifier = Modifier.fillMaxWidth().widthIn(max = 320.dp),
+                    ) { Text(action.params.approveLabel?.ifBlank { "Approve" } ?: "Approve") }
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = { submit("rejected") },
+                        enabled = !submitting,
+                        modifier = Modifier.fillMaxWidth().widthIn(max = 320.dp),
+                    ) {
+                        Text(
+                            action.params.rejectLabel?.ifBlank { "Reject" } ?: "Reject",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+
                 else -> {
                     Text("Unsupported verification.", color = MaterialTheme.colorScheme.error)
                 }
@@ -214,6 +251,119 @@ fun ActionScreen(
                 Spacer(Modifier.height(10.dp))
                 TextButton(onClick = onClose) { Text("Cancel", color = Color.Gray) }
             }
+        }
+    }
+}
+
+/**
+ * "Info + acknowledge" notice — a scrollable body the user must read to the bottom, an optional
+ * CTA button that opens a link in the in-app browser, then an "I Acknowledge" button that stays
+ * disabled until the body has been scrolled through.
+ */
+@Composable
+private fun NoticeContent(
+    action: ActionDto,
+    padding: androidx.compose.foundation.layout.PaddingValues,
+    submitting: Boolean,
+    error: String?,
+    onOpenLink: (String) -> Unit,
+    onAcknowledge: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val scroll = rememberScrollState()
+    // A short notice fits without overflowing (maxValue == 0) — we present it as a compact,
+    // centered card and enable Acknowledge right away. A long one becomes a top-aligned scroll
+    // and Acknowledge stays disabled until the body is scrolled to the end.
+    val scrollable = scroll.maxValue > 0
+    val atBottom = !scrollable || scroll.value >= scroll.maxValue - 4
+    val bodyAlign = if (scrollable) TextAlign.Start else TextAlign.Center
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding)
+            .padding(horizontal = 24.dp, vertical = 20.dp),
+    ) {
+        // Body area — vertically centered when short (feels like a notification), scrollable when long.
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(scroll),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = if (scrollable) Arrangement.Top else Arrangement.Center,
+        ) {
+            Icon(
+                Icons.Rounded.Info,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(if (scrollable) 40.dp else 52.dp),
+            )
+            Spacer(Modifier.height(16.dp))
+            if (action.title.isNotBlank()) {
+                Text(
+                    action.title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(10.dp))
+            }
+            Text(
+                action.params.body.orEmpty(),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = bodyAlign,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (action.message.isNotBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    action.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = bodyAlign,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            val cta = action.params.ctaUrl
+            if (!cta.isNullOrBlank()) {
+                Spacer(Modifier.height(20.dp))
+                OutlinedButton(onClick = { onOpenLink(cta) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(action.params.ctaLabel?.ifBlank { "View details" } ?: "View details")
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        if (scrollable && !atBottom) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Scroll down to read it all before you can acknowledge",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (error != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                error,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        Button(
+            onClick = onAcknowledge,
+            enabled = atBottom && !submitting,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(if (submitting) "…" else "I Acknowledge") }
+        TextButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
+            Text("Close", color = Color.Gray)
         }
     }
 }
