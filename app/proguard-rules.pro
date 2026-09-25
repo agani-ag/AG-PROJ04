@@ -23,6 +23,10 @@
 -keep,allowobfuscation,allowshrinking interface retrofit2.Call
 -keep,allowobfuscation,allowshrinking class retrofit2.Response
 
+# ---- Media3 radio player (service is manifest-kept; keep our package + silence lib warnings) ----
+-keep class com.agani.syncup.radio.** { *; }
+-dontwarn androidx.media3.**
+
 # ---- Tink / androidx.security-crypto (EncryptedSharedPreferences) ----
 # Compile-only annotations not present at runtime — safe to ignore.
 -dontwarn com.google.errorprone.annotations.**

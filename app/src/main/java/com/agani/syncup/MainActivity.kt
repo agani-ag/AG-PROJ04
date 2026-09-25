@@ -43,23 +43,30 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import com.agani.syncup.ui.AccountScreen
 import com.agani.syncup.ui.AnnouncementScreen
 import com.agani.syncup.ui.ConnectivityBanner
 import com.agani.syncup.ui.ForceUpdateScreen
 import com.agani.syncup.ui.LockScreen
-import com.agani.syncup.ui.LoginScreen
 import com.agani.syncup.ui.ProfileScreen
 import com.agani.syncup.ui.SplashScreen
 import com.agani.syncup.ui.theme.AgHubTheme
 import com.agani.syncup.web.WebViewActivity
+import com.agani.syncup.browser.BrowserAccount
+import com.agani.syncup.browser.BrowserActions
+import com.agani.syncup.browser.BrowserDb
+import com.agani.syncup.browser.BrowserScreen
+import com.agani.syncup.browser.LibraryPage
+import com.agani.syncup.browser.LibraryScreen
+import com.agani.syncup.browser.Section
+import com.agani.syncup.browser.TabManager
+import com.agani.syncup.browser.WebPlatform
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-private enum class AppScreen { Splash, ForceUpdate, Login, Announcement, Account, Profile }
+private enum class AppScreen { Splash, ForceUpdate, Announcement, Browser, Profile, Radio, Library }
 
 class MainActivity : FragmentActivity() {
 
@@ -67,15 +74,21 @@ class MainActivity : FragmentActivity() {
     private val appPrefs by lazy { AppPrefs(this) }
     private val lockedState = mutableStateOf(false)
 
+    // The browser: web-platform bridge (registers result launchers → must be a property
+    // initializer), on-device history/bookmarks/downloads, and the tabs of all three sections.
+    private val webPlatform = WebPlatform(this)
+    private val browserDb by lazy { BrowserDb(this) }
+    private lateinit var tabManager: TabManager
+
     // A link a notification/reminder tap wants opened — honored once unlocked & logged in.
     private data class PendingLink(val url: String, val title: String)
     private val pendingLink = mutableStateOf<PendingLink?>(null)
 
-    // Set when the WebView's floating "Settings" action asks us to open the Profile screen.
-    private val openProfileRequest = mutableStateOf(false)
-
     // Set when a chat entry point (button / bubble / push tap) asks us to open the chat screen.
     private val openChatRequest = mutableStateOf(false)
+
+    // Set when the media notification is tapped — open the Radio player.
+    private val openRadioRequest = mutableStateOf(false)
 
     // Id of a partner verification prompt to open (from an action push tap).
     private val pendingActionId = mutableStateOf<String?>(null)
@@ -83,6 +96,8 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lockedState.value = security.hasPin() // lock on cold start if a PIN is set
+        com.agani.syncup.browser.BrowserSettings.init(this)
+        tabManager = TabManager(this, webPlatform, browserDb).also { it.restore() }
         readDeepLink(intent)
         ReminderSyncWorker.schedulePeriodic(this) // daily safety-net reminder sync
 
@@ -114,7 +129,10 @@ class MainActivity : FragmentActivity() {
                     }
                 }
                 Box(Modifier.fillMaxSize()) {
-                    com.agani.syncup.ui.CrashReportDialog()
+                    // Crash trace is always saved silently; only devs see the raw-trace dialog.
+                    if (com.agani.syncup.BuildConfig.DEBUG) {
+                        com.agani.syncup.ui.CrashReportDialog()
+                    }
                     if (lockedState.value) {
                         LockScreen(
                             biometricEnabled = appPrefs.biometricEnabled(),
@@ -126,6 +144,7 @@ class MainActivity : FragmentActivity() {
                                 security.clearPin()
                                 appPrefs.setBiometricEnabled(false)
                                 com.agani.syncup.data.TokenStore(this@MainActivity).clear()
+                                tabManager.wipeWork()
                                 lockedState.value = false
                                 recreate()
                             },
@@ -170,6 +189,21 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    override fun onPause() {
+        tabManager.onPause()
+        super.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        tabManager.onResume()
+    }
+
+    override fun onDestroy() {
+        tabManager.destroyAll()
+        super.onDestroy()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -185,9 +219,9 @@ class MainActivity : FragmentActivity() {
             intent.removeExtra(ReminderContract.EXTRA_LINK_URL)
             intent.removeExtra(ReminderContract.EXTRA_LINK_TITLE)
         }
-        if (intent?.getBooleanExtra(EXTRA_OPEN_PROFILE, false) == true) {
-            openProfileRequest.value = true
-            intent.removeExtra(EXTRA_OPEN_PROFILE)
+        if (intent?.getBooleanExtra(EXTRA_OPEN_RADIO, false) == true) {
+            openRadioRequest.value = true
+            intent.removeExtra(EXTRA_OPEN_RADIO)
         }
         // EXTRA_OPEN_CHAT = our own foreground path (SyncUpMessagingService / bubble).
         // "type" == "chat" = the FCM data payload delivered by the system tray when the app was
@@ -216,11 +250,15 @@ class MainActivity : FragmentActivity() {
         var booted by remember { mutableStateOf(false) }
         var forceUpdate by remember { mutableStateOf(false) }
         var showProfile by remember { mutableStateOf(false) }
+        var showRadio by remember { mutableStateOf(false) }
+        var showLogin by remember { mutableStateOf(false) }
+        var libraryPage by remember { mutableStateOf<LibraryPage?>(null) }
         var announcement by remember { mutableStateOf<com.agani.syncup.data.AnnouncementDto?>(null) }
         var supportEmail by remember { mutableStateOf("") }
         var supportPhone by remember { mutableStateOf("") }
         var privacyUrl by remember { mutableStateOf("") }
         var chatEnabled by remember { mutableStateOf(true) }
+        var radioEnabled by remember { mutableStateOf(false) }
 
         // Apply a freshly-fetched server config to the screen state (force-update, announcement,
         // support contacts, privacy URL, chat toggle).
@@ -231,6 +269,7 @@ class MainActivity : FragmentActivity() {
             supportPhone = cfg.supportPhone
             privacyUrl = cfg.privacyPolicyUrl
             chatEnabled = cfg.chatEnabled
+            radioEnabled = cfg.radioEnabled
         }
 
         // One refresh that pulls everything the server can change. Two calls total: a combined
@@ -297,17 +336,41 @@ class MainActivity : FragmentActivity() {
             val link = pendingLink.value
             if (link != null && state.isLoggedIn && state.user != null) {
                 pendingLink.value = null
-                startActivity(WebViewActivity.intent(this@MainActivity, link.url, link.title))
+                // A link from a SyncUp push/reminder is a work link: open it as a Work tab (address hidden).
+                showProfile = false
+                showRadio = false
+                libraryPage = null
+                tabManager.openWorkLink(link.title, link.url)
             }
         }
 
-        // The WebView floating "Settings" action asked us to open Profile.
-        LaunchedEffect(openProfileRequest.value, state.isLoggedIn, state.user) {
-            if (openProfileRequest.value && state.isLoggedIn && state.user != null) {
-                openProfileRequest.value = false
-                showProfile = true
+        // Login is optional: close the sign-in screen once it succeeds.
+        LaunchedEffect(state.isLoggedIn) { if (state.isLoggedIn) showLogin = false }
+
+        // Signed out (logout, account deleted, or the session ended server-side) → close every Work
+        // tab and wipe the Work session. Normal browsing is kept.
+        LaunchedEffect(state.isLoggedIn) { if (!state.isLoggedIn) tabManager.wipeWork() }
+
+        // A failed links refresh (e.g. Work pull-to-refresh while offline) — tell the user once.
+        LaunchedEffect(state.message) {
+            state.message?.let {
+                android.widget.Toast.makeText(this@MainActivity, it, android.widget.Toast.LENGTH_SHORT).show()
+                vm.clearMessage()
             }
         }
+
+        // The media-notification tap wants the Radio player.
+        LaunchedEffect(openRadioRequest.value, state.isLoggedIn, state.user) {
+            if (openRadioRequest.value && state.isLoggedIn && state.user != null) {
+                openRadioRequest.value = false
+                showRadio = true
+            }
+        }
+
+        // System back: step Radio -> Profile -> Account instead of exiting the app.
+        androidx.activity.compose.BackHandler(enabled = showRadio) { showRadio = false }
+        androidx.activity.compose.BackHandler(enabled = showProfile && !showRadio) { showProfile = false }
+        androidx.activity.compose.BackHandler(enabled = libraryPage != null && !showProfile) { libraryPage = null }
 
         // A chat entry point (button / bubble / push tap) wants the chat screen: fetch the one-time
         // chat URL and open it in the WebView (no Home, no nested Chat action).
@@ -321,7 +384,7 @@ class MainActivity : FragmentActivity() {
                     if (url.isNotBlank()) {
                         startActivity(
                             WebViewActivity.intent(
-                                this@MainActivity, url, "Chat", showHome = false, showBubble = false,
+                                this@MainActivity, url, "Chat",
                             ),
                         )
                         vm.refreshChatUnread()
@@ -335,45 +398,22 @@ class MainActivity : FragmentActivity() {
             }
         }
 
-        // Single-link (kiosk) mode: a user with exactly one link lands straight in it, skipping
-        // the list. Fires once per launch; Back from the WebView reveals the list as a fallback.
-        // A notification-tap link takes priority over this.
-        var didAutoOpenSingleLink by rememberSaveable { mutableStateOf(false) }
-        LaunchedEffect(booted, state.isLoggedIn, state.user, state.urls, state.urlsLoaded, pendingLink.value, showAnnouncement) {
-            if (booted && state.isLoggedIn && state.user != null && state.urlsLoaded &&
-                pendingLink.value == null && !showAnnouncement &&
-                !didAutoOpenSingleLink && state.urls.size == 1
-            ) {
-                didAutoOpenSingleLink = true
-                val only = state.urls.first()
-                startActivity(
-                    WebViewActivity.intent(
-                        this@MainActivity, only.url, only.title, showHome = false,
-                        notifyToken = only.notifyToken, keepScreenOn = only.keepScreenOn,
-                    ),
-                )
-            }
-        }
-
+        // The app opens straight into the browser. Login is optional and only adds SyncUp features.
+        val loggedIn = state.isLoggedIn && state.user != null
         val screen = when {
             !booted -> AppScreen.Splash
             forceUpdate -> AppScreen.ForceUpdate
-            !state.isLoggedIn || state.user == null -> AppScreen.Login
-            showAnnouncement -> AppScreen.Announcement
+            loggedIn && showAnnouncement -> AppScreen.Announcement
+            showRadio && loggedIn -> AppScreen.Radio
             showProfile -> AppScreen.Profile
-            else -> AppScreen.Account
+            libraryPage != null -> AppScreen.Library
+            else -> AppScreen.Browser
         }
 
         Crossfade(targetState = screen, animationSpec = tween(300), label = "screen") { target ->
             when (target) {
                 AppScreen.Splash -> SplashScreen()
                 AppScreen.ForceUpdate -> ForceUpdateScreen()
-                AppScreen.Login -> LoginScreen(
-                    state = state,
-                    onLogin = { email, password -> vm.login(email, password) },
-                    supportEmail = supportEmail,
-                    supportPhone = supportPhone,
-                )
                 AppScreen.Announcement -> AnnouncementScreen(
                     title = ann?.title ?: "",
                     message = ann?.message ?: "",
@@ -383,9 +423,13 @@ class MainActivity : FragmentActivity() {
                         announcementDismissed = true
                     },
                 )
-                AppScreen.Profile -> state.user?.let { user ->
+                AppScreen.Profile -> run {
                     ProfileScreen(
-                        user = user,
+                        user = state.user,
+                        onSignIn = {
+                            showProfile = false
+                            showLogin = true
+                        },
                         appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
                         themeMode = themeMode,
                         onThemeChange = onThemeChange,
@@ -395,44 +439,83 @@ class MainActivity : FragmentActivity() {
                         chatEnabled = chatEnabled,
                         chatUnread = state.chatUnread,
                         onOpenChat = { openChatRequest.value = true },
+                        radioEnabled = radioEnabled,
+                        onOpenRadio = { showRadio = true },
                         onBack = { showProfile = false },
                         onLogout = {
                             showProfile = false
+                            tabManager.wipeWork()
                             vm.logout()
                         },
                         onChangePassword = { current, new -> vm.changePassword(current, new) },
+                        onClearBrowsingData = { history, cookies, cache -> tabManager.clearBrowsingData(history, cookies, cache) },
                         onDeleteAccount = {
                             val result = vm.deleteAccount()
-                            if (result.isSuccess) showProfile = false
+                            if (result.isSuccess) {
+                                showProfile = false
+                                tabManager.wipeWork()
+                            }
                             result
                         },
                     )
                 }
-                AppScreen.Account -> state.user?.let { user ->
-                    RequestNotificationPermission()
-                    AccountScreen(
-                        user = user,
-                        urls = state.urls,
-                        announcement = announcement,
-                        message = state.message,
-                        onMessageShown = { vm.clearMessage() },
-                        onOpenUrl = { item ->
-                            startActivity(WebViewActivity.intent(this, item.url, item.title, notifyToken = item.notifyToken, keepScreenOn = item.keepScreenOn))
-                        },
-                        onOpenProfile = { showProfile = true },
-                        chatEnabled = chatEnabled,
-                        chatUnread = state.chatUnread,
-                        onOpenChat = { openChatRequest.value = true },
-                        canManageLinks = user.canManageLinks,
-                        onAddLink = { title, url, desc -> vm.addLink(title, url, desc) },
-                        onRemoveLink = { id -> vm.removeLink(id) },
-                        onRefresh = {
-                            // Full refresh: links + reminders + chat + config + user details.
-                            runFullRefresh(silent = false)
-                        },
-                        refreshing = state.refreshing,
+                AppScreen.Radio -> {
+                    RequestNotificationPermission() // media notification (status bar + lock screen)
+                    com.agani.syncup.ui.RadioScreen(
+                        viewModel = vm,
+                        onClose = { showRadio = false },
                     )
                 }
+                AppScreen.Browser -> {
+                    if (loggedIn) RequestNotificationPermission()
+                    BrowserScreen(
+                        tabs = tabManager,
+                        web = webPlatform,
+                        db = browserDb,
+                        account = if (loggedIn) BrowserAccount(
+                            user = state.user,
+                            links = state.urls,
+                            chatEnabled = chatEnabled,
+                            chatUnread = state.chatUnread,
+                            radioEnabled = radioEnabled,
+                            announcement = announcement,
+                            refreshing = state.refreshing,
+                        ) else BrowserAccount(
+                            loginLoading = state.loading,
+                            loginError = state.error,
+                            supportEmail = supportEmail,
+                            supportPhone = supportPhone,
+                        ),
+                        signInVisible = showLogin && !loggedIn,
+                        actions = BrowserActions(
+                            onSignIn = { showLogin = true },
+                            onDismissSignIn = { showLogin = false },
+                            onLogin = { email, password -> vm.login(email.trim(), password) },
+                            onSignOut = {
+                                tabManager.wipeWork()
+                                vm.logout()
+                            },
+                            onOpenSettings = { showProfile = true },
+                            onOpenChat = { openChatRequest.value = true },
+                            onOpenRadio = { showRadio = true },
+                            onOpenLibrary = { libraryPage = it },
+                            onRefreshLinks = { runFullRefresh(silent = false) },
+                            onAddLink = { title, url, desc -> vm.addLink(title, url, desc) },
+                            onRemoveLink = { id -> vm.removeLink(id) },
+                        ),
+                    )
+                }
+                AppScreen.Library -> LibraryScreen(
+                    page = libraryPage ?: LibraryPage.HISTORY,
+                    db = browserDb,
+                    onOpen = { url ->
+                        libraryPage = null
+                        val t = tabManager.activeTab(Section.NORMAL)
+                        if (tabManager.section == Section.NORMAL && t != null && t.isHome) tabManager.load(t, url)
+                        else tabManager.newTab(Section.NORMAL, url)
+                    },
+                    onBack = { libraryPage = null },
+                )
             }
         }
 
@@ -476,11 +559,11 @@ class MainActivity : FragmentActivity() {
     }
 
     companion object {
-        /** Intent extra: when true, MainActivity opens the Profile screen (used by the WebView bubble). */
-        const val EXTRA_OPEN_PROFILE = "extra_open_profile"
-
         /** Intent extra: when true, MainActivity opens the chat screen (used by chat push taps). */
         const val EXTRA_OPEN_CHAT = "extra_open_chat"
+
+        /** Intent extra: when true, MainActivity opens the Radio player (media-notification tap). */
+        const val EXTRA_OPEN_RADIO = "extra_open_radio"
 
         /** Intent extra: id of a partner verification prompt to open (used by action push taps). */
         const val EXTRA_ACTION_ID = "extra_action_id"

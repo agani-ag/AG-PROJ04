@@ -111,5 +111,9 @@ dependencies {
     // for web pages that request geolocation.
     implementation("com.google.android.gms:play-services-location:21.3.0")
 
+    // Media3 (ExoPlayer + MediaSession) — the native Live Radio player (background + lock-screen).
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-session:1.4.1")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

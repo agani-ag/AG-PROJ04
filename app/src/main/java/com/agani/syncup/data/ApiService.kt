@@ -16,9 +16,6 @@ interface ApiService {
     @GET("account/urls")
     suspend fun urls(@Header("Authorization") auth: String): List<UrlItem>
 
-    /** Re-fetch the current user's details (name/email) so admin edits show up on refresh. */
-    @GET("account/me")
-    suspend fun me(@Header("Authorization") auth: String): User
 
     /** Combined refresh: user details + links + chat badge + config in one call. */
     @GET("sync")
@@ -51,6 +48,10 @@ interface ApiService {
     /** Server-driven config: version gate, announcement, support email. Unauthenticated. */
     @GET("config")
     suspend fun config(): ConfigResponse
+
+    /** Live radio channels (empty when the feature is off for this user). */
+    @GET("radio/channels")
+    suspend fun radioChannels(@Header("Authorization") auth: String): RadioChannelsResponse
 
     /** Register this device's FCM token for push. */
     @POST("devices/register")

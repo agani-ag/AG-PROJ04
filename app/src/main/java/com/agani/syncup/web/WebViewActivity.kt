@@ -88,8 +88,8 @@ import kotlin.math.abs
  * Security: HTTPS only, SSL errors are never bypassed. A single narrow JavaScript
  * bridge (title + body) forwards web-page notifications to the Android status bar.
  *
- * A draggable floating button overlays the page; tapping it reveals Home
- * (return to the links list) and Refresh (reload) actions.
+ * A plain full-screen page viewer (no address bar, no floating button) used for SyncUp's own pages
+ * — Chat, the privacy policy and verification-notice links. Regular browsing lives in the browser.
  */
 class WebViewActivity : ComponentActivity() {
 
@@ -97,22 +97,6 @@ class WebViewActivity : ComponentActivity() {
     private lateinit var webContainer: LinearLayout
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
-
-    // Floater views + state
-    private lateinit var mainFab: ImageButton
-    private lateinit var actionHome: ImageButton
-    private lateinit var actionSettings: ImageButton
-    private lateinit var actionRefresh: ImageButton
-    private lateinit var scrim: View
-
-    // Speed-dial buttons currently shown, ordered nearest-to-FAB first.
-    private var menuButtons: List<ImageButton> = emptyList()
-
-    // Single-link (kiosk) mode hides "Home" — there's no list to go back to.
-    private var showHome = true
-
-    // Some pages (e.g. the chat screen) hide the floating bubble entirely.
-    private var showBubble = true
 
     // Signed per-link token exposed to partner pages as window.SyncUp.token (empty if not enabled).
     private var notifyToken = ""
@@ -126,17 +110,6 @@ class WebViewActivity : ComponentActivity() {
     private lateinit var errorView: LinearLayout
     private lateinit var errorMessage: TextView
     private var loadFailed = false
-    private var floaterExpanded = false
-    private var fabPx = 0
-    private var miniPx = 0
-    private var marginPx = 0f
-    private var gapPx = 0f
-    private var touchSlopPx = 0f
-    private var dragDX = 0f
-    private var dragDY = 0f
-    private var downRawX = 0f
-    private var downRawY = 0f
-    private var dragging = false
 
     private var pendingWebRtcRequest: PermissionRequest? = null
     private var pendingGeoOrigin: String? = null
@@ -147,10 +120,6 @@ class WebViewActivity : ComponentActivity() {
     // Bottom "you're offline" strip + the callback that drives it while this screen is visible.
     private var offlineBanner: android.widget.TextView? = null
     private var netCallback: ConnectivityManager.NetworkCallback? = null
-
-    // Keep-screen-on ("radio/music") links + the dim "Radio mode" overlay.
-    private var keepScreenOn = false
-    private var dimOverlay: View? = null
 
     private val fileChooserLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result: ActivityResult ->
@@ -307,13 +276,6 @@ class WebViewActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
             ),
         )
-        // Radio/music links keep the screen awake so their audio keeps playing (screen never
-        // times out → the activity never pauses the WebView). A dim "Radio mode" limits the drain.
-        keepScreenOn = intent.getBooleanExtra(EXTRA_KEEP_SCREEN_ON, false)
-        if (keepScreenOn) {
-            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
-        setupFloater()
         setupErrorView()
         setContentView(root)
 
@@ -342,8 +304,6 @@ class WebViewActivity : ComponentActivity() {
             override fun handleOnBackPressed() {
                 when {
                     customView != null -> exitFullscreenVideo()
-                    dimOverlay != null -> exitRadioMode()
-                    floaterExpanded -> collapseFloater()
                     webView.canGoBack() -> webView.goBack()
                     else -> finish()
                 }
@@ -351,203 +311,6 @@ class WebViewActivity : ComponentActivity() {
         })
     }
 
-    // ---------------------------------------------------------------------
-    // Floating action button (draggable) + speed-dial menu
-    // ---------------------------------------------------------------------
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun setupFloater() {
-        showBubble = intent.getBooleanExtra(EXTRA_SHOW_BUBBLE, true)
-        if (!showBubble) return // e.g. the chat screen — no floating bubble at all
-
-        val d = resources.displayMetrics.density
-        fabPx = (48 * d).toInt()
-        miniPx = (48 * d).toInt()
-        marginPx = 16 * d
-        gapPx = 14 * d
-        touchSlopPx = ViewConfiguration.get(this).scaledTouchSlop.toFloat()
-
-        // Dim layer behind the expanded menu; tap to close.
-        scrim = View(this).apply {
-            setBackgroundColor(0x66000000)
-            visibility = View.GONE
-            setOnClickListener { collapseFloater() }
-        }
-        root.addView(
-            scrim,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-            ),
-        )
-
-        showHome = intent.getBooleanExtra(EXTRA_SHOW_HOME, true)
-
-        actionRefresh = miniButton(R.drawable.ic_refresh, "Refresh") {
-            collapseFloater()
-            webView.reload()
-        }
-        actionSettings = miniButton(R.drawable.ic_settings, "Settings") {
-            collapseFloater()
-            openSettings() // open the Profile / Settings screen (Chat lives inside Profile)
-        }
-        actionHome = miniButton(R.drawable.ic_home, "Home") {
-            finish() // return to the links list
-        }
-        // Only for keep-screen-on (radio/music) pages: dim to a dark, battery-saving "Radio mode".
-        val actionDim = if (keepScreenOn) {
-            miniButton(R.drawable.ic_moon, "Dim screen") {
-                collapseFloater()
-                enterRadioMode()
-            }
-        } else {
-            null
-        }
-        // Nearest-to-FAB first. Kiosk (single-link) users have no list, so Home is omitted.
-        menuButtons = buildList {
-            if (showHome) add(actionHome)
-            add(actionSettings)
-            add(actionRefresh)
-            actionDim?.let { add(it) }
-        }
-
-        mainFab = ImageButton(this).apply {
-            // White, ~75% transparent (alpha 0x40 ≈ 25% opacity) so it stays subtle over the page.
-            background = circle(0x40FFFFFF)
-            setImageResource(R.drawable.ic_more)
-            setColorFilter(0xFF334155.toInt())
-            scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
-            val pad = (13 * d).toInt()
-            setPadding(pad, pad, pad, pad)
-            elevation = 4 * d
-            contentDescription = "Quick actions"
-        }
-        root.addView(mainFab, FrameLayout.LayoutParams(fabPx, fabPx))
-
-        mainFab.setOnTouchListener { v, e ->
-            when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    dragDX = v.x - e.rawX
-                    dragDY = v.y - e.rawY
-                    downRawX = e.rawX
-                    downRawY = e.rawY
-                    dragging = false
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val maxX = (root.width - fabPx) - marginPx
-                    val maxY = (root.height - fabPx) - marginPx
-                    v.x = (e.rawX + dragDX).coerceIn(marginPx, maxX.coerceAtLeast(marginPx))
-                    v.y = (e.rawY + dragDY).coerceIn(marginPx, maxY.coerceAtLeast(marginPx))
-                    if (!dragging &&
-                        (abs(e.rawX - downRawX) > touchSlopPx || abs(e.rawY - downRawY) > touchSlopPx)
-                    ) {
-                        dragging = true
-                        if (floaterExpanded) collapseFloater()
-                    }
-                    true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    if (!dragging) {
-                        v.performClick()
-                        toggleFloater()
-                    } else {
-                        snapToEdge()
-                    }
-                    true
-                }
-                else -> false
-            }
-        }
-
-        // Initial position: bottom-right, lifted a little higher above the nav bar.
-        root.post {
-            mainFab.x = root.width - fabPx - marginPx
-            mainFab.y = root.height - fabPx - marginPx * 5
-        }
-    }
-
-    private fun miniButton(iconRes: Int, desc: String, onClick: () -> Unit): ImageButton {
-        val d = resources.displayMetrics.density
-        val btn = ImageButton(this).apply {
-            background = circle(Color.WHITE)
-            setImageResource(iconRes)
-            setColorFilter(0xFF334155.toInt())
-            scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
-            val pad = (12 * d).toInt()
-            setPadding(pad, pad, pad, pad)
-            elevation = 4 * d
-            visibility = View.GONE
-            contentDescription = desc
-            setOnClickListener { onClick() }
-        }
-        root.addView(btn, FrameLayout.LayoutParams(miniPx, miniPx))
-        return btn
-    }
-
-    private fun circle(color: Int) = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(color)
-    }
-
-    private fun toggleFloater() {
-        if (floaterExpanded) collapseFloater() else expandFloater()
-    }
-
-    private fun expandFloater() {
-        positionMenu()
-        scrim.alpha = 0f
-        scrim.visibility = View.VISIBLE
-        scrim.animate().alpha(1f).setDuration(120).start()
-        menuButtons.forEach {
-            it.alpha = 0f
-            it.visibility = View.VISIBLE
-            it.animate().alpha(1f).setDuration(140).start()
-        }
-        mainFab.setImageResource(R.drawable.ic_close)
-        floaterExpanded = true
-    }
-
-    private fun collapseFloater() {
-        scrim.visibility = View.GONE
-        menuButtons.forEach { it.visibility = View.GONE }
-        mainFab.setImageResource(R.drawable.ic_more)
-        floaterExpanded = false
-    }
-
-    private fun positionMenu() {
-        val cx = mainFab.x + fabPx / 2f
-        val minX = marginPx
-        val maxX = (root.width - miniPx) - marginPx
-        val itemX = (cx - miniPx / 2f).coerceIn(minX, maxX.coerceAtLeast(minX))
-        val openUp = mainFab.y > root.height / 2f
-        menuButtons.forEachIndexed { i, btn ->
-            btn.x = itemX
-            btn.y = if (openUp) {
-                mainFab.y - (gapPx + miniPx) * (i + 1)
-            } else {
-                mainFab.y + fabPx + gapPx + (miniPx + gapPx) * i
-            }
-        }
-    }
-
-    /** Bring the (single-instance) MainActivity forward and ask it to open the Profile screen. */
-    private fun openSettings() {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            putExtra(MainActivity.EXTRA_OPEN_PROFILE, true)
-            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        }
-        startActivity(intent)
-    }
-
-    private fun snapToEdge() {
-        val targetX =
-            if (mainFab.x + fabPx / 2f < root.width / 2f) marginPx
-            else root.width - fabPx - marginPx
-        mainFab.animate().x(targetX).setDuration(180).start()
-    }
-
-    @Suppress("SetJavaScriptEnabled")
     // ---------------------------------------------------------------------
     // Custom offline / error page
     // ---------------------------------------------------------------------
@@ -1304,47 +1067,6 @@ class WebViewActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * "Radio mode": cover the page with an opaque black layer and drop brightness to the minimum,
-     * while the WebView keeps running underneath so its audio keeps playing. On OLED the black
-     * screen draws almost nothing, so playback continues at near-idle power. Tap to exit.
-     */
-    private fun enterRadioMode() {
-        if (dimOverlay != null) return
-        val overlay = FrameLayout(this).apply {
-            setBackgroundColor(android.graphics.Color.BLACK)
-            isClickable = true
-            setOnClickListener { exitRadioMode() }
-        }
-        val hint = android.widget.TextView(this).apply {
-            text = "🎵  Playing — tap to show"
-            setTextColor(0x66FFFFFF)  // very dim white so it barely lights the screen
-            textSize = 15f
-        }
-        overlay.addView(
-            hint,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { gravity = android.view.Gravity.CENTER },
-        )
-        root.addView(
-            overlay,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT,
-            ),
-        )
-        dimOverlay = overlay
-        window.attributes = window.attributes.apply { screenBrightness = 0.02f }
-    }
-
-    private fun exitRadioMode() {
-        dimOverlay?.let { root.removeView(it) }
-        dimOverlay = null
-        window.attributes = window.attributes.apply {
-            screenBrightness = android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-        }
-    }
-
     override fun onDestroy() {
         // Detach and fully tear down the WebView to avoid memory leaks.
         if (::webView.isInitialized) {
@@ -1369,7 +1091,6 @@ class WebViewActivity : ComponentActivity() {
         customViewCallback = callback
         savedOrientation = requestedOrientation
         webView.visibility = View.GONE
-        if (::mainFab.isInitialized) mainFab.visibility = View.GONE
         view.setBackgroundColor(android.graphics.Color.BLACK)
         root.addView(
             view,
@@ -1387,7 +1108,6 @@ class WebViewActivity : ComponentActivity() {
         root.removeView(v)
         customView = null
         webView.visibility = View.VISIBLE
-        if (showBubble && ::mainFab.isInitialized) mainFab.visibility = View.VISIBLE
         setSystemBarsVisible(true)
         requestedOrientation = savedOrientation
         customViewCallback?.onCustomViewHidden()
@@ -1448,11 +1168,7 @@ class WebViewActivity : ComponentActivity() {
 
     companion object {
         private const val EXTRA_URL = "extra_url"
-        private const val EXTRA_TITLE = "extra_title"
-        private const val EXTRA_SHOW_HOME = "extra_show_home"
-        private const val EXTRA_SHOW_BUBBLE = "extra_show_bubble"
         private const val EXTRA_NOTIFY_TOKEN = "extra_notify_token"
-        private const val EXTRA_KEEP_SCREEN_ON = "extra_keep_screen_on"
         private const val NOTIF_CHANNEL_ID = "web_notifications"
 
         /**
@@ -1522,19 +1238,12 @@ class WebViewActivity : ComponentActivity() {
         fun intent(
             context: Context,
             url: String,
-            title: String?,
-            showHome: Boolean = true,
-            showBubble: Boolean = true,
+            @Suppress("UNUSED_PARAMETER") title: String?,  // kept for call-site compatibility; no toolbar shown
             notifyToken: String = "",
-            keepScreenOn: Boolean = false,
         ): Intent =
             Intent(context, WebViewActivity::class.java).apply {
                 putExtra(EXTRA_URL, url)
-                putExtra(EXTRA_TITLE, title)
-                putExtra(EXTRA_SHOW_HOME, showHome)
-                putExtra(EXTRA_SHOW_BUBBLE, showBubble)
                 putExtra(EXTRA_NOTIFY_TOKEN, notifyToken)
-                putExtra(EXTRA_KEEP_SCREEN_ON, keepScreenOn)
             }
     }
 }

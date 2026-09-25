@@ -23,8 +23,6 @@ data class UrlItem(
     @SerializedName("can_remove") val canRemove: Boolean = false,
     // Non-empty when the link opts into partner push — injected as window.SyncUp.token.
     @SerializedName("notify_token") val notifyToken: String = "",
-    // Keep the screen awake on this page so its audio keeps playing (radio/music links).
-    @SerializedName("keep_screen_on") val keepScreenOn: Boolean = false,
 )
 
 /** Body for adding a self-managed link. */
@@ -70,7 +68,23 @@ data class ConfigResponse(
     @SerializedName("privacy_policy_url") val privacyPolicyUrl: String = "",
     // Global on/off for the in-app chat button (users + support agents).
     @SerializedName("chat_enabled") val chatEnabled: Boolean = true,
+    // Radio feature visibility (master switch AND this user's per-user switch).
+    @SerializedName("radio_enabled") val radioEnabled: Boolean = false,
     val announcement: AnnouncementDto? = null,
+)
+
+/** A live radio station (GET /radio/channels). */
+data class RadioChannel(
+    val id: String = "",
+    val name: String = "",
+    @SerializedName("stream_url") val streamUrl: String = "",
+    @SerializedName("now_playing") val nowPlaying: String = "",
+    val listeners: Int = 0,
+)
+
+data class RadioChannelsResponse(
+    val enabled: Boolean = false,
+    val channels: List<RadioChannel> = emptyList(),
 )
 
 /** Delivery receipt the app sends back: event is "synced" (downloaded) or "fired" (shown). */

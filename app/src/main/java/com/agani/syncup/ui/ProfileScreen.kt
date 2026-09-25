@@ -26,9 +26,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.VerticalAlignBottom
+import androidx.compose.material3.Checkbox
+import android.provider.Settings
+import com.agani.syncup.browser.BrowserSettings
+import com.agani.syncup.browser.SearchEngine
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.Fingerprint
@@ -96,7 +107,8 @@ private fun lockGraceLabel(seconds: Int): String =
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
-    user: User,
+    user: User?,
+    onSignIn: () -> Unit = {},
     appVersion: String,
     themeMode: ThemeMode,
     onThemeChange: (ThemeMode) -> Unit,
@@ -106,10 +118,13 @@ fun ProfileScreen(
     chatEnabled: Boolean = true,
     chatUnread: Int = 0,
     onOpenChat: () -> Unit = {},
+    radioEnabled: Boolean = false,
+    onOpenRadio: () -> Unit = {},
     onBack: () -> Unit,
     onLogout: () -> Unit,
     onChangePassword: suspend (current: String, new: String) -> Result<Unit>,
     onDeleteAccount: suspend () -> Result<Unit>,
+    onClearBrowsingData: (history: Boolean, cookies: Boolean, cache: Boolean) -> Unit = { _, _, _ -> },
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -131,12 +146,14 @@ fun ProfileScreen(
     var showHelp by remember { mutableStateOf(false) }
     var showDeleteAccount by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
+    var showEngine by remember { mutableStateOf(false) }
+    var showClearData by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("Profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
+                title = { Text("Settings", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
@@ -158,59 +175,71 @@ fun ProfileScreen(
                 .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.height(12.dp))
-            Box(
-                modifier = Modifier
-                    .size(88.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = user.name.take(1).uppercase(),
-                    style = MaterialTheme.typography.displaySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-            Spacer(Modifier.height(14.dp))
-            Text(user.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-            Text(user.email, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-            // ---------------- Appearance ----------------
-            Spacer(Modifier.height(28.dp))
-            SectionLabel("APPEARANCE")
-            SettingsGroup {
+            Spacer(Modifier.height(6.dp))
+            if (user != null) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 18.dp),
                 ) {
-                    IconTile(Icons.Rounded.Palette)
+                    Box(
+                        modifier = Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(user.name.take(1).uppercase(), fontSize = 18.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold)
+                    }
                     Spacer(Modifier.width(14.dp))
-                    Text("Theme", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                }
-                Box(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp)) {
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        val options = listOf(
-                            ThemeMode.SYSTEM to "System",
-                            ThemeMode.LIGHT to "Light",
-                            ThemeMode.DARK to "Dark",
-                            ThemeMode.BLACK to "Black",
-                        )
-                        options.forEachIndexed { index, (mode, label) ->
-                            SegmentedButton(
-                                selected = themeMode == mode,
-                                onClick = { onThemeChange(mode) },
-                                shape = SegmentedButtonDefaults.itemShape(index, options.size),
-                            ) { Text(label) }
-                        }
+                    Column(Modifier.weight(1f)) {
+                        Text(user.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
+                        Text("Signed in · SyncUp", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+            } else {
+                // Login is optional — the browser works fully without it; signing in adds SyncUp features.
+                SettingsGroup {
+                    Column(Modifier.fillMaxWidth().padding(18.dp)) {
+                        Text("SyncUp account", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Optional. Sign in to get your work links, chat with your admin and listen to Radio.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        Button(onClick = onSignIn, modifier = Modifier.fillMaxWidth()) { Text("Sign in to SyncUp") }
+                    }
+                }
+                Spacer(Modifier.height(20.dp))
+            }
+
+            // ---------------- Browser ----------------
+            SectionLabel("BROWSER")
+            SettingsGroup {
+                SettingRow(icon = Icons.Rounded.Search, title = "Search engine", subtitle = BrowserSettings.searchEngine.label, onClick = { showEngine = true })
+                RowDivider()
+                SettingRow(icon = Icons.Rounded.Home, title = "Home page", subtitle = if (user != null) "New tab (My Links)" else "New tab", onClick = null)
+                RowDivider()
+                SwitchRow(
+                    icon = Icons.Rounded.Block,
+                    title = "Block pop-ups",
+                    subtitle = null,
+                    checked = BrowserSettings.blockPopups,
+                    enabled = true,
+                    onCheckedChange = { BrowserSettings.updateBlockPopups(it) },
+                )
+                RowDivider()
+                SwitchRow(
+                    icon = Icons.Rounded.VerticalAlignBottom,
+                    title = "Address bar at bottom",
+                    subtitle = null,
+                    checked = BrowserSettings.addressBarBottom,
+                    enabled = true,
+                    onCheckedChange = { BrowserSettings.updateAddressBarBottom(it) },
+                )
             }
 
             // ---------------- Security ----------------
             Spacer(Modifier.height(20.dp))
-            SectionLabel("SECURITY")
+            SectionLabel("PRIVACY & SECURITY")
             SettingsGroup {
                 PinLockRow(
                     hasPin = hasPin,
@@ -242,9 +271,53 @@ fun ProfileScreen(
                         onClick = { showLockGrace = true },
                     )
                 }
+                RowDivider()
+                SettingRow(
+                    icon = Icons.Rounded.DeleteSweep,
+                    title = "Clear browsing data",
+                    subtitle = "History, cookies, cache",
+                    onClick = { showClearData = true },
+                )
+                RowDivider()
+                SettingRow(
+                    icon = Icons.Rounded.Tune,
+                    title = "Site settings",
+                    subtitle = "Camera, mic, location, notifications",
+                    onClick = {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")),
+                            )
+                        }
+                    },
+                )
+            }
+
+            // ---------------- Appearance ----------------
+            Spacer(Modifier.height(20.dp))
+            SectionLabel("APPEARANCE")
+            SettingsGroup {
+                Box(Modifier.padding(14.dp)) {
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        val options = listOf(
+                            ThemeMode.SYSTEM to "System",
+                            ThemeMode.LIGHT to "Light",
+                            ThemeMode.DARK to "Dark",
+                            ThemeMode.BLACK to "Black",
+                        )
+                        options.forEachIndexed { index, (mode, label) ->
+                            SegmentedButton(
+                                selected = themeMode == mode,
+                                onClick = { onThemeChange(mode) },
+                                shape = SegmentedButtonDefaults.itemShape(index, options.size),
+                            ) { Text(label) }
+                        }
+                    }
+                }
             }
 
             // ---------------- Account ----------------
+            if (user != null) {
             Spacer(Modifier.height(20.dp))
             SectionLabel("ACCOUNT")
             SettingsGroup {
@@ -256,6 +329,29 @@ fun ProfileScreen(
                     subtitle = "Deactivate your account and sign out",
                     onClick = { showDeleteAccount = true },
                 )
+                if (user != null && chatEnabled) {
+                    RowDivider()
+                    SettingRow(
+                        icon = Icons.Rounded.ChatBubbleOutline,
+                        title = "Chat with admin",
+                        subtitle = if (chatUnread > 0) {
+                            "$chatUnread new message${if (chatUnread == 1) "" else "s"}"
+                        } else {
+                            "Message support directly"
+                        },
+                        onClick = onOpenChat,
+                    )
+                }
+                if (user != null && radioEnabled) {
+                    RowDivider()
+                    SettingRow(
+                        icon = Icons.Rounded.Radio,
+                        title = "Radio",
+                        subtitle = "Listen to live stations",
+                        onClick = onOpenRadio,
+                    )
+                }
+            }
             }
 
             // ---------------- About ----------------
@@ -286,23 +382,11 @@ fun ProfileScreen(
                         },
                     )
                 }
-                if (chatEnabled) {
-                    RowDivider()
-                    SettingRow(
-                        icon = Icons.Rounded.ChatBubbleOutline,
-                        title = "Chat with admin",
-                        subtitle = if (chatUnread > 0) {
-                            "$chatUnread new message${if (chatUnread == 1) "" else "s"}"
-                        } else {
-                            "Message support directly"
-                        },
-                        onClick = onOpenChat,
-                    )
-                }
                 RowDivider()
                 SettingRow(icon = Icons.Rounded.Info, title = "App version", subtitle = appVersion, onClick = null)
             }
 
+            if (user != null) {
             Spacer(Modifier.height(28.dp))
             OutlinedButton(
                 onClick = onLogout,
@@ -311,12 +395,50 @@ fun ProfileScreen(
             ) {
                 Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Log out", fontWeight = FontWeight.SemiBold)
+                Text("Sign out", fontWeight = FontWeight.SemiBold)
+            }
             }
             Spacer(Modifier.height(28.dp))
         }
     }
 
+    if (showEngine) {
+        AlertDialog(
+            onDismissRequest = { showEngine = false },
+            title = { Text("Search engine", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    SearchEngine.entries.forEach { engine ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    BrowserSettings.updateSearchEngine(engine)
+                                    showEngine = false
+                                }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = BrowserSettings.searchEngine == engine, onClick = null)
+                            Spacer(Modifier.width(10.dp))
+                            Text(engine.label)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showEngine = false }) { Text("Close") } },
+        )
+    }
+    if (showClearData) {
+        ClearDataDialog(
+            onDismiss = { showClearData = false },
+            onClear = { history, cookies, cache ->
+                onClearBrowsingData(history, cookies, cache)
+                showClearData = false
+                Toast.makeText(context, "Browsing data cleared", Toast.LENGTH_SHORT).show()
+            },
+        )
+    }
     if (showChangePassword) {
         ChangePasswordDialog(onDismiss = { showChangePassword = false }, onSubmit = onChangePassword)
     }
@@ -435,6 +557,53 @@ fun ProfileScreen(
             },
             dismissButton = { TextButton(onClick = { showDeleteAccount = false }, enabled = !deleting) { Text("Cancel") } },
         )
+    }
+}
+
+@Composable
+private fun ClearDataDialog(onDismiss: () -> Unit, onClear: (history: Boolean, cookies: Boolean, cache: Boolean) -> Unit) {
+    var history by remember { mutableStateOf(true) }
+    var cookies by remember { mutableStateOf(true) }
+    var cache by remember { mutableStateOf(true) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Clear browsing data", fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                CheckRow("Browsing history", history) { history = it }
+                CheckRow("Cookies and site data", cookies, "Signs you out of most sites") { cookies = it }
+                CheckRow("Cached images and files", cache) { cache = it }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Applies to Normal browsing. Work sessions are wiped when you sign out; Incognito keeps nothing.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = history || cookies || cache,
+                onClick = { onClear(history, cookies, cache) },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+            ) { Text("Clear") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun CheckRow(label: String, checked: Boolean, subtitle: String? = null, onChange: (Boolean) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 4.dp),
+    ) {
+        Checkbox(checked = checked, onCheckedChange = null)
+        Spacer(Modifier.width(12.dp))
+        Column {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

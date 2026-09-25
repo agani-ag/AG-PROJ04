@@ -73,21 +73,9 @@ class AuthRepository(private val tokenStore: TokenStore) {
         resp
     }
 
-    /** Re-fetch the current user's details (name/email) so admin edits show up on refresh. */
-    suspend fun refreshUser(): Result<User> = runCatching {
-        if (USE_MOCK) {
-            delay(300)
-            restore()?.user ?: throw Exception("No session")
-        } else {
-            val user = try {
-                ApiClient.service.me("Bearer ${tokenStore.token().orEmpty()}")
-            } catch (e: java.io.IOException) {
-                throw Exception("No internet connection. Check your network and try again.")
-            }
-            // Persist so the refreshed details survive an app restart.
-            restore()?.let { persist(it.copy(user = user)) }
-            user
-        }
+    /** Fetch the live radio channel list (empty when radio is off for this user). */
+    suspend fun radioChannels(): Result<RadioChannelsResponse> = runCatching {
+        ApiClient.service.radioChannels("Bearer ${tokenStore.token().orEmpty()}")
     }
 
     /** Fetch a partner verification prompt (OTP / code / number) by id.

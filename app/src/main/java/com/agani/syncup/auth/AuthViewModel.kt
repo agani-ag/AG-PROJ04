@@ -102,15 +102,6 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Refresh the signed-in user's details (name/email) — silent; picks up admin edits. */
-    fun refreshUser() {
-        viewModelScope.launch {
-            repository.refreshUser().onSuccess { user ->
-                if (user != state.user) state = state.copy(user = user)
-            }
-        }
-    }
-
     /**
      * One combined refresh: user details + links + chat badge (updated in state), and the server
      * config handed to [onConfig]. Used by pull-to-refresh and foreground return.
@@ -141,6 +132,8 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Partner verification prompt: fetch the prompt / submit the user's response. */
     suspend fun fetchAction(id: String) = repository.fetchAction(id)
+
+    suspend fun radioChannels() = repository.radioChannels()
     suspend fun respondAction(id: String, value: String) = repository.respondAction(id, value)
 
     /** Self-manage: add a link, then update the list. */
