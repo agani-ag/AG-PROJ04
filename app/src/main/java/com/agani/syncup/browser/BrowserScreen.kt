@@ -60,6 +60,8 @@ import com.agani.syncup.browser.ui.ProgressLine
 import com.agani.syncup.browser.ui.SectionTheme
 import com.agani.syncup.browser.ui.setBarIcons
 import com.agani.syncup.data.AnnouncementDto
+import com.agani.syncup.data.LoginMode
+import com.agani.syncup.sync.BrowserSync
 import com.agani.syncup.data.UrlItem
 import com.agani.syncup.data.User
 import kotlinx.coroutines.Dispatchers
@@ -79,6 +81,9 @@ data class BrowserAccount(
     val loginError: String? = null,
     val supportEmail: String = "",
     val supportPhone: String = "",
+    val signupEnabled: Boolean = false,
+    val privacyUrl: String = "",
+    val partnersWaiting: Int = 0,
 )
 
 enum class LibraryPage { HISTORY, BOOKMARKS, DOWNLOADS }
@@ -87,8 +92,11 @@ enum class LibraryPage { HISTORY, BOOKMARKS, DOWNLOADS }
 class BrowserActions(
     val onSignIn: () -> Unit,
     val onDismissSignIn: () -> Unit,
-    val onLogin: (email: String, password: String) -> Unit,
+    val onLogin: (mode: LoginMode, login: String, password: String) -> Unit,
+    val onSignup: (name: String, email: String, phone: String, password: String) -> Unit,
+    val onClearAuthError: () -> Unit,
     val onSignOut: () -> Unit,
+    val onOpenPartners: () -> Unit,
     val onOpenSettings: () -> Unit,
     val onOpenChat: () -> Unit,
     val onOpenRadio: () -> Unit,
@@ -345,6 +353,12 @@ fun BrowserScreen(
                     tabs = tabs,
                     signedIn = signedIn,
                     hasWork = hasWork,
+                    // Open Normal tabs on the user's other devices (browser sync).
+                    otherDevices = if (signedIn && BrowserSync.enabled && BrowserSync.isOn(com.agani.syncup.sync.SyncType.TABS)) BrowserSync.otherDevices else emptyList(),
+                    onOpenOther = { url ->
+                        showTabs = false
+                        tabs.newTab(Section.NORMAL, url)
+                    },
                     onSignIn = actions.onSignIn,
                     onUndo = ::offerUndo,
                     onClose = { showTabs = false },
@@ -419,6 +433,7 @@ fun BrowserScreen(
                             MenuAction.DOWNLOADS -> actions.onOpenLibrary(LibraryPage.DOWNLOADS)
                             MenuAction.SETTINGS -> actions.onOpenSettings()
                             MenuAction.SIGN_IN -> actions.onSignIn()
+                            MenuAction.PARTNERS -> actions.onOpenPartners()
                         }
                     },
                 )
@@ -465,6 +480,10 @@ fun BrowserScreen(
                     showAccount = false
                     actions.onOpenSettings()
                 },
+                onPartners = {
+                    showAccount = false
+                    actions.onOpenPartners()
+                },
                 onSignOut = {
                     showAccount = false
                     confirmSignOut = true
@@ -482,13 +501,23 @@ fun BrowserScreen(
         )
     }
     if (signInVisible && account.user == null) {
-        ModalBottomSheet(onDismissRequest = actions.onDismissSignIn) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                actions.onClearAuthError()
+                actions.onDismissSignIn()
+            },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
             SignInSheet(
                 loading = account.loginLoading,
                 error = account.loginError,
                 supportEmail = account.supportEmail,
                 supportPhone = account.supportPhone,
+                signupEnabled = account.signupEnabled,
+                privacyUrl = account.privacyUrl,
                 onLogin = actions.onLogin,
+                onSignup = actions.onSignup,
+                onClearError = actions.onClearAuthError,
             )
         }
     }

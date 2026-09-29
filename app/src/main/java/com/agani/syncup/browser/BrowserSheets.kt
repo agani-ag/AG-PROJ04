@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
@@ -61,6 +62,20 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.rounded.AlternateEmail
+import androidx.compose.material.icons.rounded.Handshake
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import com.agani.syncup.data.LoginMode
 import com.agani.syncup.R
 import com.agani.syncup.browser.ui.Avatar
 import com.agani.syncup.browser.ui.CountBadge
@@ -70,86 +85,194 @@ import com.agani.syncup.browser.ui.SheetDivider
 import com.agani.syncup.browser.ui.TonalRow
 import com.agani.syncup.ui.theme.dialogSurface
 
-/** Optional SyncUp sign-in, as a sheet over the browser so the user's tabs stay put. */
+/** Indian mobile number check (the backend is the judge; this only catches typos early). */
+internal fun isIndianMobile(raw: String): Boolean {
+    var d = raw.filter { it.isDigit() }
+    if (d.length == 12 && d.startsWith("91")) d = d.drop(2)
+    if (d.length == 11 && d.startsWith("0")) d = d.drop(1)
+    return d.length == 10 && d[0] in '6'..'9'
+}
+
+/**
+ * Optional SyncUp sign-in, as a sheet over the browser so the user's tabs stay put. Sign in with
+ * email, phone or username (password is the only way in); "Create account" appears while the
+ * admin allows sign-up.
+ */
 @Composable
 fun SignInSheet(
     loading: Boolean,
     error: String?,
     supportEmail: String,
     supportPhone: String,
-    onLogin: (email: String, password: String) -> Unit,
+    signupEnabled: Boolean,
+    privacyUrl: String,
+    onLogin: (mode: LoginMode, login: String, password: String) -> Unit,
+    onSignup: (name: String, email: String, phone: String, password: String) -> Unit,
+    onClearError: () -> Unit,
+) {
+    var creating by remember { mutableStateOf(false) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .imePadding()
+            .padding(start = 24.dp, end = 24.dp, bottom = 20.dp),
+    ) {
+        if (creating && signupEnabled) {
+            SignUpForm(loading, error, privacyUrl, onSignup) {
+                onClearError()
+                creating = false
+            }
+        } else {
+            SignInForm(loading, error, supportEmail, supportPhone, signupEnabled, onLogin) {
+                onClearError()
+                creating = true
+            }
+        }
+    }
+}
+
+@Composable
+private fun SheetTitle(title: String, subtitle: String) {
+    val cs = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(44.dp).clip(CircleShape).background(cs.primary), contentAlignment = Alignment.Center) {
+            Image(painterResource(R.drawable.ic_sync), null, colorFilter = ColorFilter.tint(cs.onPrimary), modifier = Modifier.size(24.dp))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column {
+            Text(title, fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface)
+            Text(subtitle, fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+internal fun PasswordField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String = "Password",
+    error: String? = null,
+    supporting: String? = null,
+    imeAction: ImeAction = ImeAction.Done,
+    onDone: (() -> Unit)? = null,
+) {
+    var show by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = value, onValueChange = onValueChange,
+        label = { Text(label) },
+        leadingIcon = { Icon(Icons.Rounded.Lock, null) },
+        trailingIcon = {
+            IconButton(onClick = { show = !show }) {
+                Icon(if (show) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff, if (show) "Hide password" else "Show password")
+            }
+        },
+        isError = error != null,
+        supportingText = (error ?: supporting)?.let { { Text(it) } },
+        singleLine = true, shape = RoundedCornerShape(12.dp),
+        visualTransformation = if (show) VisualTransformation.None else PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = imeAction),
+        keyboardActions = KeyboardActions(onDone = { if (onDone != null) onDone() else defaultKeyboardAction(ImeAction.Done) }),
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+private fun PrimaryButton(text: String, loading: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    Button(onClick = onClick, enabled = !loading && enabled, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+        if (loading) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+        } else {
+            Text(text, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SignInForm(
+    loading: Boolean,
+    error: String?,
+    supportEmail: String,
+    supportPhone: String,
+    signupEnabled: Boolean,
+    onLogin: (LoginMode, String, String) -> Unit,
+    onCreate: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    var email by remember { mutableStateOf("") }
+    var mode by remember { mutableStateOf(LoginMode.EMAIL) }
+    val values = remember { mutableStateMapOf<LoginMode, String>() }
     var password by remember { mutableStateOf("") }
-    var showPassword by remember { mutableStateOf(false) }
     var showHelp by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(12.dp)
+    val login = values[mode].orEmpty()
 
-    Column(Modifier.fillMaxWidth().imePadding().padding(start = 24.dp, end = 24.dp, bottom = 20.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(44.dp).clip(CircleShape).background(cs.primary), contentAlignment = Alignment.Center) {
-                Image(painterResource(R.drawable.ic_sync), null, colorFilter = ColorFilter.tint(cs.onPrimary), modifier = Modifier.size(24.dp))
-            }
-            Spacer(Modifier.width(14.dp))
-            Column {
-                Text("Sign in to SyncUp", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface)
-                Text("Sync your bookmarks, history and tabs across devices", fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant)
-            }
+    SheetTitle("Sign in to SyncUp", "Sync your bookmarks, history and tabs across devices")
+    Spacer(Modifier.height(20.dp))
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        LoginMode.entries.forEachIndexed { i, m ->
+            SegmentedButton(
+                selected = mode == m,
+                onClick = { mode = m },
+                shape = SegmentedButtonDefaults.itemShape(i, LoginMode.entries.size),
+            ) { Text(m.label) }
         }
-        Spacer(Modifier.height(24.dp))
-        OutlinedTextField(
-            value = email, onValueChange = { email = it },
-            label = { Text("Email") },
-            leadingIcon = { Icon(Icons.Rounded.MailOutline, null) },
-            singleLine = true, shape = shape,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(14.dp))
-        OutlinedTextField(
-            value = password, onValueChange = { password = it },
-            label = { Text("Password") },
-            leadingIcon = { Icon(Icons.Rounded.Lock, null) },
-            trailingIcon = {
-                IconButton(onClick = { showPassword = !showPassword }) {
-                    Icon(if (showPassword) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff, if (showPassword) "Hide password" else "Show password")
-                }
-            },
-            isError = error != null,
-            supportingText = error?.let { { Text(it) } },
-            singleLine = true, shape = shape,
-            visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(16.dp))
-        Button(
-            onClick = { onLogin(email, password) },
-            enabled = !loading && email.isNotBlank() && password.isNotBlank(),
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-        ) {
-            if (loading) {
-                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = cs.onPrimary)
-            } else {
-                Text("Sign in", fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            }
-        }
-        Spacer(Modifier.height(4.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = { showHelp = true }) { Text("Forgot password?") }
-        }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(top = 4.dp),
-        ) {
-            Icon(Icons.Rounded.Shield, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(8.dp))
+    }
+    Spacer(Modifier.height(14.dp))
+    OutlinedTextField(
+        value = login, onValueChange = { values[mode] = it },
+        label = {
             Text(
-                "Passwords, cookies, Work and Incognito never leave this device.",
-                fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant,
+                when (mode) {
+                    LoginMode.EMAIL -> "Email"
+                    LoginMode.PHONE -> "Mobile number"
+                    LoginMode.USERNAME -> "Username"
+                },
             )
-        }
+        },
+        leadingIcon = {
+            Icon(
+                when (mode) {
+                    LoginMode.EMAIL -> Icons.Rounded.MailOutline
+                    LoginMode.PHONE -> Icons.Rounded.PhoneAndroid
+                    LoginMode.USERNAME -> Icons.Rounded.AlternateEmail
+                },
+                null,
+            )
+        },
+        prefix = if (mode == LoginMode.PHONE) ({ Text("+91 ") }) else null,
+        singleLine = true, shape = RoundedCornerShape(12.dp),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = when (mode) {
+                LoginMode.EMAIL -> KeyboardType.Email
+                LoginMode.PHONE -> KeyboardType.Phone
+                LoginMode.USERNAME -> KeyboardType.Ascii
+            },
+            imeAction = ImeAction.Next,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(14.dp))
+    // Done on the keyboard signs in, like the button.
+    PasswordField(password, { password = it }, error = error, onDone = {
+        if (!loading && login.isNotBlank() && password.isNotBlank()) onLogin(mode, login, password)
+    })
+    Spacer(Modifier.height(16.dp))
+    PrimaryButton("Sign in", loading, login.isNotBlank() && password.isNotBlank()) { onLogin(mode, login, password) }
+    Spacer(Modifier.height(4.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = { showHelp = true }) { Text("Forgot password?") }
+        if (signupEnabled) TextButton(onClick = onCreate) { Text("Create account") }
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(top = 4.dp),
+    ) {
+        Icon(Icons.Rounded.Shield, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "Passwords, cookies, Work and Incognito never leave this device.",
+            fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant,
+        )
     }
 
     if (showHelp) {
@@ -163,7 +286,7 @@ fun SignInSheet(
             text = {
                 Column {
                     Text(
-                        "Your SyncUp account is managed by your admin. Contact them to reset your password:",
+                        "SyncUp support can reset your password. Contact them from the email or phone number on your account:",
                         fontSize = 14.sp, lineHeight = 20.sp, color = cs.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(12.dp))
@@ -183,6 +306,88 @@ fun SignInSheet(
             },
             confirmButton = { TextButton(onClick = { showHelp = false }) { Text("Close") } },
         )
+    }
+}
+
+/** Self sign-up: name, email and/or phone (India), password, privacy consent. No verification. */
+@Composable
+private fun SignUpForm(
+    loading: Boolean,
+    error: String?,
+    privacyUrl: String,
+    onSignup: (name: String, email: String, phone: String, password: String) -> Unit,
+    onSignIn: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    val shape = RoundedCornerShape(12.dp)
+    var name by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var agreed by remember { mutableStateOf(false) }
+
+    val emailBad = email.isNotBlank() && !android.util.Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()
+    val phoneBad = phone.isNotBlank() && !isIndianMobile(phone)
+    val ready = name.isNotBlank() && (email.isNotBlank() || phone.isNotBlank()) && !emailBad && !phoneBad &&
+        password.length >= 6 && agreed
+
+    SheetTitle("Create your account", "Sign in on any device to get your bookmarks, history and tabs")
+    Spacer(Modifier.height(20.dp))
+    OutlinedTextField(
+        value = name, onValueChange = { name = it },
+        label = { Text("Your name") },
+        leadingIcon = { Icon(Icons.Rounded.Person, null) },
+        singleLine = true, shape = shape,
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(10.dp))
+    OutlinedTextField(
+        value = email, onValueChange = { email = it },
+        label = { Text("Email") },
+        leadingIcon = { Icon(Icons.Rounded.MailOutline, null) },
+        isError = emailBad,
+        supportingText = if (emailBad) ({ Text("Enter a valid email") }) else null,
+        singleLine = true, shape = shape,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(10.dp))
+    OutlinedTextField(
+        value = phone, onValueChange = { phone = it },
+        label = { Text("Mobile number") },
+        leadingIcon = { Icon(Icons.Rounded.PhoneAndroid, null) },
+        prefix = { Text("+91 ") },
+        isError = phoneBad,
+        supportingText = { Text(if (phoneBad) "Enter a 10-digit Indian mobile number" else "Email, mobile number or both — you can sign in with either") },
+        singleLine = true, shape = shape,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(6.dp))
+    PasswordField(password, { password = it }, supporting = "At least 6 characters")
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { agreed = !agreed }.padding(vertical = 4.dp),
+    ) {
+        Checkbox(checked = agreed, onCheckedChange = { agreed = it })
+        Text("I agree to the ", fontSize = 14.sp, color = cs.onSurface)
+        Text(
+            "Privacy policy", fontSize = 14.sp, color = cs.primary, fontWeight = FontWeight.Medium,
+            modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(enabled = privacyUrl.isNotBlank()) {
+                runCatching { context.startActivity(com.agani.syncup.web.WebViewActivity.intent(context, privacyUrl, "Privacy Policy")) }
+            },
+        )
+    }
+    if (error != null) {
+        Text(error, color = cs.error, fontSize = 13.sp, lineHeight = 18.sp, modifier = Modifier.padding(vertical = 6.dp))
+    }
+    Spacer(Modifier.height(8.dp))
+    PrimaryButton("Create account", loading, ready) { onSignup(name, email, phone, password) }
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+        Text("Already have an account?", fontSize = 14.sp, color = cs.onSurfaceVariant)
+        TextButton(onClick = onSignIn) { Text("Sign in") }
     }
 }
 
@@ -214,6 +419,7 @@ fun AccountSheet(
     onChat: () -> Unit,
     onRadio: () -> Unit,
     onSettings: () -> Unit,
+    onPartners: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -224,7 +430,7 @@ fun AccountSheet(
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text(user.name, fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
-                Text(user.email, fontSize = 13.sp, color = cs.onSurfaceVariant, maxLines = 1)
+                Text(user.loginLabel, fontSize = 13.sp, color = cs.onSurfaceVariant, maxLines = 1)
             }
         }
         if (hasWork || account.chatEnabled || account.radioEnabled) {
@@ -255,7 +461,14 @@ fun AccountSheet(
         }
         SheetDivider()
         TonalRow(
-            "Account & security", "Password, app lock and devices",
+            "Partners", if (account.partnersWaiting > 0) "Waiting for you to enable" else "Services that added you",
+            leading = { IconTile(Icons.Rounded.Handshake, container = cs.surfaceContainerHigh, content = cs.onSurfaceVariant) },
+            trailing = { if (account.partnersWaiting > 0) CountBadge("${account.partnersWaiting} new") },
+            minHeight = 60.dp,
+            onClick = onPartners,
+        )
+        TonalRow(
+            "Account & security", "Sign-in details, sync, app lock",
             leading = { IconTile(Icons.Rounded.ManageAccounts, container = cs.surfaceContainerHigh, content = cs.onSurfaceVariant) },
             minHeight = 60.dp,
             onClick = onSettings,
@@ -268,7 +481,7 @@ fun AccountSheet(
             onClick = onSignOut,
         )
         Text(
-            "Signing out keeps this device's bookmarks and history. It closes Work tabs and signs you out of work sites.",
+            "Signing out keeps this device's bookmarks and history (they stop syncing). It closes Work tabs and signs you out of work sites.",
             fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
         )
@@ -284,7 +497,7 @@ fun SignOutDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
         title = { Text("Sign out of SyncUp?") },
         text = {
             Text(
-                "Bookmarks, history and tabs stay on this device. Work tabs close and work sites are signed out.",
+                "Bookmarks, history and tabs stay on this device and stop syncing. Work tabs close and work sites are signed out.",
                 fontSize = 14.sp, lineHeight = 20.sp, color = cs.onSurfaceVariant,
             )
         },

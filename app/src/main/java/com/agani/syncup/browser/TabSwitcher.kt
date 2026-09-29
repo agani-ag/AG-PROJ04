@@ -60,6 +60,10 @@ import com.agani.syncup.browser.ui.EmptyState
 import com.agani.syncup.browser.ui.SectionTheme
 import com.agani.syncup.browser.ui.sectionIcon
 import com.agani.syncup.browser.ui.sectionName
+import com.agani.syncup.data.OtherDevice
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Smartphone
 
 private val SKETCH_COLORS = listOf(
     Color(0xFF1B4FD8), Color(0xFF16A085), Color(0xFFDC2626), Color(0xFF7C3AED),
@@ -82,6 +86,8 @@ internal fun TabSwitcher(
     tabs: TabManager,
     signedIn: Boolean,
     hasWork: Boolean,
+    otherDevices: List<OtherDevice> = emptyList(),
+    onOpenOther: (url: String) -> Unit = {},
     onSignIn: () -> Unit,
     onUndo: (message: String, undo: () -> Unit) -> Unit,
     onClose: () -> Unit,
@@ -135,8 +141,9 @@ internal fun TabSwitcher(
 
                 val list = tabs.tabsIn(shown)
                 val onlyHome = list.all { it.isHome } && list.size <= 1
+                val others = if (shown == Section.NORMAL) otherDevices.filter { !it.tabs.isNullOrEmpty() } else emptyList()
                 Box(Modifier.weight(1f)) {
-                    if (onlyHome) {
+                    if (onlyHome && others.isEmpty()) {
                         EmptyState(
                             Icons.Rounded.Tab, "No open tabs",
                             if (shown == Section.WORK) "Open a link from your Work home" else "Your tabs will show here",
@@ -171,6 +178,11 @@ internal fun TabSwitcher(
                                     val home = tabs.tabsIn(shown).firstOrNull { it.isHome }
                                     if (home != null) tabs.select(home) else tabs.newTab(shown)
                                     onClose()
+                                }
+                            }
+                            if (others.isNotEmpty()) {
+                                item(key = "others", span = { GridItemSpan(2) }) {
+                                    OtherDevicesCard(others, onOpenOther)
                                 }
                             }
                             if (shown == Section.WORK || shown == Section.INCOGNITO) {
@@ -338,3 +350,97 @@ private fun NewTabCard(label: String, onClick: () -> Unit) {
         Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant)
     }
 }
+
+/** "From your other devices": the open Normal tabs of the user's other phones (browser sync). */
+@Composable
+private fun OtherDevicesCard(devices: List<OtherDevice>, onOpen: (String) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(cs.surfaceContainerLow)
+            .padding(vertical = 8.dp),
+    ) {
+        Text(
+            "From your other devices", fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium, color = cs.onSurface,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
+        )
+        devices.forEach { d ->
+            var expanded by remember(d.deviceId) { mutableStateOf(false) }
+            val all = d.tabs.orEmpty().filter { !it.url.isNullOrBlank() }
+            val shown = if (expanded) all else all.take(3)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 2.dp),
+            ) {
+                Icon(Icons.Rounded.Smartphone, null, tint = cs.primary, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "${d.deviceName ?: "Another device"} · ${all.size} tab${if (all.size == 1) "" else "s"}",
+                    fontSize = 13.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                )
+                Text(relativeTime(d.updatedAt), fontSize = 12.sp, color = cs.onSurfaceVariant)
+            }
+            shown.forEach { t ->
+                val url = t.url.orEmpty()
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onOpen(url) }
+                        .padding(start = 42.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            t.title?.takeIf { it.isNotBlank() } ?: UrlInput.display(url),
+                            fontSize = 14.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(UrlInput.hostAndPath(url).first, fontSize = 12.sp, color = cs.onSurfaceVariant, maxLines = 1)
+                    }
+                }
+            }
+            if (all.size > 3) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(start = 42.dp, end = 16.dp, top = 6.dp, bottom = 6.dp),
+                ) {
+                    Text(
+                        if (expanded) "Show less" else "Show all ${all.size}",
+                        fontSize = 13.sp, fontWeight = FontWeight.Medium, color = cs.primary,
+                    )
+                    Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore, null, tint = cs.primary, modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+    }
+}
+
+/** "5 min ago" from the server's ISO time (empty when it can't be read). */
+private fun relativeTime(iso: String?): String {
+    return relativeTime(parseIsoMs(iso) ?: return "")
+}
+
+/** "Just now" / "5 min ago" — clocks differ a little between phones and the server. */
+internal fun relativeTime(ms: Long): String {
+    val now = System.currentTimeMillis()
+    if (now - ms < 60_000) return "Just now"
+    return android.text.format.DateUtils.getRelativeTimeSpanString(
+        ms, now, android.text.format.DateUtils.MINUTE_IN_MILLIS,
+    ).toString()
+}
+
+/** Epoch ms from a server time like "2026-09-29T10:15:30.123456+00:00" (java.time needs API 26). */
+internal fun parseIsoMs(iso: String?): Long? = runCatching {
+    val text = iso ?: return null
+    val fmt = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+        .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }
+    var ms = fmt.parse(text.take(19))!!.time
+    Regex("""([+-])(\d{2}):(\d{2})$""").find(text)?.let { m ->
+        val offset = (m.groupValues[2].toInt() * 60 + m.groupValues[3].toInt()) * 60_000L
+        ms -= if (m.groupValues[1] == "+") offset else -offset
+    }
+    ms
+}.getOrNull()

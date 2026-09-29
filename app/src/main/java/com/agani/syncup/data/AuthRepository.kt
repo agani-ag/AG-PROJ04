@@ -1,5 +1,6 @@
 package com.agani.syncup.data
 
+import com.agani.syncup.BuildConfig
 import com.google.gson.Gson
 import kotlinx.coroutines.delay
 
@@ -17,27 +18,80 @@ class AuthRepository(private val tokenStore: TokenStore) {
     )
 
     private val gson = Gson()
+    private val auth get() = "Bearer ${tokenStore.token().orEmpty()}"
 
-    suspend fun login(email: String, password: String): Result<Session> = runCatching {
+    suspend fun login(mode: LoginMode, login: String, password: String): Result<Session> = runCatching {
         if (USE_MOCK) {
             delay(700)
-            require(email.isNotBlank() && password.isNotBlank()) { "Enter your email and password" }
+            require(login.isNotBlank() && password.isNotBlank()) { "Enter your details and password" }
             Session(
                 token = "mock-token-123",
-                user = User(id = "demo-1", name = "Demo User", email = email.trim()),
+                user = User(id = "demo-1", name = "Demo User", email = login.trim()),
                 urls = demoUrls(),
             ).also(::persist)
         } else {
-            val resp = try {
-                ApiClient.service.login(LoginRequest(email.trim(), password))
-            } catch (e: java.io.IOException) {
-                throw Exception("No internet connection. Check your network and try again.")
-            } catch (e: retrofit2.HttpException) {
-                throw Exception(if (e.code() == 401) "Invalid email or password" else "Login failed. Please try again.")
+            val resp = call("Sign-in failed. Please try again.") {
+                ApiClient.service.login(
+                    LoginRequest(mode.wire, login.trim(), password, tokenStore.deviceId(), BuildConfig.VERSION_NAME),
+                )
             }
             Session(resp.accessToken, resp.user, resp.urls).also(::persist)
         }
     }
+
+    /** Create a self sign-up account; signs it in on success (same response as login). */
+    suspend fun signup(name: String, email: String, phone: String, password: String): Result<Session> = runCatching {
+        val resp = call("Couldn't create the account. Please try again.") {
+            ApiClient.service.signup(
+                SignupRequest(
+                    name = name.trim(),
+                    email = email.trim().ifBlank { null },
+                    phone = phone.trim().ifBlank { null },
+                    password = password,
+                    acceptPrivacy = true,
+                    deviceId = tokenStore.deviceId(),
+                    appVersion = BuildConfig.VERSION_NAME,
+                ),
+            )
+        }
+        Session(resp.accessToken, resp.user, resp.urls).also(::persist)
+    }
+
+    /** Add/change email or phone (with the current password) or set the username. */
+    suspend fun updateProfile(req: ProfileUpdateRequest): Result<User> = runCatching {
+        val user = call("Couldn't save. Please try again.") { ApiClient.service.updateProfile(auth, req) }.user
+            ?: throw Exception("Couldn't save. Please try again.")
+        restore()?.let { persist(it.copy(user = user)) }
+        user
+    }
+
+    suspend fun checkUsername(name: String): Result<UsernameCheckResponse> = runCatching {
+        call("Couldn't check the username") { ApiClient.service.usernameCheck(auth, name.trim()) }
+    }
+
+    suspend fun partners(): Result<List<PartnerDto>> = runCatching {
+        call("Couldn't load partners") { ApiClient.service.partners(auth) }.partners.orEmpty()
+    }
+
+    suspend fun enablePartner(id: String, password: String): Result<PartnerDto?> = runCatching {
+        call("Couldn't enable. Please try again.") { ApiClient.service.enablePartner(auth, id, PartnerEnableRequest(password)) }.partner
+    }
+
+    suspend fun disablePartner(id: String): Result<PartnerDto?> = runCatching {
+        call("Couldn't disable. Please try again.") { ApiClient.service.disablePartner(auth, id) }.partner
+    }
+
+    /**
+     * Tell the server this install signed out: detach the account from the device (it keeps public
+     * broadcasts) and revoke the token. Best-effort — signing out works offline too.
+     */
+    suspend fun serverLogout(token: String) {
+        val bearer = "Bearer $token"
+        runCatching { ApiClient.service.deviceUnregister(bearer, DeviceUnregisterRequest(tokenStore.deviceId())) }
+        runCatching { ApiClient.service.logout(bearer) }
+    }
+
+    fun token(): String? = tokenStore.token()
 
     fun restore(): Session? {
         val json = tokenStore.session() ?: return null
@@ -126,10 +180,9 @@ class AuthRepository(private val tokenStore: TokenStore) {
         if (USE_MOCK) {
             delay(600) // no backend yet — accept locally so the flow can be tested
         } else {
-            ApiClient.service.changePassword(
-                "Bearer ${tokenStore.token().orEmpty()}",
-                ChangePasswordRequest(current, new),
-            )
+            call("Couldn't change the password") {
+                ApiClient.service.changePassword(auth, ChangePasswordRequest(current, new))
+            }
         }
     }
 
@@ -148,6 +201,23 @@ class AuthRepository(private val tokenStore: TokenStore) {
     }
 
     fun logout() = tokenStore.clear()
+
+    /**
+     * Run an API call and turn failures into a readable message: no network → a network hint;
+     * an HTTP error → the backend's own `message` (e.g. "This email is already registered").
+     */
+    private suspend fun <T> call(fallback: String, block: suspend () -> T): T = try {
+        block()
+    } catch (e: java.io.IOException) {
+        throw Exception("No internet connection. Check your network and try again.")
+    } catch (e: retrofit2.HttpException) {
+        throw Exception(serverMessage(e) ?: fallback)
+    }
+
+    private fun serverMessage(e: retrofit2.HttpException): String? = runCatching {
+        val body = e.response()?.errorBody()?.string().orEmpty()
+        gson.fromJson(body, com.google.gson.JsonObject::class.java)?.get("message")?.asString
+    }.getOrNull()?.takeIf { it.isNotBlank() }
 
     private fun persist(session: Session) {
         tokenStore.saveToken(session.token)

@@ -154,7 +154,7 @@ internal fun NormalHome(
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    Box(Modifier.offset(x = 4.dp)) { Avatar(user, unread = account.chatUnread > 0, onClick = onAvatar) }
+                    Box(Modifier.offset(x = 4.dp)) { Avatar(user, unread = account.chatUnread > 0 || account.partnersWaiting > 0, onClick = onAvatar) }
                 }
                 Spacer(Modifier.height(12.dp))
             }

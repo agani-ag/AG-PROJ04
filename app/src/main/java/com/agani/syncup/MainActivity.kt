@@ -60,13 +60,15 @@ import com.agani.syncup.browser.LibraryScreen
 import com.agani.syncup.browser.Section
 import com.agani.syncup.browser.TabManager
 import com.agani.syncup.browser.WebPlatform
+import com.agani.syncup.data.SyncTab
+import com.agani.syncup.sync.BrowserSync
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-private enum class AppScreen { Splash, ForceUpdate, Announcement, Browser, Profile, Radio, Library }
+private enum class AppScreen { Splash, ForceUpdate, Announcement, Browser, Profile, Radio, Library, Partners }
 
 class MainActivity : FragmentActivity() {
 
@@ -77,11 +79,12 @@ class MainActivity : FragmentActivity() {
     // The browser: web-platform bridge (registers result launchers → must be a property
     // initializer), on-device history/bookmarks/downloads, and the tabs of all three sections.
     private val webPlatform = WebPlatform(this)
-    private val browserDb by lazy { BrowserDb(this) }
+    private val browserDb by lazy { BrowserDb.get(this) }
     private lateinit var tabManager: TabManager
 
-    // A link a notification/reminder tap wants opened — honored once unlocked & logged in.
-    private data class PendingLink(val url: String, val title: String)
+    // A link a notification/reminder tap wants opened — honored once unlocked (and, for a Work
+    // link, logged in). Broadcast links open in a Normal tab, signed in or not.
+    private data class PendingLink(val url: String, val title: String, val normal: Boolean = false)
     private val pendingLink = mutableStateOf<PendingLink?>(null)
 
     // Set when a chat entry point (button / bubble / push tap) asks us to open the chat screen.
@@ -93,16 +96,30 @@ class MainActivity : FragmentActivity() {
     // Id of a partner verification prompt to open (from an action push tap).
     private val pendingActionId = mutableStateOf<String?>(null)
 
+    // Set when a "partner added you" push is tapped — open the Partners page.
+    private val openPartnersRequest = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         lockedState.value = security.hasPin() // lock on cold start if a PIN is set
         com.agani.syncup.browser.BrowserSettings.init(this)
         tabManager = TabManager(this, webPlatform, browserDb).also { it.restore() }
+        // Browser sync: publishes the open Normal tabs and uploads changes shortly after they happen.
+        BrowserSync.init(this, browserDb)
+        BrowserSync.tabsProvider = {
+            tabManager.tabsIn(Section.NORMAL).filter { !it.isHome }.map { SyncTab(it.title, it.url) }
+        }
+        tabManager.onNormalTabsChanged = { BrowserSync.requestSync() }
         readDeepLink(intent)
         ReminderSyncWorker.schedulePeriodic(this) // daily safety-net reminder sync
 
         setContent {
             var themeMode by remember { mutableStateOf(appPrefs.themeMode()) }
+            // A theme chosen on the user's other device (browser sync) applies live.
+            DisposableEffect(Unit) {
+                BrowserSync.onRemoteTheme = { themeMode = it }
+                onDispose { BrowserSync.onRemoteTheme = null }
+            }
             val dark = when (themeMode) {
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK, ThemeMode.BLACK -> true
@@ -144,6 +161,7 @@ class MainActivity : FragmentActivity() {
                                 security.clearPin()
                                 appPrefs.setBiometricEnabled(false)
                                 com.agani.syncup.data.TokenStore(this@MainActivity).clear()
+                                BrowserSync.onSignedOut()
                                 tabManager.wipeWork()
                                 lockedState.value = false
                                 recreate()
@@ -155,6 +173,7 @@ class MainActivity : FragmentActivity() {
                             onThemeChange = {
                                 appPrefs.setThemeMode(it)
                                 themeMode = it
+                                BrowserSync.themeChanged()
                             },
                         )
                     }
@@ -200,6 +219,9 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onDestroy() {
+        // The sync engine outlives the Activity; don't let it hold on to this one.
+        BrowserSync.tabsProvider = null
+        tabManager.onNormalTabsChanged = null
         tabManager.destroyAll()
         super.onDestroy()
     }
@@ -214,10 +236,19 @@ class MainActivity : FragmentActivity() {
     private fun readDeepLink(intent: Intent?) {
         val url = intent?.getStringExtra(ReminderContract.EXTRA_LINK_URL)
         if (!url.isNullOrBlank()) {
-            pendingLink.value = PendingLink(url, intent.getStringExtra(ReminderContract.EXTRA_LINK_TITLE) ?: "")
+            // "open_in" = our own extra, or the FCM data key when the system tray showed the push.
+            val normal = intent.getStringExtra(EXTRA_OPEN_IN) == "normal"
+            pendingLink.value = PendingLink(url, intent.getStringExtra(ReminderContract.EXTRA_LINK_TITLE) ?: "", normal)
             // Consume it so a config change / re-onStart doesn't reopen the link.
             intent.removeExtra(ReminderContract.EXTRA_LINK_URL)
             intent.removeExtra(ReminderContract.EXTRA_LINK_TITLE)
+            intent.removeExtra(EXTRA_OPEN_IN)
+        }
+        // A partner added this user: our foreground extra, or the tray's data payload (type=partners).
+        if (intent?.getBooleanExtra(EXTRA_OPEN_PARTNERS, false) == true || intent?.getStringExtra("type") == "partners") {
+            openPartnersRequest.value = true
+            intent.removeExtra(EXTRA_OPEN_PARTNERS)
+            intent.removeExtra("type")
         }
         if (intent?.getBooleanExtra(EXTRA_OPEN_RADIO, false) == true) {
             openRadioRequest.value = true
@@ -252,6 +283,8 @@ class MainActivity : FragmentActivity() {
         var showProfile by remember { mutableStateOf(false) }
         var showRadio by remember { mutableStateOf(false) }
         var showLogin by remember { mutableStateOf(false) }
+        var showPartners by remember { mutableStateOf(false) }
+        var signupEnabled by remember { mutableStateOf(false) }
         var libraryPage by remember { mutableStateOf<LibraryPage?>(null) }
         var announcement by remember { mutableStateOf<com.agani.syncup.data.AnnouncementDto?>(null) }
         var supportEmail by remember { mutableStateOf("") }
@@ -270,6 +303,7 @@ class MainActivity : FragmentActivity() {
             privacyUrl = cfg.privacyPolicyUrl
             chatEnabled = cfg.chatEnabled
             radioEnabled = cfg.radioEnabled
+            signupEnabled = cfg.signupEnabled
         }
 
         // One refresh that pulls everything the server can change. Two calls total: a combined
@@ -278,13 +312,15 @@ class MainActivity : FragmentActivity() {
         fun runFullRefresh(silent: Boolean) {
             vm.syncAll(silent = silent) { cfg -> applyConfig(cfg) }                          // GET /sync
             lifecycleScope.launch(Dispatchers.IO) { ReminderSync.sync(applicationContext) }  // GET /reminders
+            BrowserSync.syncNow()                                                            // POST /browser/sync
         }
 
         LaunchedEffect(Unit) {
             val started = SystemClock.elapsedRealtime()
             // Base URL is needed before any API call — bound it so startup never hangs.
             withTimeoutOrNull(2500) { withContext(Dispatchers.IO) { AppBootstrap.applyBaseUrl() } }
-            if (vm.state.isLoggedIn) DeviceRegistrar.register(applicationContext)
+            // Every install checks in (signed in or not) so SyncUp can reach it.
+            DeviceRegistrar.hello(applicationContext)
             val elapsed = SystemClock.elapsedRealtime() - started
             if (elapsed < 600) delay(600 - elapsed)
             booted = true
@@ -309,9 +345,21 @@ class MainActivity : FragmentActivity() {
         // This makes newly added/removed links appear on app open without tapping Refresh.
         LaunchedEffect(booted, state.isLoggedIn) {
             if (booted && state.isLoggedIn) {
-                vm.refresh(silent = true)
-                vm.refreshChatUnread()
+                // The combined /sync: links, chat badge, partners badge and THIS user's config
+                // (chat / radio are per-user; the config fetched at launch is the global one).
+                vm.syncAll(silent = true) { cfg -> applyConfig(cfg) }
                 withContext(Dispatchers.IO) { ReminderSync.sync(applicationContext) }
+            }
+        }
+
+        // Signed in (fresh sign-in or restored session): start browser sync. A different account than
+        // the last one on this phone gets a clean Normal section (never merged with the previous
+        // person's data).
+        LaunchedEffect(booted, state.user?.id) {
+            val id = state.user?.id
+            if (booted && id != null) {
+                if (BrowserSync.onSignedIn(id)) tabManager.resetNormalForNewAccount()
+                BrowserSync.syncNow()
             }
         }
 
@@ -325,6 +373,8 @@ class MainActivity : FragmentActivity() {
                 if (event == Lifecycle.Event.ON_START && bootedNow && loggedInNow) {
                     runFullRefresh(silent = true)
                 }
+                // Leaving the app: publish the open tabs to the user's other devices now.
+                if (event == Lifecycle.Event.ON_STOP && loggedInNow) BrowserSync.requestSync(0)
             }
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -334,7 +384,15 @@ class MainActivity : FragmentActivity() {
         // composes when unlocked) and logged in.
         LaunchedEffect(pendingLink.value, state.isLoggedIn, state.user) {
             val link = pendingLink.value
-            if (link != null && state.isLoggedIn && state.user != null) {
+            if (link != null && link.normal) {
+                // A broadcast link: a Normal tab, for everyone.
+                pendingLink.value = null
+                showProfile = false
+                showRadio = false
+                showPartners = false
+                libraryPage = null
+                tabManager.newTab(Section.NORMAL, link.url)
+            } else if (link != null && state.isLoggedIn && state.user != null) {
                 pendingLink.value = null
                 // A link from a SyncUp push/reminder is a work link: open it as a Work tab (address hidden).
                 showProfile = false
@@ -359,6 +417,15 @@ class MainActivity : FragmentActivity() {
             }
         }
 
+        // A "partner added you" push was tapped: open the Partners page (once signed in).
+        LaunchedEffect(openPartnersRequest.value, state.isLoggedIn) {
+            if (openPartnersRequest.value && state.isLoggedIn) {
+                openPartnersRequest.value = false
+                showRadio = false
+                showPartners = true
+            }
+        }
+
         // The media-notification tap wants the Radio player.
         LaunchedEffect(openRadioRequest.value, state.isLoggedIn, state.user) {
             if (openRadioRequest.value && state.isLoggedIn && state.user != null) {
@@ -369,7 +436,8 @@ class MainActivity : FragmentActivity() {
 
         // System back: step Radio -> Profile -> Account instead of exiting the app.
         androidx.activity.compose.BackHandler(enabled = showRadio) { showRadio = false }
-        androidx.activity.compose.BackHandler(enabled = showProfile && !showRadio) { showProfile = false }
+        androidx.activity.compose.BackHandler(enabled = showPartners && !showRadio) { showPartners = false }
+        androidx.activity.compose.BackHandler(enabled = showProfile && !showRadio && !showPartners) { showProfile = false }
         androidx.activity.compose.BackHandler(enabled = libraryPage != null && !showProfile) { libraryPage = null }
 
         // A chat entry point (button / bubble / push tap) wants the chat screen: fetch the one-time
@@ -405,6 +473,7 @@ class MainActivity : FragmentActivity() {
             forceUpdate -> AppScreen.ForceUpdate
             loggedIn && showAnnouncement -> AppScreen.Announcement
             showRadio && loggedIn -> AppScreen.Radio
+            showPartners && loggedIn -> AppScreen.Partners
             showProfile -> AppScreen.Profile
             libraryPage != null -> AppScreen.Library
             else -> AppScreen.Browser
@@ -448,6 +517,10 @@ class MainActivity : FragmentActivity() {
                             vm.logout()
                         },
                         onChangePassword = { current, new -> vm.changePassword(current, new) },
+                        partnersWaiting = state.partnersWaiting,
+                        onOpenPartners = { showPartners = true },
+                        onUpdateProfile = { vm.updateProfile(it) },
+                        onCheckUsername = { vm.checkUsername(it) },
                         onClearBrowsingData = { history, cookies, cache -> tabManager.clearBrowsingData(history, cookies, cache) },
                         onDeleteAccount = {
                             val result = vm.deleteAccount()
@@ -459,6 +532,14 @@ class MainActivity : FragmentActivity() {
                         },
                     )
                 }
+                AppScreen.Partners -> com.agani.syncup.ui.PartnersScreen(
+                    load = { vm.partners() },
+                    enable = { id, password -> vm.enablePartner(id, password) },
+                    disable = { id -> vm.disablePartner(id) },
+                    // Enabled/disabled partners' Work links appear/disappear; the badge updates.
+                    onChanged = { runFullRefresh(silent = true) },
+                    onBack = { showPartners = false },
+                )
                 AppScreen.Radio -> {
                     RequestNotificationPermission() // media notification (status bar + lock screen)
                     com.agani.syncup.ui.RadioScreen(
@@ -481,21 +562,27 @@ class MainActivity : FragmentActivity() {
                             radioEnabled = radioEnabled,
                             announcement = announcement,
                             refreshing = state.refreshing,
+                            partnersWaiting = state.partnersWaiting,
                         ) else BrowserAccount(
                             loginLoading = state.loading,
                             loginError = state.error,
                             supportEmail = supportEmail,
                             supportPhone = supportPhone,
+                            signupEnabled = signupEnabled,
+                            privacyUrl = privacyUrl,
                         ),
                         signInVisible = showLogin && !loggedIn,
                         actions = BrowserActions(
                             onSignIn = { showLogin = true },
                             onDismissSignIn = { showLogin = false },
-                            onLogin = { email, password -> vm.login(email.trim(), password) },
+                            onLogin = { mode, login, password -> vm.login(mode, login.trim(), password) },
+                            onSignup = { name, email, phone, password -> vm.signup(name, email, phone, password) },
+                            onClearAuthError = { vm.clearError() },
                             onSignOut = {
                                 tabManager.wipeWork()
                                 vm.logout()
                             },
+                            onOpenPartners = { showPartners = true },
                             onOpenSettings = { showProfile = true },
                             onOpenChat = { openChatRequest.value = true },
                             onOpenRadio = { showRadio = true },
@@ -570,5 +657,11 @@ class MainActivity : FragmentActivity() {
 
         /** Intent extra: id of a partner verification prompt to open (used by action push taps). */
         const val EXTRA_ACTION_ID = "extra_action_id"
+
+        /** Intent extra / FCM data key: "normal" = open the push link in a Normal tab (broadcasts). */
+        const val EXTRA_OPEN_IN = "open_in"
+
+        /** Intent extra: open the Partners page (a partner added this user). */
+        const val EXTRA_OPEN_PARTNERS = "extra_open_partners"
     }
 }

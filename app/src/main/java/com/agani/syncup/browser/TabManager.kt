@@ -37,6 +37,9 @@ class TabManager(
     private val prefs = context.getSharedPreferences("browser_tabs", Context.MODE_PRIVATE)
     private val io = Executors.newSingleThreadExecutor()
 
+    /** The open Normal tabs changed (browser sync shows them on the user's other devices). */
+    var onNormalTabsChanged: (() -> Unit)? = null
+
     fun tabsIn(s: Section): List<BrowserTab> = tabs.filter { it.section == s }
 
     fun activeTab(s: Section = section): BrowserTab? = active[s]?.let { id -> tabs.firstOrNull { it.id == id } }
@@ -168,6 +171,15 @@ class TabManager(
         web.wipeSection(Section.WORK)
         if (section == Section.WORK) section = Section.NORMAL
         ensureTab(section)
+    }
+
+    /**
+     * A different account signed in on this phone: close the previous person's Normal tabs and
+     * clear Normal cookies and site data (their history and bookmarks are wiped by browser sync).
+     */
+    fun resetNormalForNewAccount() {
+        closeAll(Section.NORMAL)
+        clearBrowsingData(history = false, cookies = true, cache = true)
     }
 
     /**
@@ -313,6 +325,7 @@ class TabManager(
         normal.forEach { arr.put(JSONObject().put("url", it.url).put("title", it.title)) }
         val activeIndex = normal.indexOfFirst { it.id == active[Section.NORMAL] }
         prefs.edit().putString("normal", arr.toString()).putInt("active", activeIndex).apply()
+        onNormalTabsChanged?.invoke()
     }
 
     /** Re-create the saved Normal tabs (pages load lazily when a tab is first shown). */

@@ -90,7 +90,29 @@ import com.agani.syncup.AppLock
 import com.agani.syncup.data.AppPrefs
 import com.agani.syncup.data.SecurityStore
 import com.agani.syncup.data.ThemeMode
+import com.agani.syncup.data.ProfileUpdateRequest
 import com.agani.syncup.data.User
+import com.agani.syncup.data.UsernameCheckResponse
+import com.agani.syncup.push.DeviceRegistrar
+import com.agani.syncup.sync.BrowserSync
+import com.agani.syncup.sync.SyncType
+import androidx.core.app.NotificationManagerCompat
+import androidx.compose.material.icons.rounded.AlternateEmail
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.Campaign
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.CloudSync
+import androidx.compose.material.icons.rounded.Devices
+import androidx.compose.material.icons.rounded.Handshake
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.text.input.ImeAction
+import kotlinx.coroutines.delay
 import com.agani.syncup.ui.theme.dialogSurface
 import com.agani.syncup.web.WebViewActivity
 import kotlinx.coroutines.launch
@@ -127,6 +149,10 @@ fun ProfileScreen(
     onChangePassword: suspend (current: String, new: String) -> Result<Unit>,
     onDeleteAccount: suspend () -> Result<Unit>,
     onClearBrowsingData: (history: Boolean, cookies: Boolean, cache: Boolean) -> Unit = { _, _, _ -> },
+    partnersWaiting: Int = 0,
+    onOpenPartners: () -> Unit = {},
+    onUpdateProfile: suspend (ProfileUpdateRequest) -> Result<User> = { Result.failure(Exception("Not available")) },
+    onCheckUsername: suspend (String) -> Result<UsernameCheckResponse> = { Result.failure(Exception("Not available")) },
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -150,6 +176,10 @@ fun ProfileScreen(
     var deleting by remember { mutableStateOf(false) }
     var showEngine by remember { mutableStateOf(false) }
     var showClearData by remember { mutableStateOf(false) }
+    var editIdentifier by remember { mutableStateOf<String?>(null) } // "email" | "phone"
+    var showUsername by remember { mutableStateOf(false) }
+    var showDeleteSynced by remember { mutableStateOf(false) }
+    var updatesOn by remember { mutableStateOf(DeviceRegistrar.updatesEnabled(context)) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -193,12 +223,66 @@ fun ProfileScreen(
                         Spacer(Modifier.width(16.dp))
                         Column(Modifier.weight(1f)) {
                             Text(user.name, fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-                            Text(user.email, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                            Text(user.loginLabel, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                             Text("Signed in · SyncUp", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
                 Spacer(Modifier.height(4.dp))
+
+                // ---------------- Sync ----------------
+                SectionLabel("Sync")
+                SettingsGroup {
+                    SwitchRow(
+                        icon = Icons.Rounded.Sync,
+                        title = "Sync",
+                        subtitle = syncStatus(),
+                        checked = BrowserSync.enabled,
+                        enabled = true,
+                        onCheckedChange = { BrowserSync.setSyncEnabled(it) },
+                    )
+                    if (BrowserSync.enabled) {
+                        SyncType.entries.forEach { t ->
+                            RowDivider()
+                            SwitchRow(
+                                icon = when (t) {
+                                    SyncType.BOOKMARKS -> Icons.Rounded.StarBorder
+                                    SyncType.HISTORY -> Icons.Rounded.History
+                                    SyncType.TABS -> Icons.Rounded.Devices
+                                    SyncType.SHORTCUTS -> Icons.Rounded.Apps
+                                    SyncType.SETTINGS -> Icons.Rounded.Tune
+                                },
+                                title = t.label,
+                                subtitle = when (t) {
+                                    SyncType.BOOKMARKS -> "Up to 5,000"
+                                    SyncType.HISTORY -> "Normal browsing, last 90 days"
+                                    SyncType.TABS -> "See your open tabs on your other devices"
+                                    SyncType.SHORTCUTS -> "New-tab shortcuts"
+                                    SyncType.SETTINGS -> "Search engine, pop-ups, theme"
+                                },
+                                checked = BrowserSync.isOn(t),
+                                enabled = true,
+                                onCheckedChange = { BrowserSync.setOn(t, it) },
+                            )
+                        }
+                        RowDivider()
+                        SettingRow(icon = Icons.Rounded.CloudSync, title = "Sync now", subtitle = null, onClick = { BrowserSync.syncNow() })
+                    }
+                    RowDivider()
+                    SettingRow(
+                        icon = Icons.Rounded.CloudOff,
+                        title = "Delete synced data",
+                        subtitle = "Erase the copy kept for your account",
+                        danger = true,
+                        onClick = { showDeleteSynced = true },
+                    )
+                }
+                Text(
+                    "Never synced: passwords, cookies, Work, Incognito, app lock, downloads and site permissions.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp),
+                )
             } else {
                 // Login is optional — the browser works fully without it; signing in adds SyncUp features.
                 SettingsGroup {
@@ -320,11 +404,73 @@ fun ProfileScreen(
                 }
             }
 
+            // ---------------- Notifications ----------------
+            SectionLabel("Notifications")
+            SettingsGroup {
+                SwitchRow(
+                    icon = Icons.Rounded.Campaign,
+                    title = "SyncUp updates",
+                    subtitle = "News and announcements from SyncUp",
+                    checked = updatesOn,
+                    enabled = true,
+                    onCheckedChange = {
+                        updatesOn = it
+                        DeviceRegistrar.setUpdatesEnabled(context, it)
+                    },
+                )
+                RowDivider()
+                val allowed = remember { NotificationManagerCompat.from(context).areNotificationsEnabled() }
+                SettingRow(
+                    icon = Icons.Rounded.NotificationsActive,
+                    title = "Notification settings",
+                    subtitle = if (allowed) "Allowed" else "Blocked · tap to allow",
+                    onClick = {
+                        runCatching {
+                            context.startActivity(
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                } else {
+                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+                                },
+                            )
+                        }
+                    },
+                )
+            }
+
             // ---------------- Account ----------------
             if (user != null) {
             SectionLabel("Account")
             SettingsGroup {
+                SettingRow(
+                    icon = Icons.Rounded.Email,
+                    title = "Email",
+                    subtitle = user.email.ifBlank { "Add an email · sign in with it" },
+                    onClick = { editIdentifier = "email" },
+                )
+                RowDivider()
+                SettingRow(
+                    icon = Icons.Rounded.PhoneAndroid,
+                    title = "Mobile number",
+                    subtitle = user.phone?.takeIf { it.isNotBlank() }?.let { com.agani.syncup.data.formatPhone(it) } ?: "Add a mobile number · sign in with it",
+                    onClick = { editIdentifier = "phone" },
+                )
+                RowDivider()
+                SettingRow(
+                    icon = Icons.Rounded.AlternateEmail,
+                    title = "Username",
+                    subtitle = user.username?.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "Set a username · sign in with it",
+                    onClick = { showUsername = true },
+                )
+                RowDivider()
                 SettingRow(icon = Icons.Rounded.Lock, title = "Change password", onClick = { showChangePassword = true })
+                RowDivider()
+                SettingRow(
+                    icon = Icons.Rounded.Handshake,
+                    title = "Partners",
+                    subtitle = if (partnersWaiting > 0) "$partnersWaiting waiting for you to enable" else "Services that added you",
+                    onClick = onOpenPartners,
+                )
                 RowDivider()
                 SettingRow(
                     icon = Icons.Rounded.DeleteOutline,
@@ -364,7 +510,7 @@ fun ProfileScreen(
                 SettingRow(
                     icon = Icons.AutoMirrored.Rounded.HelpOutline,
                     title = "Help & support",
-                    subtitle = "Contact admin (password / PIN help)",
+                    subtitle = "Contact support (password / PIN help)",
                     onClick = { showHelp = true },
                 )
                 if (privacyPolicyUrl.isNotBlank()) {
@@ -435,6 +581,7 @@ fun ProfileScreen(
     }
     if (showClearData) {
         ClearDataDialog(
+            synced = BrowserSync.active && BrowserSync.isOn(SyncType.HISTORY),
             onDismiss = { showClearData = false },
             onClear = { history, cookies, cache ->
                 onClearBrowsingData(history, cookies, cache)
@@ -445,6 +592,58 @@ fun ProfileScreen(
     }
     if (showChangePassword) {
         ChangePasswordDialog(onDismiss = { showChangePassword = false }, onSubmit = onChangePassword)
+    }
+    editIdentifier?.let { kind ->
+        IdentifierDialog(
+            kind = kind,
+            current = if (kind == "email") user?.email.orEmpty() else user?.phone.orEmpty(),
+            onDismiss = { editIdentifier = null },
+            onSubmit = { value, password ->
+                onUpdateProfile(
+                    if (kind == "email") ProfileUpdateRequest(email = value, currentPassword = password)
+                    else ProfileUpdateRequest(phone = value, currentPassword = password),
+                )
+            },
+        )
+    }
+    if (showUsername) {
+        UsernameDialog(
+            current = user?.username.orEmpty(),
+            onCheck = onCheckUsername,
+            onDismiss = { showUsername = false },
+            onSubmit = { name -> onUpdateProfile(ProfileUpdateRequest(username = name)) },
+        )
+    }
+    if (showDeleteSynced) {
+        var busy by remember { mutableStateOf(false) }
+        AlertDialog(
+            containerColor = MaterialTheme.colorScheme.dialogSurface,
+            onDismissRequest = { if (!busy) showDeleteSynced = false },
+            title = { Text("Delete synced data?") },
+            text = {
+                Text(
+                    "This erases the bookmarks, history, tabs, shortcuts and settings kept for your account and turns sync off. " +
+                        "Each phone keeps its own copy.",
+                )
+            },
+            confirmButton = {
+                Button(
+                    enabled = !busy,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        busy = true
+                        scope.launch {
+                            BrowserSync.deleteServerData()
+                                .onSuccess { Toast.makeText(context, "Synced data deleted · sync is off", Toast.LENGTH_SHORT).show() }
+                                .onFailure { Toast.makeText(context, it.message ?: "Couldn't delete", Toast.LENGTH_LONG).show() }
+                            busy = false
+                            showDeleteSynced = false
+                        }
+                    },
+                ) { Text("Delete") }
+            },
+            dismissButton = { TextButton(enabled = !busy, onClick = { showDeleteSynced = false }) { Text("Cancel") } },
+        )
     }
     if (showLockGrace) {
         AlertDialog(
@@ -530,8 +729,8 @@ fun ProfileScreen(
             title = { Text("Delete account?") },
             text = {
                 Text(
-                    "This deactivates your account and signs you out on all devices. " +
-                        "Your links and reminders will stop. Contact your admin to restore access.",
+                    "This deactivates your account, erases its synced browser data and signs you out on all devices. " +
+                        "Your links and reminders will stop. Contact SyncUp support to restore access.",
                 )
             },
             confirmButton = {
@@ -568,7 +767,7 @@ fun ProfileScreen(
 }
 
 @Composable
-private fun ClearDataDialog(onDismiss: () -> Unit, onClear: (history: Boolean, cookies: Boolean, cache: Boolean) -> Unit) {
+private fun ClearDataDialog(synced: Boolean, onDismiss: () -> Unit, onClear: (history: Boolean, cookies: Boolean, cache: Boolean) -> Unit) {
     var history by remember { mutableStateOf(true) }
     var cookies by remember { mutableStateOf(true) }
     var cache by remember { mutableStateOf(true) }
@@ -583,7 +782,8 @@ private fun ClearDataDialog(onDismiss: () -> Unit, onClear: (history: Boolean, c
                 CheckRow("Cached images and files", cache) { cache = it }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Applies to Normal browsing. Work sessions are wiped when you sign out; Incognito keeps nothing.",
+                    "Applies to Normal browsing. Work sessions are wiped when you sign out; Incognito keeps nothing." +
+                        if (synced) " Cleared history is also removed from your other signed-in devices." else "",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -625,7 +825,7 @@ private fun HelpDialog(email: String, phone: String, appVersion: String, onDismi
         text = {
             Column {
                 Text(
-                    "Your admin manages your account — they can reset your password and add or remove your links.",
+                    "SyncUp support can reset your password and manage your links.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -637,7 +837,7 @@ private fun HelpDialog(email: String, phone: String, appVersion: String, onDismi
                 )
                 Spacer(Modifier.height(14.dp))
                 Text(
-                    "Contact your admin:",
+                    "Contact SyncUp support:",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -888,5 +1088,177 @@ private fun RowDivider() {
             .padding(start = 72.dp)
             .height(1.dp)
             .background(MaterialTheme.colorScheme.outlineVariant),
+    )
+}
+
+/** One line under the Sync switch: off / syncing / problem / last synced. */
+@Composable
+private fun syncStatus(): String = when {
+    !BrowserSync.enabled -> "Off · this phone's data stays here"
+    BrowserSync.syncing -> "Syncing…"
+    BrowserSync.lastError != null -> BrowserSync.lastError!!
+    BrowserSync.lastSyncMs > 0 -> "On · synced " + com.agani.syncup.browser.relativeTime(BrowserSync.lastSyncMs).replaceFirstChar { it.lowercase() }
+    else -> "On · bookmarks, history, tabs and more across your devices"
+}
+
+/** Add or change the email or mobile number — confirmed with the current password. */
+@Composable
+private fun IdentifierDialog(
+    kind: String,
+    current: String,
+    onDismiss: () -> Unit,
+    onSubmit: suspend (value: String, password: String) -> Result<User>,
+) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val email = kind == "email"
+    var value by remember { mutableStateOf(if (email) current else current.removePrefix("+91")) }
+    var password by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val what = if (email) "email" else "mobile number"
+    AlertDialog(
+        containerColor = MaterialTheme.colorScheme.dialogSurface,
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text(if (current.isBlank()) "Add $what" else "Change $what") },
+        text = {
+            Column {
+                Text(
+                    "You can sign in with it. It must not be registered to another account.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value, { value = it; error = null },
+                    label = { Text(if (email) "Email" else "Mobile number") },
+                    prefix = if (email) null else ({ Text("+91 ") }),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = if (email) KeyboardType.Email else KeyboardType.Phone, imeAction = ImeAction.Next),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    password, { password = it; error = null },
+                    label = { Text("Current password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (error != null) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        },
+        confirmButton = {
+            Button(enabled = !busy && value.isNotBlank() && password.isNotBlank(), onClick = {
+                busy = true
+                scope.launch {
+                    onSubmit(value.trim(), password).fold(
+                        onSuccess = {
+                            Toast.makeText(context, if (email) "Email saved" else "Mobile number saved", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        },
+                        onFailure = { error = it.message ?: "Couldn't save" },
+                    )
+                    busy = false
+                }
+            }) {
+                if (busy) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                else Text("Save")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } },
+    )
+}
+
+/** Set or change the username, with a live "available?" check while typing. */
+@Composable
+private fun UsernameDialog(
+    current: String,
+    onCheck: suspend (String) -> Result<UsernameCheckResponse>,
+    onDismiss: () -> Unit,
+    onSubmit: suspend (String) -> Result<User>,
+) {
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var value by remember { mutableStateOf(current) }
+    var check by remember { mutableStateOf<UsernameCheckResponse?>(null) }
+    var checking by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val typed = value.trim().removePrefix("@").lowercase()
+
+    LaunchedEffect(typed) {
+        check = null
+        error = null
+        checking = false
+        if (typed.isBlank() || typed == current) return@LaunchedEffect
+        checking = true
+        delay(400) // wait until typing pauses
+        onCheck(typed).onSuccess { check = it }
+        checking = false
+    }
+
+    AlertDialog(
+        containerColor = MaterialTheme.colorScheme.dialogSurface,
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text(if (current.isBlank()) "Set a username" else "Change username") },
+        text = {
+            Column {
+                Text(
+                    "Sign in with it instead of your email or number. 3–30 letters, numbers, dots or underscores.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                val c = check
+                OutlinedTextField(
+                    value, { value = it },
+                    label = { Text("Username") },
+                    prefix = { Text("@") },
+                    singleLine = true,
+                    isError = error != null || (c != null && !c.available),
+                    trailingIcon = {
+                        when {
+                            checking -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            c?.available == true -> Icon(Icons.Rounded.CheckCircle, "Available", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    },
+                    supportingText = {
+                        Text(
+                            error ?: when {
+                                typed == current && current.isNotBlank() -> "This is your username"
+                                c != null -> c.message ?: if (c.available) "Available" else "Not available"
+                                else -> ""
+                            },
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            Button(enabled = !busy && check?.available == true && typed != current, onClick = {
+                busy = true
+                scope.launch {
+                    onSubmit(check?.username ?: typed).fold(
+                        onSuccess = {
+                            Toast.makeText(context, "Username saved", Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        },
+                        onFailure = { error = it.message ?: "Couldn't save" },
+                    )
+                    busy = false
+                }
+            }) {
+                if (busy) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                else Text("Save")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } },
     )
 }

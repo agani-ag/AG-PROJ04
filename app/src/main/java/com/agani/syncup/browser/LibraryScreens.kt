@@ -113,7 +113,8 @@ fun LibraryScreen(
     var bookmarks by remember { mutableStateOf<List<Bookmark>>(emptyList()) }
     var downloads by remember { mutableStateOf<List<DownloadEntry>>(emptyList()) }
 
-    LaunchedEffect(page, version) {
+    // Also reload when browser sync brings changes from the user's other devices.
+    LaunchedEffect(page, version, com.agani.syncup.sync.BrowserSync.dataVersion) {
         withContext(Dispatchers.IO) {
             when (page) {
                 LibraryPage.HISTORY -> history = db.history()

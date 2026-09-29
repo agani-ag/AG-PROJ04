@@ -41,7 +41,9 @@ class SyncUpApp : Application() {
                 "Verification",
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply { description = "One-time verification prompts (OTP / code / number)" }
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+            val mgr = getSystemService(NotificationManager::class.java)
+            mgr.createNotificationChannel(channel)
+            mgr.createNotificationChannel(SyncUpMessagingService.updatesChannel())
         }
     }
 }

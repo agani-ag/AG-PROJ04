@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FindInPage
+import androidx.compose.material.icons.rounded.Handshake
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
@@ -165,7 +166,7 @@ private fun SectionChoice(section: Section, subtitle: String, count: Int, select
 // ============================================================================ page menu
 internal enum class MenuAction {
     NEW_TAB, NEW_INCOGNITO, FORWARD, RELOAD, BOOKMARK, SHARE, FIND,
-    CHAT, RADIO, WORK, WORK_INFO, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, SIGN_IN,
+    CHAT, RADIO, WORK, WORK_INFO, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, SIGN_IN, PARTNERS,
 }
 
 @Composable
@@ -197,7 +198,7 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
         if (workPage) MenuRow(Icons.Rounded.Info, "About this work link", tint = cs.primary, textColor = cs.primary) { onAction(MenuAction.WORK_INFO) }
         MenuRow(Icons.Rounded.Add, if (tab.isWork) "New Normal tab" else "New tab") { onAction(MenuAction.NEW_TAB) }
         MenuRow(Icons.Rounded.VisibilityOff, "New incognito tab") { onAction(MenuAction.NEW_INCOGNITO) }
-        if (signedIn && !incognito && (hasWork || account.chatEnabled || account.radioEnabled)) {
+        if (signedIn && !incognito) {
             SheetDivider()
             if (hasWork && !tab.isWork) {
                 SectionTheme(Section.WORK) {
@@ -210,6 +211,9 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
                 }
             }
             if (account.radioEnabled) MenuRow(Icons.Rounded.Radio, "Radio") { onAction(MenuAction.RADIO) }
+            MenuRow(Icons.Rounded.Handshake, "Partners", badge = if (account.partnersWaiting > 0) "${account.partnersWaiting} new" else null) {
+                onAction(MenuAction.PARTNERS)
+            }
         }
         SheetDivider()
         MenuRow(Icons.Rounded.Bookmarks, "Bookmarks") { onAction(MenuAction.BOOKMARKS) }

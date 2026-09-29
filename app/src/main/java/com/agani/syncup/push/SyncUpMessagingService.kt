@@ -17,8 +17,8 @@ import com.google.firebase.messaging.RemoteMessage
 class SyncUpMessagingService : FirebaseMessagingService() {
 
     override fun onNewToken(token: String) {
-        // Token rotated — push the new one to the backend if the user is logged in.
-        DeviceRegistrar.register(applicationContext)
+        // Token rotated — every install (signed in or not) checks in with the new one.
+        DeviceRegistrar.hello(applicationContext)
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
@@ -48,6 +48,9 @@ class SyncUpMessagingService : FirebaseMessagingService() {
         }
         showNotification(
             title, body, imageUrl, message.data["link_url"], message.data["link_title"], isChat, actionId,
+            openInNormal = message.data["open_in"] == "normal",
+            openPartners = message.data["type"] == "partners",
+            broadcast = !message.data["audience"].isNullOrBlank(),
         )
     }
 
@@ -59,6 +62,9 @@ class SyncUpMessagingService : FirebaseMessagingService() {
         linkTitle: String?,
         openChat: Boolean = false,
         actionId: String? = null,
+        openInNormal: Boolean = false,
+        openPartners: Boolean = false,
+        broadcast: Boolean = false,
     ) {
         ensureChannel()
         val intent = Intent(this, MainActivity::class.java).apply {
@@ -68,10 +74,14 @@ class SyncUpMessagingService : FirebaseMessagingService() {
                 !actionId.isNullOrBlank() -> putExtra(MainActivity.EXTRA_ACTION_ID, actionId)
                 // A chat reply — tap opens the chat-with-admin screen.
                 openChat -> putExtra(MainActivity.EXTRA_OPEN_CHAT, true)
+                // A partner added this user — tap opens the Partners page.
+                openPartners -> putExtra(MainActivity.EXTRA_OPEN_PARTNERS, true)
                 // Otherwise tap opens this URL in the in-app WebView (campaign / form / any page).
                 !linkUrl.isNullOrBlank() -> {
                     putExtra(ReminderContract.EXTRA_LINK_URL, linkUrl)
                     putExtra(ReminderContract.EXTRA_LINK_TITLE, linkTitle ?: "")
+                    // Broadcast links open in a Normal tab; account pushes open in Work.
+                    if (openInNormal) putExtra(MainActivity.EXTRA_OPEN_IN, "normal")
                 }
             }
         }
@@ -82,7 +92,11 @@ class SyncUpMessagingService : FirebaseMessagingService() {
         // onMessageReceived runs off the main thread, so downloading here is safe.
         val image = if (!imageUrl.isNullOrBlank()) ReminderImages.load(imageUrl) else null
         // Verification prompts go on the high-importance Verification channel (heads-up).
-        val channel = if (!actionId.isNullOrBlank()) VERIFY_CHANNEL_ID else CHANNEL_ID
+        val channel = when {
+            !actionId.isNullOrBlank() -> VERIFY_CHANNEL_ID
+            broadcast -> UPDATES_CHANNEL_ID
+            else -> CHANNEL_ID
+        }
         val builder = NotificationCompat.Builder(this, channel)
             .setSmallIcon(R.drawable.ic_sync)
             .setContentTitle(title)
@@ -110,11 +124,12 @@ class SyncUpMessagingService : FirebaseMessagingService() {
             mgr.createNotificationChannel(
                 NotificationChannel(CHANNEL_ID, "SyncUp Notifications", NotificationManager.IMPORTANCE_HIGH),
             )
-            // Also ensure the Verification channel (normally created at app startup).
+            // Also ensure the Verification + Updates channels (normally created at app startup).
             mgr.createNotificationChannel(
                 NotificationChannel(VERIFY_CHANNEL_ID, "Verification", NotificationManager.IMPORTANCE_HIGH)
                     .apply { description = "One-time verification prompts (OTP / code / number)" },
             )
+            mgr.createNotificationChannel(updatesChannel())
         }
     }
 
@@ -123,5 +138,13 @@ class SyncUpMessagingService : FirebaseMessagingService() {
 
         /** High-importance channel for verification prompts (heads-up). Also created in SyncUpApp. */
         const val VERIFY_CHANNEL_ID = "syncup_verify"
+
+        /** News and announcements broadcast to every install (the backend routes topic sends here). */
+        const val UPDATES_CHANNEL_ID = "syncup_updates"
+
+        @androidx.annotation.RequiresApi(Build.VERSION_CODES.O)
+        fun updatesChannel() =
+            NotificationChannel(UPDATES_CHANNEL_ID, "SyncUp updates", NotificationManager.IMPORTANCE_DEFAULT)
+                .apply { description = "News and announcements from SyncUp" }
     }
 }

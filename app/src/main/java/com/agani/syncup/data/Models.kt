@@ -1,16 +1,143 @@
 package com.agani.syncup.data
 
+import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
 
+/** How the user signs in (v6): the backend treats a missing mode as email (what v5 sends). */
+enum class LoginMode(val wire: String, val label: String) {
+    EMAIL("email", "Email"),
+    PHONE("phone", "Phone"),
+    USERNAME("username", "Username"),
+}
+
 data class LoginRequest(
-    val email: String,
+    @SerializedName("login_mode") val loginMode: String,
+    val login: String,
     val password: String,
+    // Binds the session to this install, so the admin can sign out one device.
+    @SerializedName("device_id") val deviceId: String? = null,
+    @SerializedName("app_version") val appVersion: String? = null,
 )
 
+/** Self sign-up (only while the admin has "Allow sign-up" on). Email and/or phone, no verification. */
+data class SignupRequest(
+    val name: String,
+    val email: String?,
+    val phone: String?,
+    val password: String,
+    @SerializedName("accept_privacy") val acceptPrivacy: Boolean,
+    @SerializedName("device_id") val deviceId: String? = null,
+    @SerializedName("app_version") val appVersion: String? = null,
+)
+
+// Gson skips Kotlin defaults, so every field newer than v5 is nullable (older saved sessions lack them).
 data class User(
     val id: String,
     val name: String,
     val email: String,
+    val phone: String? = null,
+    val username: String? = null,
+    val source: String? = null, // admin | partner | self
+) {
+    /** What the user signs in with, for display: email, else phone, else @username. */
+    val loginLabel: String
+        get() = email.ifBlank { phone?.takeIf { it.isNotBlank() }?.let(::formatPhone) ?: username?.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "" }
+}
+
+/** "+919876543210" → "+91 98765 43210" (anything else is shown as stored). */
+fun formatPhone(raw: String): String =
+    if (raw.length == 13 && raw.startsWith("+91")) "+91 ${raw.substring(3, 8)} ${raw.substring(8)}" else raw
+
+/** Add / change email or phone (needs the current password) or set the username. Null = unchanged. */
+data class ProfileUpdateRequest(
+    val email: String? = null,
+    val phone: String? = null,
+    val username: String? = null,
+    @SerializedName("current_password") val currentPassword: String? = null,
+)
+
+data class ProfileResponse(val success: Boolean = false, val user: User? = null)
+
+data class UsernameCheckResponse(
+    val available: Boolean = false,
+    val username: String? = null,
+    val message: String? = null,
+)
+
+/** A partner (e.g. GSTSync) that added this user. Only enabled partners reach the user. */
+data class PartnerDto(
+    val id: String = "",
+    val partner: String = "",
+    val status: String = "", // not_enabled | enabled | disabled | suspended
+    @SerializedName("added_at") val addedAt: String? = null,
+    @SerializedName("locked_until") val lockedUntil: String? = null,
+)
+
+data class PartnersResponse(val partners: List<PartnerDto>? = null)
+
+data class PartnerEnableRequest(val password: String)
+
+data class PartnerResult(val success: Boolean = false, val partner: PartnerDto? = null)
+
+/** Every install checks in on launch (signed in or not). */
+data class DeviceHelloRequest(
+    @SerializedName("device_id") val deviceId: String,
+    @SerializedName("device_secret") val deviceSecret: String?,
+    @SerializedName("fcm_token") val fcmToken: String?,
+    @SerializedName("app_version") val appVersion: String,
+    @SerializedName("os_version") val osVersion: String,
+    val locale: String,
+    @SerializedName("time_zone") val timeZone: String,
+    @SerializedName("device_model") val deviceModel: String,
+    @SerializedName("webview_version") val webviewVersion: String,
+    @SerializedName("install_source") val installSource: String,
+    @SerializedName("notifications_allowed") val notificationsAllowed: Boolean,
+    @SerializedName("updates_enabled") val updatesEnabled: Boolean,
+)
+
+data class DeviceHelloResponse(
+    val success: Boolean = false,
+    @SerializedName("device_secret") val deviceSecret: String? = null,
+)
+
+data class DeviceUnregisterRequest(@SerializedName("device_id") val deviceId: String)
+
+// ---------------------------------------------------------------- browser sync
+/** One synced item: kind is bookmark | history | shortcut | setting. */
+data class SyncChange(
+    val kind: String,
+    val key: String,
+    val data: JsonObject?,
+    @SerializedName("updated_ms") val updatedMs: Long,
+    val deleted: Boolean,
+)
+
+data class SyncTab(val title: String? = null, val url: String? = null)
+
+data class TabsSnapshot(
+    @SerializedName("device_name") val deviceName: String,
+    val tabs: List<SyncTab>,
+)
+
+data class BrowserSyncRequest(
+    @SerializedName("device_id") val deviceId: String,
+    val since: String,
+    val changes: List<SyncChange>,
+    val tabs: TabsSnapshot?,
+)
+
+/** Another phone of the same user, with its open Normal tabs. */
+data class OtherDevice(
+    @SerializedName("device_id") val deviceId: String? = null,
+    @SerializedName("device_name") val deviceName: String? = null,
+    @SerializedName("updated_at") val updatedAt: String? = null,
+    val tabs: List<SyncTab>? = null,
+)
+
+data class BrowserSyncResponse(
+    val cursor: String? = null,
+    val changes: List<SyncChange>? = null,
+    @SerializedName("other_devices") val otherDevices: List<OtherDevice>? = null,
 )
 
 data class UrlItem(
@@ -65,6 +192,8 @@ data class ConfigResponse(
     @SerializedName("chat_enabled") val chatEnabled: Boolean = true,
     // Radio feature visibility (master switch AND this user's per-user switch).
     @SerializedName("radio_enabled") val radioEnabled: Boolean = false,
+    // "Allow sign-up" on the admin's Config page — shows "Create account" on the sign-in sheet.
+    @SerializedName("signup_enabled") val signupEnabled: Boolean = false,
     val announcement: AnnouncementDto? = null,
 )
 
@@ -95,6 +224,8 @@ data class SyncResponse(
     val urls: List<UrlItem> = emptyList(),
     @SerializedName("chat_unread") val chatUnread: Int = 0,
     val config: ConfigResponse = ConfigResponse(),
+    // Partners that added this user and wait to be enabled (badge on the Partners rows).
+    @SerializedName("partners_waiting") val partnersWaiting: Int = 0,
 )
 
 /** A partner verification prompt shown on the phone (GET /action/{id}). */

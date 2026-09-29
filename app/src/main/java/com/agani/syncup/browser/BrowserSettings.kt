@@ -19,10 +19,16 @@ enum class SearchEngine(val label: String, val searchUrl: String) {
 data class UserShortcut(val name: String, val url: String)
 
 /**
- * Browser preferences (device-local, observable by Compose). Call [init] once from the Activity.
+ * Browser preferences (observable by Compose). Call [init] once from the Activity.
+ *
+ * Search engine, pop-up blocking and the shortcuts sync to the user's account (see BrowserSync);
+ * the address-bar position stays per phone. Every synced change is reported through [onChange]
+ * as (kind, key): ("setting", "search_engine" | "block_popups") or ("shortcut", "user" | "hidden").
  */
 object BrowserSettings {
     private var prefs: SharedPreferences? = null
+
+    @Volatile var onChange: ((kind: String, key: String) -> Unit)? = null
 
     var searchEngine by mutableStateOf(SearchEngine.GOOGLE)
         private set
@@ -53,11 +59,13 @@ object BrowserSettings {
     fun updateSearchEngine(e: SearchEngine) {
         searchEngine = e
         prefs?.edit()?.putString("engine", e.name)?.apply()
+        onChange?.invoke("setting", "search_engine")
     }
 
     fun updateBlockPopups(on: Boolean) {
         blockPopups = on
         prefs?.edit()?.putBoolean("block_popups", on)?.apply()
+        onChange?.invoke("setting", "block_popups")
     }
 
     fun updateAddressBarBottom(on: Boolean) {
@@ -83,17 +91,47 @@ object BrowserSettings {
 
     fun hideBuiltin(url: String) {
         if (url !in hiddenBuiltins) hiddenBuiltins.add(url)
-        prefs?.edit()?.putStringSet("hidden_builtins", hiddenBuiltins.toSet())?.apply()
+        saveHidden()
     }
 
     fun unhideBuiltin(url: String) {
         hiddenBuiltins.remove(url)
-        prefs?.edit()?.putStringSet("hidden_builtins", hiddenBuiltins.toSet())?.apply()
+        saveHidden()
     }
 
-    private fun saveShortcuts() {
+    // ---- replaced wholesale by a change from the user's other devices (no onChange echo)
+    fun replaceShortcuts(list: List<UserShortcut>) {
+        shortcuts.clear()
+        shortcuts.addAll(list)
+        saveShortcuts(notify = false)
+    }
+
+    fun replaceHiddenBuiltins(urls: List<String>) {
+        hiddenBuiltins.clear()
+        hiddenBuiltins.addAll(urls.distinct())
+        saveHidden(notify = false)
+    }
+
+    fun applySyncedSearchEngine(name: String) {
+        val e = runCatching { SearchEngine.valueOf(name) }.getOrNull() ?: return
+        searchEngine = e
+        prefs?.edit()?.putString("engine", e.name)?.apply()
+    }
+
+    fun applySyncedBlockPopups(on: Boolean) {
+        blockPopups = on
+        prefs?.edit()?.putBoolean("block_popups", on)?.apply()
+    }
+
+    private fun saveShortcuts(notify: Boolean = true) {
         val arr = JSONArray()
         shortcuts.forEach { arr.put(JSONObject().put("name", it.name).put("url", it.url)) }
         prefs?.edit()?.putString("shortcuts", arr.toString())?.apply()
+        if (notify) onChange?.invoke("shortcut", "user")
+    }
+
+    private fun saveHidden(notify: Boolean = true) {
+        prefs?.edit()?.putStringSet("hidden_builtins", hiddenBuiltins.toSet())?.apply()
+        if (notify) onChange?.invoke("shortcut", "hidden")
     }
 }

@@ -8,6 +8,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.agani.syncup.data.AppPrefs
 import com.agani.syncup.data.AuthRepository
+import com.agani.syncup.data.LoginMode
+import com.agani.syncup.data.PartnerDto
+import com.agani.syncup.data.ProfileUpdateRequest
 import com.agani.syncup.data.ReminderStore
 import com.agani.syncup.data.SecurityStore
 import com.agani.syncup.data.SessionManager
@@ -15,6 +18,10 @@ import com.agani.syncup.data.TokenStore
 import com.agani.syncup.data.UrlItem
 import com.agani.syncup.data.User
 import com.agani.syncup.reminders.ReminderScheduler
+import com.agani.syncup.sync.BrowserSync
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
@@ -30,6 +37,8 @@ data class AuthState(
     val urlsLoaded: Boolean = false,
     // Unread admin chat messages — drives the chat button badge.
     val chatUnread: Int = 0,
+    // Partners that added this user and wait to be enabled — badge on the Partners rows.
+    val partnersWaiting: Int = 0,
 ) {
     val isLoggedIn: Boolean get() = user != null
 }
@@ -37,6 +46,9 @@ data class AuthState(
 class AuthViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repository = AuthRepository(TokenStore(app))
+
+    // Outlives the screen: the server half of sign-out must finish even if the UI goes away.
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     var state by mutableStateOf(AuthState())
         private set
@@ -50,27 +62,39 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             SessionManager.unauthorized.collect { expired ->
                 if (expired) {
-                    if (state.isLoggedIn) logout()
+                    // The token is already dead server-side — just clear this device.
+                    if (state.isLoggedIn) logout(tellServer = false)
                     SessionManager.reset()
                 }
             }
         }
     }
 
-    fun login(email: String, password: String) {
+    fun login(mode: LoginMode, login: String, password: String) {
         if (state.loading) return
         state = state.copy(loading = true, error = null)
-        viewModelScope.launch {
-            val result = repository.login(email, password)
-            state = result.fold(
-                onSuccess = { AuthState(user = it.user, urls = it.urls, urlsLoaded = true) },
-                onFailure = { state.copy(loading = false, error = it.message ?: "Login failed") },
-            )
-            if (result.isSuccess) {
-                // Register this device for push now that we have an auth token.
-                com.agani.syncup.push.DeviceRegistrar.register(getApplication())
-            }
-        }
+        viewModelScope.launch { finishSignIn(repository.login(mode, login, password), "Sign-in failed") }
+    }
+
+    /** Create an account (only offered while the admin allows sign-up); signs it in on success. */
+    fun signup(name: String, email: String, phone: String, password: String) {
+        if (state.loading) return
+        state = state.copy(loading = true, error = null)
+        viewModelScope.launch { finishSignIn(repository.signup(name, email, phone, password), "Couldn't create the account") }
+    }
+
+    private fun finishSignIn(result: Result<AuthRepository.Session>, fallback: String) {
+        state = result.fold(
+            onSuccess = { AuthState(user = it.user, urls = it.urls, urlsLoaded = true) },
+            onFailure = { state.copy(loading = false, error = it.message ?: fallback) },
+        )
+        // Attach this install to the account (push, per-device sign-out) and switch broadcast topics.
+        if (result.isSuccess) com.agani.syncup.push.DeviceRegistrar.hello(getApplication())
+    }
+
+    /** Clear the sign-in/sign-up error (e.g. when switching between the two). */
+    fun clearError() {
+        if (state.error != null) state = state.copy(error = null)
     }
 
     /**
@@ -114,6 +138,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                 onSuccess = { s ->
                     state = state.copy(
                         user = s.user, urls = s.urls, chatUnread = s.chatUnread,
+                        partnersWaiting = s.partnersWaiting,
                         refreshing = false, urlsLoaded = true,
                     )
                     onConfig(s.config)
@@ -143,9 +168,41 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun changePassword(current: String, new: String): Result<Unit> =
         repository.changePassword(current, new)
 
-    fun logout() {
+    // ---- profile: email / phone (current password required) and username
+    suspend fun updateProfile(req: ProfileUpdateRequest): Result<User> =
+        repository.updateProfile(req).onSuccess { state = state.copy(user = it) }
+
+    suspend fun checkUsername(name: String) = repository.checkUsername(name)
+
+    // ---- partners page
+    suspend fun partners(): Result<List<PartnerDto>> =
+        repository.partners().onSuccess { list -> setPartnersWaiting(list.count { it.status == "not_enabled" }) }
+
+    suspend fun enablePartner(id: String, password: String) = repository.enablePartner(id, password)
+    suspend fun disablePartner(id: String) = repository.disablePartner(id)
+
+    fun setPartnersWaiting(n: Int) {
+        if (n != state.partnersWaiting) state = state.copy(partnersWaiting = n)
+    }
+
+    /**
+     * Sign out. This phone keeps its Normal bookmarks/history and stops syncing. When [tellServer],
+     * pending changes are uploaded first, then the install is detached from the account (it keeps
+     * public broadcasts) and the token revoked — in the background, so sign-out is instant offline.
+     */
+    fun logout(tellServer: Boolean = true) {
+        val token = repository.token()
+        BrowserSync.onSignedOut()
         repository.logout()
         state = AuthState()
+        val app = getApplication<Application>()
+        com.agani.syncup.push.DeviceRegistrar.applyTopics(app, signedIn = false)
+        if (tellServer && token != null) {
+            ioScope.launch {
+                BrowserSync.finalFlush(token)
+                repository.serverLogout(token)
+            }
+        }
     }
 
     /** Deletes the account server-side, then wipes local session, PIN, and reminders. */
@@ -157,6 +214,8 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             AppPrefs(ctx).setBiometricEnabled(false)
             ReminderStore(ctx).clear()
             ReminderScheduler.rescheduleAll(ctx, emptyList())
+            BrowserSync.onSignedOut()
+            com.agani.syncup.push.DeviceRegistrar.applyTopics(ctx, signedIn = false)
             state = AuthState()
         }
         return result
