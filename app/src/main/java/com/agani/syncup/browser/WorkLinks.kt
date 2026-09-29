@@ -1,11 +1,5 @@
 package com.agani.syncup.browser
 
-import android.widget.Toast
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Bolt
@@ -24,87 +18,8 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.UploadFile
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import com.agani.syncup.data.UrlItem
-import kotlinx.coroutines.launch
-
-/** Work home → "Added by me" + : a user adds their own work link (when the admin allows it). */
-@Composable
-internal fun AddLinkDialog(
-    onDismiss: () -> Unit,
-    onSubmit: suspend (title: String, url: String, description: String) -> Result<Unit>,
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var title by remember { mutableStateOf("") }
-    var url by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    var submitting by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = { if (!submitting) onDismiss() },
-        title = { Text("Add link", fontWeight = FontWeight.Bold) },
-        text = {
-            Column {
-                OutlinedTextField(title, { title = it }, label = { Text("Title") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(url, { url = it }, label = { Text("URL (https://…)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(description, { description = it }, label = { Text("Description (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                error?.let {
-                    Spacer(Modifier.height(10.dp))
-                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        },
-        confirmButton = {
-            Button(enabled = !submitting, onClick = {
-                error = null
-                val t = title.trim()
-                val u = url.trim()
-                if (t.isBlank() || u.isBlank()) { error = "Title and URL are required"; return@Button }
-                if (!u.lowercase().startsWith("https://")) { error = "URL must start with https://"; return@Button }
-                submitting = true
-                scope.launch {
-                    val result = onSubmit(t, u, description.trim())
-                    submitting = false
-                    result.fold(
-                        onSuccess = {
-                            Toast.makeText(context, "Link added", Toast.LENGTH_SHORT).show()
-                            onDismiss()
-                        },
-                        onFailure = { error = it.message ?: "Couldn't add link" },
-                    )
-                }
-            }) {
-                if (submitting) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-                } else {
-                    Text("Add")
-                }
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !submitting) { Text("Cancel") } },
-    )
-}
 
 /** Tile icon for a work link: the admin-set icon name wins, else a guess from the title. */
 internal fun iconFor(item: UrlItem): ImageVector {

@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
 
 /**
  * The browser is split into three separate sections, each with its own tabs and its own
@@ -52,6 +53,9 @@ class BrowserTab(
 
     /** The page's <meta name="theme-color"> as ARGB, or null when it sets none (bars use the app theme). */
     var themeColor by mutableStateOf<Int?>(null)
+
+    /** Scaled snapshot of the page for the tab switcher (captured when the tab leaves the screen). */
+    var thumbnail by mutableStateOf<ImageBitmap?>(null)
 
     val isHome: Boolean get() = url.isBlank()
     val isWork: Boolean get() = section == Section.WORK

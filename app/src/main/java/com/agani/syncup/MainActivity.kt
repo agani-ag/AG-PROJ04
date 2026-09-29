@@ -467,7 +467,8 @@ class MainActivity : FragmentActivity() {
                     )
                 }
                 AppScreen.Browser -> {
-                    if (loggedIn) RequestNotificationPermission()
+                    // Asked once on first launch for every install (signed in or not) — SyncUp can notify anyone.
+                    RequestNotificationPermission(onceOnly = true)
                     BrowserScreen(
                         tabs = tabManager,
                         web = webPlatform,
@@ -500,8 +501,6 @@ class MainActivity : FragmentActivity() {
                             onOpenRadio = { showRadio = true },
                             onOpenLibrary = { libraryPage = it },
                             onRefreshLinks = { runFullRefresh(silent = false) },
-                            onAddLink = { title, url, desc -> vm.addLink(title, url, desc) },
-                            onRemoveLink = { id -> vm.removeLink(id) },
                         ),
                     )
                 }
@@ -547,14 +546,18 @@ class MainActivity : FragmentActivity() {
     }
 
     @Composable
-    private fun RequestNotificationPermission() {
+    private fun RequestNotificationPermission(onceOnly: Boolean = false) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
         LaunchedEffect(Unit) {
             val granted = ContextCompat.checkSelfPermission(
                 this@MainActivity, Manifest.permission.POST_NOTIFICATIONS,
             ) == PackageManager.PERMISSION_GRANTED
-            if (!granted) launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            if (granted) return@LaunchedEffect
+            val prefs = getSharedPreferences("browser_settings", MODE_PRIVATE)
+            if (onceOnly && prefs.getBoolean("notif_asked", false)) return@LaunchedEffect
+            prefs.edit().putBoolean("notif_asked", true).apply()
+            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 

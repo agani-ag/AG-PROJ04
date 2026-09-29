@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.asImageBitmap
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Executors
@@ -45,6 +46,7 @@ class TabManager(
         activeTab(s) ?: tabsIn(s).lastOrNull()?.also { active[s] = it.id } ?: newTab(s, select = false)
 
     fun switchTo(s: Section) {
+        if (s != section) captureActive()
         section = s
         ensureTab(s)
     }
@@ -80,6 +82,7 @@ class TabManager(
         )
 
     fun select(tab: BrowserTab) {
+        captureActive()
         active[tab.section] = tab.id
         section = tab.section
         persist()
@@ -99,13 +102,55 @@ class TabManager(
         persist()
     }
 
-    fun closeAll(s: Section) {
+    /** Close every tab in [s]; returns them so the caller can offer Undo ([reopen]). */
+    fun closeAll(s: Section): List<BrowserTab> {
+        val closed = tabsIn(s).filter { !it.isHome }
         tabsIn(s).forEach { destroyView(it.id) }
         tabs.removeAll { it.section == s }
         active.remove(s)
         if (s == Section.INCOGNITO) web.wipeSection(Section.INCOGNITO)
         keepSectionUsable()
         persist()
+        return closed
+    }
+
+    /** Undo for [closeAll]: bring the tabs back (their pages reload when shown). */
+    fun reopen(closed: List<BrowserTab>) {
+        if (closed.isEmpty()) return
+        val s = closed.first().section
+        tabs.removeAll { it.section == s && it.isHome } // the placeholder home tab added on close
+        closed.forEach {
+            it.loading = false
+            it.error = null
+        }
+        tabs.addAll(closed)
+        active[s] = closed.last().id
+        section = s
+        persist()
+    }
+
+    /** Snapshot the on-screen tab so the tab switcher shows a real preview. */
+    fun captureActive() {
+        activeTab()?.let { capture(it) }
+    }
+
+    fun capture(tab: BrowserTab) {
+        if (tab.isHome) return
+        val wv = views[tab.id] ?: return
+        if (wv.width <= 0 || wv.height <= 0 || !wv.isAttachedToWindow) return
+        runCatching {
+            val scale = 0.34f
+            val bmp = android.graphics.Bitmap.createBitmap(
+                (wv.width * scale).toInt().coerceAtLeast(1),
+                (wv.height * scale).toInt().coerceAtLeast(1),
+                android.graphics.Bitmap.Config.RGB_565,
+            )
+            val canvas = android.graphics.Canvas(bmp)
+            canvas.scale(scale, scale)
+            canvas.translate(-wv.scrollX.toFloat(), -wv.scrollY.toFloat())
+            wv.draw(canvas)
+            tab.thumbnail = bmp.asImageBitmap()
+        }
     }
 
     /** The section on screen always has a tab; an emptied Incognito section drops back to Normal. */

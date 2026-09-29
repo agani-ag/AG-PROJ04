@@ -120,35 +120,6 @@ class AuthRepository(private val tokenStore: TokenStore) {
         ApiClient.service.chatUnread("Bearer ${tokenStore.token().orEmpty()}").count
     }
 
-    /** Add a self-managed link; persists + returns the refreshed list. */
-    suspend fun addLink(title: String, url: String, description: String): Result<List<UrlItem>> = runCatching {
-        val newUrls = try {
-            ApiClient.service.addLink(
-                "Bearer ${tokenStore.token().orEmpty()}",
-                AddLinkRequest(title.trim(), url.trim(), description.trim()),
-            )
-        } catch (e: retrofit2.HttpException) {
-            throw Exception("Couldn't add the link. Check the title and an https:// URL.")
-        } catch (e: java.io.IOException) {
-            throw Exception("No internet connection. Try again.")
-        }
-        restore()?.let { persist(it.copy(urls = newUrls)) }
-        newUrls
-    }
-
-    /** Remove a user-added link; persists + returns the refreshed list. */
-    suspend fun removeLink(id: String): Result<List<UrlItem>> = runCatching {
-        val newUrls = try {
-            ApiClient.service.removeLink("Bearer ${tokenStore.token().orEmpty()}", id)
-        } catch (e: retrofit2.HttpException) {
-            throw Exception("Couldn't remove the link.")
-        } catch (e: java.io.IOException) {
-            throw Exception("No internet connection. Try again.")
-        }
-        restore()?.let { persist(it.copy(urls = newUrls)) }
-        newUrls
-    }
-
     suspend fun changePassword(current: String, new: String): Result<Unit> = runCatching {
         require(current.isNotBlank()) { "Enter your current password" }
         require(new.length >= 6) { "New password must be at least 6 characters" }

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
@@ -91,41 +92,45 @@ fun RadioMiniPlayer(onOpen: () -> Unit, modifier: Modifier = Modifier) {
     if (!visible) return
     val cs = MaterialTheme.colorScheme
     Surface(
-        color = cs.primaryContainer,
-        shape = RoundedCornerShape(16.dp),
-        shadowElevation = 8.dp,
-        modifier = modifier.fillMaxWidth().height(60.dp).clickable(onClick = onOpen),
+        color = cs.surfaceContainerHighest,
+        shape = RoundedCornerShape(20.dp),
+        shadowElevation = 6.dp,
+        modifier = modifier.fillMaxWidth().height(64.dp).clickable(onClick = onOpen),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 10.dp, end = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 10.dp, end = 6.dp)) {
             Box(
-                Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(cs.primary),
+                Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(cs.primaryContainer),
                 contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Rounded.Radio, null, tint = cs.onPrimary) }
+            ) { Icon(Icons.Rounded.Radio, null, tint = cs.onPrimaryContainer) }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (playing) {
-                        EqBars()
-                        Spacer(Modifier.width(6.dp))
-                    }
                     Text(
-                        station.ifBlank { "Radio" }, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                        color = cs.onPrimaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        station.ifBlank { "Radio" }, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+                        color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
+                    if (playing) {
+                        Spacer(Modifier.width(8.dp))
+                        EqBars()
+                    }
                 }
                 if (nowPlaying.isNotBlank()) {
-                    Text(nowPlaying, fontSize = 12.sp, color = cs.onPrimaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(nowPlaying, fontSize = 12.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            IconButton(onClick = { controller?.let { if (it.isPlaying) it.pause() else it.play() } }) {
-                Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "Pause" else "Play", tint = cs.onPrimaryContainer)
+            Box(
+                Modifier.size(40.dp).clip(CircleShape).background(cs.primary).clickable { controller?.let { if (it.isPlaying) it.pause() else it.play() } },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "Pause" else "Play", tint = cs.onPrimary)
             }
             IconButton(onClick = {
                 controller?.apply {
                     stop()
                     clearMediaItems()
                 }
-            }) { Icon(Icons.Rounded.Close, "Stop radio", tint = cs.onPrimaryContainer) }
+            }) { Icon(Icons.Rounded.Close, "Stop radio", tint = cs.onSurfaceVariant) }
         }
     }
 }
@@ -133,7 +138,7 @@ fun RadioMiniPlayer(onOpen: () -> Unit, modifier: Modifier = Modifier) {
 /** Three small animated bars — the "playing" indicator from the mockup. */
 @Composable
 private fun EqBars() {
-    val color = MaterialTheme.colorScheme.onPrimaryContainer
+    val color = MaterialTheme.colorScheme.primary
     val t = rememberInfiniteTransition(label = "eq")
     Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom, modifier = Modifier.height(12.dp)) {
         listOf(0, 200, 400).forEach { delay ->

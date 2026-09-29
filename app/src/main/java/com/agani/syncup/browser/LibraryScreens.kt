@@ -6,18 +6,19 @@ import android.content.Intent
 import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,19 +29,17 @@ import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.PictureAsPdf
+import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material.icons.rounded.Work
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -56,15 +55,48 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.agani.syncup.browser.ui.BarIcon
+import com.agani.syncup.browser.ui.EmptyState
+import com.agani.syncup.browser.ui.IconTile
+import com.agani.syncup.browser.ui.SectionTheme
+import com.agani.syncup.browser.ui.StatusChip
+import com.agani.syncup.browser.ui.TonalRow
+import com.agani.syncup.ui.theme.dialogSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.Calendar
+
+private val FAVICON_COLORS = listOf(
+    Color(0xFF1B4FD8), Color(0xFF16A085), Color(0xFFDC2626), Color(0xFF7C3AED),
+    Color(0xFFEA580C), Color(0xFF0891B2), Color(0xFF4285F4), Color(0xFF374151),
+)
+
+/** A letter "favicon" in a stable per-site colour. */
+@Composable
+private fun Favicon(url: String) {
+    val host = UrlInput.hostAndPath(url).first
+    val color = FAVICON_COLORS[(host.hashCode() and 0x7fffffff) % FAVICON_COLORS.size]
+    Box(Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(color), contentAlignment = Alignment.Center) {
+        Text(host.take(1).uppercase(), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+    }
+}
+
+private fun dayLabel(millis: Long): String {
+    val now = Calendar.getInstance()
+    val then = Calendar.getInstance().apply { timeInMillis = millis }
+    val sameYear = now.get(Calendar.YEAR) == then.get(Calendar.YEAR)
+    val dayDiff = now.get(Calendar.DAY_OF_YEAR) - then.get(Calendar.DAY_OF_YEAR)
+    return when {
+        sameYear && dayDiff == 0 -> "Today"
+        sameYear && dayDiff == 1 -> "Yesterday"
+        else -> java.text.SimpleDateFormat(if (sameYear) "EEEE, d MMMM" else "d MMMM yyyy", java.util.Locale.getDefault()).format(then.time)
+    }
+}
 
 /** History / Bookmarks / Downloads. History and bookmarks are Normal-section only; downloads are shared. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
     page: LibraryPage,
@@ -73,6 +105,7 @@ fun LibraryScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    val cs = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     var version by remember { mutableIntStateOf(0) } // bump to reload the list
     var confirmClear by remember { mutableStateOf(false) }
@@ -100,92 +133,99 @@ fun LibraryScreen(
         LibraryPage.BOOKMARKS -> "Bookmarks"
         LibraryPage.DOWNLOADS -> "Downloads"
     }
+    val empty = when (page) {
+        LibraryPage.HISTORY -> history.isEmpty()
+        LibraryPage.BOOKMARKS -> bookmarks.isEmpty()
+        LibraryPage.DOWNLOADS -> downloads.isEmpty()
+    }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text(title, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } },
-                actions = {
-                    if (page == LibraryPage.HISTORY && history.isNotEmpty()) {
-                        IconButton(onClick = { confirmClear = true }) { Icon(Icons.Rounded.DeleteSweep, "Clear history") }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-            )
-        },
-    ) { padding ->
-        val empty = when (page) {
-            LibraryPage.HISTORY -> history.isEmpty()
-            LibraryPage.BOOKMARKS -> bookmarks.isEmpty()
-            LibraryPage.DOWNLOADS -> downloads.isEmpty()
-        }
-        if (empty) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        when (page) {
-                            LibraryPage.HISTORY -> Icons.Rounded.History
-                            LibraryPage.BOOKMARKS -> Icons.Rounded.Star
-                            LibraryPage.DOWNLOADS -> Icons.Rounded.Download
-                        },
-                        null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(44.dp),
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text("No ${title.lowercase()} yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (page != LibraryPage.DOWNLOADS) {
-                        Text("Only Normal browsing is saved here", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
+    Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
+            BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
+            Text(title, fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
+            if (page == LibraryPage.HISTORY && history.isNotEmpty()) {
+                BarIcon(Icons.Rounded.DeleteSweep, "Clear history", tint = cs.onSurfaceVariant) { confirmClear = true }
             }
-            return@Scaffold
         }
-        LazyColumn(Modifier.fillMaxSize().padding(padding)) {
-            when (page) {
-                LibraryPage.HISTORY -> {
-                    var lastDay = ""
-                    history.forEach { h ->
-                        val day = DateUtils.getRelativeTimeSpanString(
-                            h.visitedAt, System.currentTimeMillis(), DateUtils.DAY_IN_MILLIS,
-                        ).toString()
-                        if (day != lastDay) {
-                            lastDay = day
-                            item(key = "d$day${h.id}") { DayHeader(day) }
-                        }
-                        item(key = h.id) {
-                            LibraryRow(
-                                letter = UrlInput.display(h.url).take(1).uppercase(),
-                                title = h.title.ifBlank { UrlInput.display(h.url) },
-                                subtitle = UrlInput.display(h.url).substringBefore('/') + " · " +
-                                    DateUtils.formatDateTime(context, h.visitedAt, DateUtils.FORMAT_SHOW_TIME),
-                                onClick = { onOpen(h.url) },
-                                trailing = Icons.Rounded.Close,
-                                onTrailing = { io { db.deleteHistory(h.id) } },
-                            )
+        if (page != LibraryPage.DOWNLOADS) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .padding(start = 20.dp, end = 20.dp, bottom = 4.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(cs.surfaceContainerLow)
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            ) {
+                Icon(Icons.Rounded.Info, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(10.dp))
+                Text("Only Normal browsing is saved here. Work and Incognito aren't.", fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant)
+            }
+        }
+
+        if (empty) {
+            EmptyState(
+                when (page) {
+                    LibraryPage.HISTORY -> Icons.Rounded.History
+                    LibraryPage.BOOKMARKS -> Icons.Rounded.StarBorder
+                    LibraryPage.DOWNLOADS -> Icons.Rounded.Download
+                },
+                "No ${title.lowercase()} yet",
+                when (page) {
+                    LibraryPage.HISTORY -> "Pages you visit in Normal tabs show up here"
+                    LibraryPage.BOOKMARKS -> "Tap the star in the address bar to save a page"
+                    LibraryPage.DOWNLOADS -> "Files you download from any section show up here"
+                },
+            )
+        } else {
+            LazyColumn(Modifier.fillMaxSize()) {
+                when (page) {
+                    LibraryPage.HISTORY -> {
+                        var lastDay = ""
+                        history.forEach { h ->
+                            val day = dayLabel(h.visitedAt)
+                            if (day != lastDay) {
+                                lastDay = day
+                                item(key = "d$day${h.id}") { DayHeader(day) }
+                            }
+                            item(key = h.id) {
+                                TonalRow(
+                                    title = h.title.ifBlank { UrlInput.display(h.url) },
+                                    subtitle = UrlInput.hostAndPath(h.url).first,
+                                    leading = { Favicon(h.url) },
+                                    trailing = {
+                                        Text(DateUtils.formatDateTime(context, h.visitedAt, DateUtils.FORMAT_SHOW_TIME), fontSize = 12.sp, color = cs.onSurfaceVariant)
+                                        BarIcon(Icons.Rounded.Close, "Remove from history", tint = cs.onSurfaceVariant) { io { db.deleteHistory(h.id) } }
+                                    },
+                                    minHeight = 60.dp,
+                                    onClick = { onOpen(h.url) },
+                                )
+                            }
                         }
                     }
-                }
-                LibraryPage.BOOKMARKS -> items(bookmarks, key = { it.id }) { b ->
-                    LibraryRow(
-                        letter = UrlInput.display(b.url).take(1).uppercase(),
-                        title = b.title,
-                        subtitle = UrlInput.display(b.url),
-                        onClick = { onOpen(b.url) },
-                        trailing = Icons.Rounded.Close,
-                        onTrailing = { io { db.deleteBookmark(b.id) } },
-                    )
-                }
-                LibraryPage.DOWNLOADS -> items(downloads, key = { it.id }) { d ->
-                    LibraryRow(
-                        icon = Icons.Rounded.Description,
-                        title = d.fileName,
-                        subtitle = d.source,
-                        workLabel = d.work,
-                        onClick = { openDownload(context, d) },
-                        trailing = Icons.Rounded.Close,
-                        onTrailing = { io { db.deleteDownload(d.id) } },
-                    )
+                    LibraryPage.BOOKMARKS -> items(bookmarks, key = { it.id }) { b ->
+                        TonalRow(
+                            title = b.title,
+                            subtitle = UrlInput.hostAndPath(b.url).first,
+                            leading = { Favicon(b.url) },
+                            trailing = { BarIcon(Icons.Rounded.Close, "Remove bookmark", tint = cs.onSurfaceVariant) { io { db.deleteBookmark(b.id) } } },
+                            minHeight = 60.dp,
+                            onClick = { onOpen(b.url) },
+                        )
+                    }
+                    LibraryPage.DOWNLOADS -> items(downloads, key = { it.id }) { d ->
+                        TonalRow(
+                            title = d.fileName,
+                            subtitle = d.source,
+                            leading = { IconTile(fileIcon(d.fileName), container = cs.surfaceContainerHigh, content = cs.onSurfaceVariant) },
+                            trailing = {
+                                if (d.work) SectionTheme(Section.WORK) { StatusChip("Work", Icons.Rounded.Work) }
+                                BarIcon(Icons.Rounded.Close, "Remove from list", tint = cs.onSurfaceVariant) { io { db.deleteDownload(d.id) } }
+                            },
+                            minHeight = 60.dp,
+                            onClick = { openDownload(context, d) },
+                        )
+                    }
                 }
             }
         }
@@ -194,17 +234,25 @@ fun LibraryScreen(
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
-            title = { Text("Clear history?", fontWeight = FontWeight.Bold) },
-            text = { Text("This removes all your Normal browsing history from this device.") },
+            containerColor = cs.dialogSurface,
+            title = { Text("Clear history?") },
+            text = { Text("This removes all your Normal browsing history from this device.", color = cs.onSurfaceVariant) },
             confirmButton = {
-                Button(onClick = {
+                TextButton(onClick = {
                     confirmClear = false
                     io { db.clearHistory() }
-                }) { Text("Clear") }
+                }) { Text("Clear", color = cs.error) }
             },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
         )
     }
+}
+
+private fun fileIcon(name: String): ImageVector = when (name.substringAfterLast('.', "").lowercase()) {
+    "pdf" -> Icons.Rounded.PictureAsPdf
+    "png", "jpg", "jpeg", "gif", "webp", "heic" -> Icons.Rounded.Image
+    "xls", "xlsx", "csv" -> Icons.Rounded.TableChart
+    else -> Icons.Rounded.Description
 }
 
 private fun openDownload(context: Context, d: DownloadEntry) {
@@ -224,48 +272,8 @@ private fun openDownload(context: Context, d: DownloadEntry) {
 @Composable
 private fun DayHeader(text: String) {
     Text(
-        text.uppercase(), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = .6.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 4.dp),
+        text, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium, letterSpacing = .1.sp,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp),
     )
-}
-
-@Composable
-private fun LibraryRow(
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-    trailing: ImageVector,
-    onTrailing: () -> Unit,
-    letter: String? = null,
-    icon: ImageVector? = null,
-    workLabel: Boolean = false,
-) {
-    val cs = MaterialTheme.colorScheme
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 10.dp),
-    ) {
-        Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(cs.primaryContainer), contentAlignment = Alignment.Center) {
-            if (icon != null) Icon(icon, null, tint = cs.primary) else Text(letter ?: "•", color = cs.primary, fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (workLabel) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0xFFCCFBF1)).padding(horizontal = 6.dp, vertical = 1.dp),
-                    ) {
-                        Icon(Icons.Rounded.Work, null, tint = Color(0xFF0F766E), modifier = Modifier.size(11.dp))
-                        Spacer(Modifier.width(3.dp))
-                        Text("Work", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF0F766E))
-                    }
-                }
-                Text(subtitle, fontSize = 12.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
-        IconButton(onClick = onTrailing) { Icon(trailing, "Remove", tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
-    }
 }

@@ -1,5 +1,10 @@
 package com.agani.syncup.ui
 
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.background
 import android.content.ComponentName
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -172,25 +177,23 @@ fun RadioScreen(
     val current = channels.firstOrNull { it.id == currentId }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
-                title = { Text("Radio", fontWeight = FontWeight.Bold) },
+                title = { Text("Radio") },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
                 ),
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp),
-        ) {
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             // ---- Now-playing player ----
             if (current != null) {
                 NowPlaying(
@@ -209,11 +212,11 @@ fun RadioScreen(
                 Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             }
 
-            Spacer(Modifier.height(8.dp))
             Text(
                 "Stations",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 14.sp, fontWeight = FontWeight.Medium, letterSpacing = .1.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 4.dp),
             )
 
             when {
@@ -226,10 +229,7 @@ fun RadioScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                else -> LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 10.dp),
-                ) {
+                else -> LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)) {
                     items(channels, key = { it.id }) { ch ->
                         val active = ch.id == currentId
                         ChannelRow(
@@ -256,82 +256,85 @@ private fun NowPlaying(
     onPrev: () -> Unit,
     onNext: () -> Unit,
 ) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        modifier = Modifier.fillMaxWidth(),
+    val cs = MaterialTheme.colorScheme
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(28.dp))
+            .background(cs.primaryContainer)
+            .padding(20.dp),
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxWidth().padding(20.dp),
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1.7f)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFF3B82F6), Color(0xFF1D4ED8), Color(0xFF1E3A8A)))),
+            contentAlignment = Alignment.Center,
         ) {
-            Box(
-                modifier = Modifier.size(72.dp).clip(CircleShape)
-                    .padding(0.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Rounded.Radio,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(56.dp),
-                )
-            }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                channel.name,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                channel.nowPlaying.ifBlank { "Live radio" },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (channel.listeners > 0) {
-                Text(
-                    "${channel.listeners} listening",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
-            }
-            Spacer(Modifier.height(16.dp))
+            Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = Color.White, modifier = Modifier.size(56.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(12.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFFDC2626))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
             ) {
-                IconButton(onClick = onPrev, enabled = canPrev) {
-                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous station", modifier = Modifier.size(36.dp))
+                Box(Modifier.size(6.dp).clip(CircleShape).background(Color.White))
+                Spacer(Modifier.width(6.dp))
+                Text("LIVE", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = .6.sp, color = Color.White)
+            }
+            if (channel.listeners > 0) {
+                Text(
+                    "${channel.listeners} listening", fontSize = 11.sp, color = Color.White.copy(alpha = .9f),
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Text(
+            channel.name, fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium,
+            color = cs.onPrimaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            channel.nowPlaying.ifBlank { "Live radio" }, fontSize = 14.sp, color = cs.onPrimaryContainer.copy(alpha = .8f),
+            maxLines = 2, overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(16.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            IconButton(onClick = onPrev, enabled = canPrev) {
+                Icon(Icons.Rounded.SkipPrevious, contentDescription = "Previous station", tint = cs.onPrimaryContainer.copy(alpha = if (canPrev) 1f else .38f), modifier = Modifier.size(32.dp))
+            }
+            Box(
+                Modifier.size(64.dp).clip(RoundedCornerShape(22.dp)).background(cs.primary).clickable(onClick = onToggle),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (buffering) {
+                    CircularProgressIndicator(modifier = Modifier.size(26.dp), strokeWidth = 2.dp, color = cs.onPrimary)
+                } else {
+                    Icon(
+                        if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        contentDescription = if (isPlaying) "Pause" else "Play",
+                        tint = cs.onPrimary,
+                        modifier = Modifier.size(32.dp),
+                    )
                 }
-                FilledIconButton(
-                    onClick = onToggle,
-                    modifier = Modifier.size(64.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                    ),
-                ) {
-                    if (buffering) {
-                        CircularProgressIndicator(modifier = Modifier.size(26.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
-                    } else {
-                        Icon(
-                            if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause" else "Play",
-                            modifier = Modifier.size(34.dp),
-                        )
-                    }
-                }
-                IconButton(onClick = onNext, enabled = canNext) {
-                    Icon(Icons.Rounded.SkipNext, contentDescription = "Next station", modifier = Modifier.size(36.dp))
-                }
+            }
+            IconButton(onClick = onNext, enabled = canNext) {
+                Icon(Icons.Rounded.SkipNext, contentDescription = "Next station", tint = cs.onPrimaryContainer.copy(alpha = if (canNext) 1f else .38f), modifier = Modifier.size(32.dp))
             }
         }
     }
 }
+
+private val STATION_COLORS = listOf(Color(0xFFE11D48), Color(0xFFF59E0B), Color(0xFF7C3AED), Color(0xFF0891B2), Color(0xFF16A34A), Color(0xFF2563EB))
 
 @Composable
 private fun ChannelRow(
@@ -340,50 +343,41 @@ private fun ChannelRow(
     playing: Boolean,
     onClick: () -> Unit,
 ) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (active) MaterialTheme.colorScheme.secondaryContainer
-            else MaterialTheme.colorScheme.surface,
-        ),
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+    val cs = MaterialTheme.colorScheme
+    val tint = STATION_COLORS[(ch.name.hashCode() and 0x7fffffff) % STATION_COLORS.size]
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (active) Modifier.padding(horizontal = 8.dp).clip(RoundedCornerShape(20.dp)).background(cs.primaryContainer) else Modifier)
+            .clickable(onClick = onClick)
+            .padding(start = if (active) 12.dp else 20.dp, end = if (active) 12.dp else 20.dp, top = 10.dp, bottom = 10.dp),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-        ) {
-            Icon(
-                if (playing) Icons.Rounded.GraphicEq else Icons.Rounded.Radio,
-                contentDescription = null,
-                tint = if (active) MaterialTheme.colorScheme.onSecondaryContainer
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    ch.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                if (ch.nowPlaying.isNotBlank()) {
-                    Text(
-                        ch.nowPlaying,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            Spacer(Modifier.width(8.dp))
-            Icon(
-                if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                contentDescription = if (playing) "Pause" else "Play",
-                tint = if (active) MaterialTheme.colorScheme.onSecondaryContainer
-                else MaterialTheme.colorScheme.primary,
+        Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(tint), contentAlignment = Alignment.Center) {
+            Text(
+                ch.name.split(' ').filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1) }.uppercase(),
+                fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White,
             )
         }
+        Spacer(Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                ch.name, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = if (active) cs.onPrimaryContainer else cs.onSurface,
+            )
+            Text(
+                if (playing) "Playing" + (if (ch.nowPlaying.isNotBlank()) " · ${ch.nowPlaying}" else "") else ch.nowPlaying.ifBlank { "Live radio" },
+                fontSize = 12.sp, lineHeight = 16.sp,
+                color = if (active) cs.onPrimaryContainer.copy(alpha = .8f) else cs.onSurfaceVariant,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            if (playing) Icons.Rounded.GraphicEq else Icons.Rounded.PlayArrow,
+            contentDescription = if (playing) "Playing" else "Play",
+            tint = if (active) cs.onPrimaryContainer else cs.primary,
+        )
     }
 }

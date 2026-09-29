@@ -21,20 +21,6 @@ interface ApiService {
     @GET("sync")
     suspend fun sync(@Header("Authorization") auth: String): SyncResponse
 
-    /** Self-manage: add a link (only when can_manage_links). Returns the refreshed list. */
-    @POST("account/links")
-    suspend fun addLink(
-        @Header("Authorization") auth: String,
-        @Body body: AddLinkRequest,
-    ): List<UrlItem>
-
-    /** Self-manage: remove a user-added link. Returns the refreshed list. */
-    @POST("account/links/{id}/delete")
-    suspend fun removeLink(
-        @Header("Authorization") auth: String,
-        @Path("id") id: String,
-    ): List<UrlItem>
-
     @POST("account/change-password")
     suspend fun changePassword(
         @Header("Authorization") auth: String,

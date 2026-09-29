@@ -31,6 +31,8 @@ object BrowserSettings {
     var addressBarBottom by mutableStateOf(false)
         private set
     val shortcuts = mutableStateListOf<UserShortcut>()
+    /** Built-in shortcuts the user removed from the new-tab page (by URL). */
+    val hiddenBuiltins = mutableStateListOf<String>()
 
     fun init(context: Context) {
         if (prefs != null) return
@@ -45,6 +47,7 @@ object BrowserSettings {
             val o = arr.optJSONObject(i) ?: continue
             shortcuts.add(UserShortcut(o.optString("name"), o.optString("url")))
         }
+        p.getStringSet("hidden_builtins", emptySet())?.let { hiddenBuiltins.addAll(it) }
     }
 
     fun updateSearchEngine(e: SearchEngine) {
@@ -70,6 +73,22 @@ object BrowserSettings {
     fun removeShortcut(s: UserShortcut) {
         shortcuts.remove(s)
         saveShortcuts()
+    }
+
+    /** Undo for [removeShortcut]. */
+    fun restoreShortcut(s: UserShortcut, index: Int) {
+        shortcuts.add(index.coerceIn(0, shortcuts.size), s)
+        saveShortcuts()
+    }
+
+    fun hideBuiltin(url: String) {
+        if (url !in hiddenBuiltins) hiddenBuiltins.add(url)
+        prefs?.edit()?.putStringSet("hidden_builtins", hiddenBuiltins.toSet())?.apply()
+    }
+
+    fun unhideBuiltin(url: String) {
+        hiddenBuiltins.remove(url)
+        prefs?.edit()?.putStringSet("hidden_builtins", hiddenBuiltins.toSet())?.apply()
     }
 
     private fun saveShortcuts() {

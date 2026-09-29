@@ -11,7 +11,6 @@ data class User(
     val id: String,
     val name: String,
     val email: String,
-    @SerializedName("can_manage_links") val canManageLinks: Boolean = false,
 )
 
 data class UrlItem(
@@ -20,16 +19,12 @@ data class UrlItem(
     val url: String,
     val icon: String? = null,
     val description: String? = null,
-    @SerializedName("can_remove") val canRemove: Boolean = false,
+    // Where the link comes from, for grouping on the Work home: "partner" or "admin" (null = admin),
+    // and the partner's display name ("GSTSync"). Optional until the backend sends them.
+    val source: String? = null,
+    @SerializedName("source_name") val sourceName: String? = null,
     // Non-empty when the link opts into partner push — injected as window.SyncUp.token.
     @SerializedName("notify_token") val notifyToken: String = "",
-)
-
-/** Body for adding a self-managed link. */
-data class AddLinkRequest(
-    val title: String,
-    val url: String,
-    val description: String = "",
 )
 
 data class LoginResponse(

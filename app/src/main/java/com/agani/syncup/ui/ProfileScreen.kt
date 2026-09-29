@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -90,6 +91,7 @@ import com.agani.syncup.data.AppPrefs
 import com.agani.syncup.data.SecurityStore
 import com.agani.syncup.data.ThemeMode
 import com.agani.syncup.data.User
+import com.agani.syncup.ui.theme.dialogSurface
 import com.agani.syncup.web.WebViewActivity
 import kotlinx.coroutines.launch
 
@@ -150,19 +152,19 @@ fun ProfileScreen(
     var showClearData by remember { mutableStateOf(false) }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
             TopAppBar(
-                title = { Text("Settings", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
+                title = { Text("Settings", style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
                 ),
             )
         },
@@ -172,51 +174,55 @@ fun ProfileScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(6.dp))
             if (user != null) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 18.dp),
-                ) {
-                    Box(
-                        modifier = Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center,
+                SettingsGroup {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
                     ) {
-                        Text(user.name.take(1).uppercase(), fontSize = 18.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(user.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
-                        Text("Signed in · SyncUp", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Box(
+                            modifier = Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(user.name.take(1).uppercase(), fontSize = 22.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Medium)
+                        }
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(user.name, fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                            Text(user.email, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                            Text("Signed in · SyncUp", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                        }
                     }
                 }
+                Spacer(Modifier.height(4.dp))
             } else {
                 // Login is optional — the browser works fully without it; signing in adds SyncUp features.
                 SettingsGroup {
                     Column(Modifier.fillMaxWidth().padding(18.dp)) {
-                        Text("SyncUp account", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        Text("SyncUp account", fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Optional. Sign in to get your work links, chat with your admin and listen to Radio.",
+                            "Optional. Sign in to sync your bookmarks, history and tabs across your devices.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.height(14.dp))
-                        Button(onClick = onSignIn, modifier = Modifier.fillMaxWidth()) { Text("Sign in to SyncUp") }
+                        Button(onClick = onSignIn) { Text("Sign in") }
                     }
                 }
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(4.dp))
             }
 
             // ---------------- Browser ----------------
-            SectionLabel("BROWSER")
+            SectionLabel("Browser")
             SettingsGroup {
                 SettingRow(icon = Icons.Rounded.Search, title = "Search engine", subtitle = BrowserSettings.searchEngine.label, onClick = { showEngine = true })
                 RowDivider()
-                SettingRow(icon = Icons.Rounded.Home, title = "Home page", subtitle = if (user != null) "New tab (My Links)" else "New tab", onClick = null)
+                SettingRow(icon = Icons.Rounded.Home, title = "Home page", subtitle = "New tab", onClick = null)
                 RowDivider()
                 SwitchRow(
                     icon = Icons.Rounded.Block,
@@ -238,8 +244,7 @@ fun ProfileScreen(
             }
 
             // ---------------- Security ----------------
-            Spacer(Modifier.height(20.dp))
-            SectionLabel("PRIVACY & SECURITY")
+            SectionLabel("Privacy & security")
             SettingsGroup {
                 PinLockRow(
                     hasPin = hasPin,
@@ -294,8 +299,7 @@ fun ProfileScreen(
             }
 
             // ---------------- Appearance ----------------
-            Spacer(Modifier.height(20.dp))
-            SectionLabel("APPEARANCE")
+            SectionLabel("Appearance")
             SettingsGroup {
                 Box(Modifier.padding(14.dp)) {
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -318,8 +322,7 @@ fun ProfileScreen(
 
             // ---------------- Account ----------------
             if (user != null) {
-            Spacer(Modifier.height(20.dp))
-            SectionLabel("ACCOUNT")
+            SectionLabel("Account")
             SettingsGroup {
                 SettingRow(icon = Icons.Rounded.Lock, title = "Change password", onClick = { showChangePassword = true })
                 RowDivider()
@@ -327,6 +330,7 @@ fun ProfileScreen(
                     icon = Icons.Rounded.DeleteOutline,
                     title = "Delete account",
                     subtitle = "Deactivate your account and sign out",
+                    danger = true,
                     onClick = { showDeleteAccount = true },
                 )
                 if (user != null && chatEnabled) {
@@ -355,8 +359,7 @@ fun ProfileScreen(
             }
 
             // ---------------- About ----------------
-            Spacer(Modifier.height(20.dp))
-            SectionLabel("ABOUT")
+            SectionLabel("About")
             SettingsGroup {
                 SettingRow(
                     icon = Icons.AutoMirrored.Rounded.HelpOutline,
@@ -390,12 +393,12 @@ fun ProfileScreen(
             Spacer(Modifier.height(28.dp))
             OutlinedButton(
                 onClick = onLogout,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp).height(48.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
             ) {
                 Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Sign out", fontWeight = FontWeight.SemiBold)
+                Text("Sign out", fontWeight = FontWeight.Medium)
             }
             }
             Spacer(Modifier.height(28.dp))
@@ -404,8 +407,9 @@ fun ProfileScreen(
 
     if (showEngine) {
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.dialogSurface,
             onDismissRequest = { showEngine = false },
-            title = { Text("Search engine", fontWeight = FontWeight.Bold) },
+            title = { Text("Search engine") },
             text = {
                 Column {
                     SearchEngine.entries.forEach { engine ->
@@ -444,8 +448,9 @@ fun ProfileScreen(
     }
     if (showLockGrace) {
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.dialogSurface,
             onDismissRequest = { showLockGrace = false },
-            title = { Text("Auto-lock", fontWeight = FontWeight.Bold) },
+            title = { Text("Auto-lock") },
             text = {
                 Column {
                     Text(
@@ -490,8 +495,9 @@ fun ProfileScreen(
     }
     if (showRemovePin) {
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.dialogSurface,
             onDismissRequest = { showRemovePin = false },
-            title = { Text("Remove PIN?", fontWeight = FontWeight.Bold) },
+            title = { Text("Remove PIN?") },
             text = { Text("This turns off the app lock and biometric unlock.") },
             confirmButton = {
                 Button(
@@ -519,8 +525,9 @@ fun ProfileScreen(
     }
     if (showDeleteAccount) {
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.dialogSurface,
             onDismissRequest = { if (!deleting) showDeleteAccount = false },
-            title = { Text("Delete account?", fontWeight = FontWeight.Bold) },
+            title = { Text("Delete account?") },
             text = {
                 Text(
                     "This deactivates your account and signs you out on all devices. " +
@@ -566,8 +573,9 @@ private fun ClearDataDialog(onDismiss: () -> Unit, onClear: (history: Boolean, c
     var cookies by remember { mutableStateOf(true) }
     var cache by remember { mutableStateOf(true) }
     AlertDialog(
+        containerColor = MaterialTheme.colorScheme.dialogSurface,
         onDismissRequest = onDismiss,
-        title = { Text("Clear browsing data", fontWeight = FontWeight.Bold) },
+        title = { Text("Clear browsing data") },
         text = {
             Column {
                 CheckRow("Browsing history", history) { history = it }
@@ -611,8 +619,9 @@ private fun CheckRow(label: String, checked: Boolean, subtitle: String? = null, 
 private fun HelpDialog(email: String, phone: String, appVersion: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
     AlertDialog(
+        containerColor = MaterialTheme.colorScheme.dialogSurface,
         onDismissRequest = onDismiss,
-        title = { Text("Help & support", fontWeight = FontWeight.Bold) },
+        title = { Text("Help & support") },
         text = {
             Column {
                 Text(
@@ -679,8 +688,9 @@ private fun SetPinDialog(title: String, onDismiss: () -> Unit, onConfirm: (Strin
     var pin by remember { mutableStateOf("") }
 
     AlertDialog(
+        containerColor = MaterialTheme.colorScheme.dialogSurface,
         onDismissRequest = onDismiss,
-        title = { Text(title, fontWeight = FontWeight.Bold) },
+        title = { Text(title) },
         text = {
             Column {
                 Text(
@@ -721,8 +731,9 @@ private fun ChangePasswordDialog(
     var submitting by remember { mutableStateOf(false) }
 
     AlertDialog(
+        containerColor = MaterialTheme.colorScheme.dialogSurface,
         onDismissRequest = { if (!submitting) onDismiss() },
-        title = { Text("Change password", fontWeight = FontWeight.Bold) },
+        title = { Text("Change password") },
         text = {
             Column {
                 OutlinedTextField(current, { current = it }, label = { Text("Current password") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
@@ -768,52 +779,61 @@ private fun ChangePasswordDialog(
 private fun SectionLabel(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = 1.sp,
-        modifier = Modifier.fillMaxWidth().padding(start = 4.dp, bottom = 8.dp),
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = .1.sp,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, top = 20.dp, bottom = 8.dp),
     )
 }
 
 @Composable
 private fun SettingsGroup(content: @Composable () -> Unit) {
-    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
+    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
         Column { content() }
     }
 }
 
 @Composable
-private fun IconTile(icon: ImageVector) {
+private fun IconTile(icon: ImageVector, danger: Boolean = false) {
+    val cs = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
-            .size(38.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.primaryContainer),
+            .size(40.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (danger) cs.errorContainer else cs.surfaceContainerHigh),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+        Icon(icon, contentDescription = null, tint = if (danger) cs.error else cs.onSurfaceVariant, modifier = Modifier.size(22.dp))
     }
 }
 
 @Composable
-private fun SettingRow(icon: ImageVector, title: String, subtitle: String? = null, onClick: (() -> Unit)?) {
+private fun RowText(title: String, subtitle: String?, modifier: Modifier, danger: Boolean = false) {
+    val cs = MaterialTheme.colorScheme
+    Column(modifier = modifier) {
+        Text(title, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium, letterSpacing = .1.sp, color = if (danger) cs.error else cs.onSurface)
+        if (subtitle != null) {
+            Text(subtitle, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = .3.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+        }
+    }
+}
+
+@Composable
+private fun SettingRow(icon: ImageVector, title: String, subtitle: String? = null, danger: Boolean = false, onClick: (() -> Unit)?) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
             .let { if (onClick != null) it.clickable(onClick = onClick) else it }
-            .padding(horizontal = 14.dp, vertical = 14.dp),
+            .heightIn(min = 64.dp)
+            .padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
     ) {
-        IconTile(icon)
-        Spacer(Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-            if (subtitle != null) {
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        if (onClick != null) {
+        IconTile(icon, danger)
+        Spacer(Modifier.width(16.dp))
+        RowText(title, subtitle, Modifier.weight(1f), danger)
+        if (onClick != null && !danger) {
             Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -826,23 +846,12 @@ private fun PinLockRow(hasPin: Boolean, onTapChange: () -> Unit, onToggle: (Bool
         modifier = Modifier
             .fillMaxWidth()
             .let { if (hasPin) it.clickable(onClick = onTapChange) else it }
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .heightIn(min = 64.dp)
+            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
     ) {
         IconTile(Icons.Rounded.Lock)
-        Spacer(Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                "App lock (PIN)",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                if (hasPin) "On · tap to change PIN" else "Off · protect with a 4-digit PIN",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        Spacer(Modifier.width(16.dp))
+        RowText("App lock (PIN)", if (hasPin) "On · tap to change PIN" else "Off · protect with a 4-digit PIN", Modifier.weight(1f))
         Switch(checked = hasPin, onCheckedChange = onToggle)
     }
 }
@@ -858,16 +867,15 @@ private fun SwitchRow(
 ) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
+            .heightIn(min = 64.dp)
+            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
     ) {
         IconTile(icon)
-        Spacer(Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-            if (subtitle != null) {
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
+        Spacer(Modifier.width(16.dp))
+        RowText(title, subtitle, Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
 }
@@ -877,7 +885,7 @@ private fun RowDivider() {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 66.dp)
+            .padding(start = 72.dp)
             .height(1.dp)
             .background(MaterialTheme.colorScheme.outlineVariant),
     )

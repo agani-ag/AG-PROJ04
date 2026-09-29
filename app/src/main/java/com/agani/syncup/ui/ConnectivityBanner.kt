@@ -1,5 +1,14 @@
 package com.agani.syncup.ui
 
+import androidx.compose.ui.unit.sp
+import androidx.compose.material3.Surface
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.rounded.WifiOff
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Box
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
@@ -59,36 +68,32 @@ private fun isNetworkAvailable(context: Context): Boolean {
     return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
 }
 
-/** A red "you're offline" strip that slides in from the bottom while there's no connection. */
+/** A floating "You're offline" pill above the bottom bar while there's no connection. */
 @Composable
 fun ConnectivityBanner(modifier: Modifier = Modifier) {
     val online by rememberIsOnline()
     AnimatedVisibility(
         visible = !online,
-        enter = slideInVertically { it },
-        exit = slideOutVertically { it },
+        enter = slideInVertically { it } + fadeIn(),
+        exit = slideOutVertically { it } + fadeOut(),
         modifier = modifier,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFFB00020))
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Rounded.CloudOff,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(10.dp))
-            Text(
-                "You're offline — check your connection",
-                color = Color.White,
-                fontWeight = FontWeight.Medium,
-            )
+        Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 80.dp), contentAlignment = Alignment.Center) {
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                shadowElevation = 6.dp,
+            ) {
+                Row(
+                    modifier = Modifier.height(40.dp).padding(start = 14.dp, end = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Rounded.WifiOff, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("You're offline", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                }
+            }
         }
     }
 }

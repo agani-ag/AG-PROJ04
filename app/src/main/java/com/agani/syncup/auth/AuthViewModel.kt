@@ -136,20 +136,6 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun radioChannels() = repository.radioChannels()
     suspend fun respondAction(id: String, value: String) = repository.respondAction(id, value)
 
-    /** Self-manage: add a link, then update the list. */
-    suspend fun addLink(title: String, url: String, description: String): Result<Unit> {
-        val result = repository.addLink(title, url, description)
-        result.onSuccess { state = state.copy(urls = it, urlsLoaded = true) }
-        return result.map { }
-    }
-
-    /** Self-manage: remove a user-added link, then update the list. */
-    suspend fun removeLink(id: String): Result<Unit> {
-        val result = repository.removeLink(id)
-        result.onSuccess { state = state.copy(urls = it) }
-        return result.map { }
-    }
-
     fun clearMessage() {
         if (state.message != null) state = state.copy(message = null)
     }
