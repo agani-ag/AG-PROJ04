@@ -1,5 +1,6 @@
 package com.agani.syncup.browser
 
+import com.agani.syncup.browser.ui.SyncUpMark
 import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
@@ -34,7 +35,6 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.TableChart
-import androidx.compose.material.icons.rounded.Work
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -160,7 +160,7 @@ fun LibraryScreen(
             ) {
                 Icon(Icons.Rounded.Info, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(10.dp))
-                Text("Only Normal browsing is saved here. Work and Incognito aren't.", fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant)
+                Text("Only Normal browsing is saved here. SyncUp and Incognito aren't.", fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant)
             }
         }
 
@@ -220,7 +220,7 @@ fun LibraryScreen(
                             subtitle = d.source,
                             leading = { IconTile(fileIcon(d.fileName), container = cs.surfaceContainerHigh, content = cs.onSurfaceVariant) },
                             trailing = {
-                                if (d.work) SectionTheme(Section.WORK) { StatusChip("Work", Icons.Rounded.Work) }
+                                if (d.work) SectionTheme(Section.WORK) { StatusChip("SyncUp", SyncUpMark) }
                                 BarIcon(Icons.Rounded.Close, "Remove from list", tint = cs.onSurfaceVariant) { io { db.deleteDownload(d.id) } }
                             },
                             minHeight = 60.dp,

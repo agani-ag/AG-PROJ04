@@ -1,5 +1,6 @@
 package com.agani.syncup.browser
 
+import com.agani.syncup.browser.ui.SyncUpMark
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,7 +19,6 @@ import androidx.compose.material.icons.rounded.Handshake
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Tab
-import androidx.compose.material.icons.rounded.Work
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -83,7 +83,7 @@ internal fun WorkHome(
                 modifier = Modifier.fillMaxWidth().height(72.dp).padding(start = 20.dp, end = 16.dp, top = 8.dp),
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Work", fontSize = 24.sp, lineHeight = 32.sp, color = cs.onSurface)
+                    Text("SyncUp", fontSize = 24.sp, lineHeight = 32.sp, color = cs.onSurface)
                     Text(
                         if (query.isBlank()) {
                             "${account.links.size} link${if (account.links.size == 1) "" else "s"} from $sources source${if (sources == 1) "" else "s"}"
@@ -105,7 +105,7 @@ internal fun WorkHome(
                     cursorBrush = SolidColor(cs.primary),
                     decorationBox = { inner ->
                         Box(contentAlignment = Alignment.CenterStart) {
-                            if (query.isEmpty()) Text("Search work links", color = cs.onSurfaceVariant, fontSize = 15.sp)
+                            if (query.isEmpty()) Text("Search SyncUp links", color = cs.onSurfaceVariant, fontSize = 15.sp)
                             inner()
                         }
                     },
@@ -117,8 +117,8 @@ internal fun WorkHome(
             when {
                 account.links.isEmpty() -> Box(Modifier.fillMaxWidth().height(360.dp)) {
                     EmptyState(
-                        Icons.Rounded.Work,
-                        if (account.refreshing) "Loading your links…" else "No work links yet",
+                        SyncUpMark,
+                        if (account.refreshing) "Loading your links…" else "No SyncUp links yet",
                         "Links from your admin and partners show up here. Pull down to refresh.",
                     )
                 }

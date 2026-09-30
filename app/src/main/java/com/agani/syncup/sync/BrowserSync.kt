@@ -191,12 +191,13 @@ object BrowserSync {
     fun setSyncEnabled(on: Boolean) {
         if (on == enabled) return
         val token = TokenStore(app).token()
-        if (!on && token != null && accountId != null) {
-            // Last call while still on: this phone's tabs disappear from the other devices.
-            scope.launch { mutex.withLock { runCatching { runSync("Bearer $token", clearTabs = true) } } }
-        }
         enabled = on
         prefs.edit().putBoolean("enabled", on).apply()
+        if (!on && token != null && accountId != null) {
+            // One last call: this phone's tabs disappear from the other devices, and the server
+            // records that sync is off here.
+            scope.launch { mutex.withLock { runCatching { runSync("Bearer $token", clearTabs = true) } } }
+        }
         if (on) {
             // Back on: merge both ways from scratch (latest change still wins).
             scope.launch {
@@ -289,9 +290,10 @@ object BrowserSync {
             val settings = pendingSettings()
             val changes = bookmarks.map { it.toChange() } + history.map { it.toChange() } + settings.map { it.second }
 
+            val state = com.agani.syncup.data.SyncStateDto(enabled, SyncType.entries.filter { isOn(it) }.map { it.pref })
             val tabs = when {
-                clearTabs || !isOn(SyncType.TABS) -> TabsSnapshot(DeviceRegistrar.deviceModel(), emptyList())
-                else -> TabsSnapshot(DeviceRegistrar.deviceModel(), tabsProvider?.invoke().orEmpty().take(100))
+                clearTabs || !isOn(SyncType.TABS) -> TabsSnapshot(DeviceRegistrar.deviceModel(), emptyList(), state)
+                else -> TabsSnapshot(DeviceRegistrar.deviceModel(), tabsProvider?.invoke().orEmpty().take(100), state)
             }
             val resp = ApiClient.service.browserSync(
                 auth,

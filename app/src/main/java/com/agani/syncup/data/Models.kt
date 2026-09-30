@@ -114,9 +114,13 @@ data class SyncChange(
 
 data class SyncTab(val title: String? = null, val url: String? = null)
 
+/** This phone's Sync switches (Settings → Sync), shown to the admin per device. */
+data class SyncStateDto(val enabled: Boolean, val types: List<String>)
+
 data class TabsSnapshot(
     @SerializedName("device_name") val deviceName: String,
     val tabs: List<SyncTab>,
+    val state: SyncStateDto? = null,
 )
 
 data class BrowserSyncRequest(

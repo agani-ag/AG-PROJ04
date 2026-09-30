@@ -1,5 +1,6 @@
 package com.agani.syncup.browser
 
+import com.agani.syncup.browser.ui.SyncUpMark
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -41,7 +42,6 @@ import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material.icons.rounded.Work
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -94,7 +94,7 @@ internal fun SectionSheet(
             tabs.tabsIn(Section.NORMAL).size, current == Section.NORMAL, locked = false,
         ) { onPick(Section.NORMAL) }
         if (!signedIn) {
-            SectionChoice(Section.WORK, "Sign in to use your work links", 0, false, locked = true) { onSignIn() }
+            SectionChoice(Section.WORK, "Sign in to use your SyncUp links", 0, false, locked = true) { onSignIn() }
         } else if (hasWork) {
             val open = tabs.tabsIn(Section.WORK).count { !it.isHome }
             SectionChoice(
@@ -195,14 +195,14 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
                 QuickAction(Icons.Rounded.Refresh, "Reload", page) { onAction(MenuAction.RELOAD) }
             }
         }
-        if (workPage) MenuRow(Icons.Rounded.Info, "About this work link", tint = cs.primary, textColor = cs.primary) { onAction(MenuAction.WORK_INFO) }
+        if (workPage) MenuRow(Icons.Rounded.Info, "About this SyncUp link", tint = cs.primary, textColor = cs.primary) { onAction(MenuAction.WORK_INFO) }
         MenuRow(Icons.Rounded.Add, if (tab.isWork) "New Normal tab" else "New tab") { onAction(MenuAction.NEW_TAB) }
         MenuRow(Icons.Rounded.VisibilityOff, "New incognito tab") { onAction(MenuAction.NEW_INCOGNITO) }
         if (signedIn && !incognito) {
             SheetDivider()
             if (hasWork && !tab.isWork) {
                 SectionTheme(Section.WORK) {
-                    MenuRow(Icons.Rounded.Work, "Work links", "${account.links.size}", tint = MaterialTheme.colorScheme.primary) { onAction(MenuAction.WORK) }
+                    MenuRow(SyncUpMark, "SyncUp links", "${account.links.size}", tint = MaterialTheme.colorScheme.primary) { onAction(MenuAction.WORK) }
                 }
             }
             if (account.chatEnabled) {
@@ -257,16 +257,16 @@ internal fun WorkInfoSheet(tab: BrowserTab, onReload: () -> Unit, onSearchNormal
     val cs = MaterialTheme.colorScheme
     Column(Modifier.padding(bottom = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 12.dp)) {
-            if (tab.isMasked) IconTile(Icons.Rounded.Work, container = cs.primaryContainer, content = cs.onPrimaryContainer, size = 48.dp)
+            if (tab.isMasked) IconTile(SyncUpMark, container = cs.primaryContainer, content = cs.onPrimaryContainer, size = 48.dp)
             else IconTile(Icons.Rounded.Language, container = cs.surfaceContainerHigh, content = cs.onSurfaceVariant, size = 48.dp)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    if (tab.isMasked) tab.workName ?: "Work link" else UrlInput.hostAndPath(tab.url).first,
+                    if (tab.isMasked) tab.workName ?: "SyncUp link" else UrlInput.hostAndPath(tab.url).first,
                     fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1,
                 )
                 Text(
-                    if (tab.isMasked) "Work link · address hidden" else "Opened from ${tab.workName ?: "a work link"} · Work",
+                    if (tab.isMasked) "SyncUp link · address hidden" else "Opened from ${tab.workName ?: "a SyncUp link"} · SyncUp",
                     fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant,
                 )
             }
@@ -279,11 +279,11 @@ internal fun WorkInfoSheet(tab: BrowserTab, onReload: () -> Unit, onSearchNormal
                 .background(cs.surfaceContainerLowest)
                 .padding(14.dp),
         ) {
-            Icon(if (tab.isMasked) Icons.Rounded.VisibilityOff else Icons.Rounded.Work, null, tint = cs.primary, modifier = Modifier.size(20.dp))
+            Icon(if (tab.isMasked) Icons.Rounded.VisibilityOff else SyncUpMark, null, tint = cs.primary, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(12.dp))
             Text(
                 if (tab.isMasked) "The address of this page is hidden by your organisation. You can use it here, but not copy, share or open it anywhere else."
-                else "You reached this site from a work link, so it stays in this Work tab. Its address is shown, but it can't be shared or opened anywhere else.",
+                else "You reached this site from a SyncUp link, so it stays in this SyncUp tab. Its address is shown, but it can't be shared or opened anywhere else.",
                 fontSize = 12.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant,
             )
         }

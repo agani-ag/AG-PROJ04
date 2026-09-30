@@ -73,11 +73,11 @@ class BrowserTab(
     val label: String
         get() = when {
             isHome -> when (section) {
-                Section.WORK -> "Work"
+                Section.WORK -> "SyncUp"
                 Section.INCOGNITO -> "Incognito tab"
                 Section.NORMAL -> "New tab"
             }
-            isMasked -> workName ?: "Work link"
+            isMasked -> workName ?: "SyncUp link"
             title.isNotBlank() -> title
             else -> UrlInput.display(url)
         }

@@ -1,5 +1,6 @@
 package com.agani.syncup.browser
 
+import com.agani.syncup.browser.ui.SyncUpMark
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -40,7 +41,6 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.NoPhotography
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material.icons.rounded.Work
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -199,11 +199,11 @@ internal fun NormalHome(
                             .padding(16.dp),
                     ) {
                         Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(w.primary), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.Work, null, tint = w.onPrimary)
+                            Icon(SyncUpMark, null, tint = w.onPrimary)
                         }
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("Work", fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = w.onPrimaryContainer)
+                            Text("SyncUp", fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = w.onPrimaryContainer)
                             val n = account.links.size
                             Text(
                                 "$n link${if (n == 1) "" else "s"} · $workOpenTabs open tab${if (workOpenTabs == 1) "" else "s"}",
@@ -438,7 +438,7 @@ internal fun IncognitoHome(onSearch: () -> Unit) {
             ) {
                 Icon(Icons.Rounded.Info, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(12.dp))
-                Text("Work links, Chat and Radio aren't available in incognito", fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant)
+                Text("SyncUp links, Chat and Radio aren't available in Incognito", fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant)
             }
             Spacer(Modifier.height(24.dp))
         }

@@ -36,12 +36,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material.icons.rounded.Work
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.vectorResource
+import com.agani.syncup.R
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -80,15 +81,20 @@ fun SectionTheme(section: Section, content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes, content = content)
 }
 
+/** The SyncUp mark (the app's two-arrow logo): the icon of the SyncUp section — links SyncUp provides. */
+val SyncUpMark: ImageVector
+    @Composable get() = ImageVector.vectorResource(R.drawable.ic_syncup_mark)
+
+@Composable
 fun sectionIcon(s: Section): ImageVector = when (s) {
     Section.NORMAL -> Icons.Rounded.Public
-    Section.WORK -> Icons.Rounded.Work
+    Section.WORK -> SyncUpMark
     Section.INCOGNITO -> Icons.Rounded.VisibilityOff
 }
 
 fun sectionName(s: Section) = when (s) {
     Section.NORMAL -> "Normal"
-    Section.WORK -> "Work"
+    Section.WORK -> "SyncUp"
     Section.INCOGNITO -> "Incognito"
 }
 
@@ -333,7 +339,7 @@ fun SectionHeader(text: String, modifier: Modifier = Modifier, action: String? =
     }
 }
 
-/** Small tonal status chip ("2 open", "Work"). */
+/** Small tonal status chip ("2 open", "SyncUp"). */
 @Composable
 fun StatusChip(text: String, icon: ImageVector? = null, container: Color = MaterialTheme.colorScheme.primaryContainer, content: Color = MaterialTheme.colorScheme.onPrimaryContainer) {
     Row(

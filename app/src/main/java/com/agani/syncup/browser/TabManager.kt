@@ -78,7 +78,7 @@ class TabManager(
     fun openWorkLink(name: String, url: String, linkId: String? = null, notifyToken: String = ""): BrowserTab =
         newTab(
             Section.WORK, url,
-            workName = name.ifBlank { "Work link" },
+            workName = name.ifBlank { "SyncUp link" },
             workLinkId = linkId,
             workRoots = listOfNotNull(UrlInput.rootDomainOf(url)),
             notifyToken = notifyToken,
@@ -288,7 +288,7 @@ class TabManager(
 
     override fun onDownload(tab: BrowserTab, fileName: String, systemId: Long) {
         val work = tab.isWork
-        val source = if (work) tab.workName ?: "Work" else UrlInput.display(tab.url).substringBefore('/')
+        val source = if (work) tab.workName ?: "SyncUp" else UrlInput.display(tab.url).substringBefore('/')
         io.execute { runCatching { db.addDownload(fileName, source, work, systemId) } }
     }
 

@@ -28,7 +28,6 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Tab
-import androidx.compose.material.icons.rounded.Work
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -60,6 +59,22 @@ import com.agani.syncup.browser.ui.EmptyState
 import com.agani.syncup.browser.ui.SectionTheme
 import com.agani.syncup.browser.ui.sectionIcon
 import com.agani.syncup.browser.ui.sectionName
+import com.agani.syncup.browser.ui.SyncUpMark
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import com.agani.syncup.data.OtherDevice
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
@@ -106,36 +121,14 @@ internal fun TabSwitcher(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth().height(64.dp).padding(start = 12.dp, end = 4.dp),
                 ) {
-                    Row(
-                        Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(50)).background(cs.surfaceContainer).padding(3.dp),
-                    ) {
-                        sections.forEach { s ->
-                            val sel = s == shown
-                            val locked = s == Section.WORK && !signedIn
-                            val count = tabs.tabsIn(s).count { !it.isHome || s == shown }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .clip(RoundedCornerShape(50))
-                                    .background(if (sel) cs.primaryContainer else Color.Transparent)
-                                    .clickable { if (locked) onSignIn() else shown = s }
-                                    .alpha(if (locked) .6f else 1f),
-                            ) {
-                                Icon(
-                                    if (locked) Icons.Rounded.Lock else sectionIcon(s), null, modifier = Modifier.size(16.dp),
-                                    tint = if (sel) cs.onPrimaryContainer else cs.onSurfaceVariant,
-                                )
-                                Text(
-                                    (if (s == Section.INCOGNITO && !sel) "Incog." else sectionName(s)) + if (count > 0 && !locked) " $count" else "",
-                                    fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1,
-                                    color = if (sel) cs.onPrimaryContainer else cs.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    }
+                    SectionSwitch(
+                        sections = sections,
+                        shown = shown,
+                        count = { s -> tabs.tabsIn(s).count { !it.isHome || s == shown } },
+                        locked = { s -> s == Section.WORK && !signedIn },
+                        onPick = { s -> if (s == Section.WORK && !signedIn) onSignIn() else shown = s },
+                        modifier = Modifier.weight(1f),
+                    )
                     BarIcon(Icons.Rounded.Close, "Close tab switcher", tint = cs.onSurface, onClick = onClose)
                 }
 
@@ -146,9 +139,9 @@ internal fun TabSwitcher(
                     if (onlyHome && others.isEmpty()) {
                         EmptyState(
                             Icons.Rounded.Tab, "No open tabs",
-                            if (shown == Section.WORK) "Open a link from your Work home" else "Your tabs will show here",
-                            action = if (shown == Section.WORK) "Work links" else "New tab",
-                            actionIcon = if (shown == Section.WORK) Icons.Rounded.Work else Icons.Rounded.Add,
+                            if (shown == Section.WORK) "Open a link from your SyncUp home" else "Your tabs will show here",
+                            action = if (shown == Section.WORK) "SyncUp links" else "New tab",
+                            actionIcon = if (shown == Section.WORK) SyncUpMark else Icons.Rounded.Add,
                             onAction = {
                                 list.firstOrNull()?.let { tabs.select(it) } ?: tabs.newTab(shown)
                                 onClose()
@@ -174,7 +167,7 @@ internal fun TabSwitcher(
                                 )
                             }
                             item(key = "new") {
-                                NewTabCard(if (shown == Section.WORK) "Open a work link" else "New tab") {
+                                NewTabCard(if (shown == Section.WORK) "Open a SyncUp link" else "New tab") {
                                     val home = tabs.tabsIn(shown).firstOrNull { it.isHome }
                                     if (home != null) tabs.select(home) else tabs.newTab(shown)
                                     onClose()
@@ -188,7 +181,7 @@ internal fun TabSwitcher(
                             if (shown == Section.WORK || shown == Section.INCOGNITO) {
                                 item(key = "note", span = { GridItemSpan(2) }) {
                                     Text(
-                                        if (shown == Section.WORK) "Work tabs stay on this device and show link names, never addresses."
+                                        if (shown == Section.WORK) "SyncUp tabs stay on this device and show link names, never addresses."
                                         else "Incognito tabs aren't kept and close with the app.",
                                         fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center,
                                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
@@ -253,7 +246,7 @@ private fun TabCard(t: BrowserTab, current: Boolean, onSelect: () -> Unit, onClo
                 .padding(start = 12.dp, end = 4.dp),
         ) {
             if (t.isWork) {
-                Icon(Icons.Rounded.Work, null, tint = cs.primary, modifier = Modifier.size(18.dp))
+                Icon(SyncUpMark, null, tint = cs.primary, modifier = Modifier.size(18.dp))
             } else {
                 Box(Modifier.size(18.dp).clip(RoundedCornerShape(5.dp)).background(color), contentAlignment = Alignment.Center) {
                     Text(
@@ -296,7 +289,7 @@ private fun PageSketch(t: BrowserTab, color: Color) {
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxWidth().height(22.dp).background(color))
         Text(
-            if (t.isMasked) t.workName ?: "Work link" else t.title.ifBlank { UrlInput.hostAndPath(t.url).first },
+            if (t.isMasked) t.workName ?: "SyncUp link" else t.title.ifBlank { UrlInput.hostAndPath(t.url).first },
             fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF111111), maxLines = 2,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp),
         )
@@ -348,6 +341,107 @@ private fun NewTabCard(label: String, onClick: () -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
         Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant)
+    }
+}
+
+/**
+ * Normal · SyncUp · Incognito. The section on show gets the room — icon, name and tab count — and
+ * the others shrink to icon pills (with a small count badge, or a lock when SyncUp needs sign-in).
+ * Widths animate between the two, so switching reads as one pill sliding across.
+ */
+@Composable
+private fun SectionSwitch(
+    sections: List<Section>,
+    shown: Section,
+    count: (Section) -> Int,
+    locked: (Section) -> Boolean,
+    onPick: (Section) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    val pad = 4.dp
+    val gap = 4.dp
+    val compact = 48.dp
+    BoxWithConstraints(modifier.height(48.dp)) {
+        val others = sections.size - 1
+        val wide = (maxWidth - pad * 2 - compact * others - gap * others).coerceAtLeast(compact)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(gap),
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(50))
+                .background(cs.surfaceContainer)
+                .padding(pad)
+                .selectableGroup(),
+        ) {
+            sections.forEach { s ->
+                val sel = s == shown
+                val width by animateDpAsState(if (sel) wide else compact, tween(260), label = "segment")
+                SectionSegment(s, sel, locked(s), count(s), width) { onPick(s) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionSegment(section: Section, selected: Boolean, locked: Boolean, count: Int, width: Dp, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val bg by animateColorAsState(if (selected) cs.primaryContainer else Color.Transparent, tween(220), label = "segmentBg")
+    val fg = if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant
+    val name = sectionName(section)
+    val spoken = name + when {
+        locked -> ", sign in to use"
+        count > 0 -> ", $count tab${if (count == 1) "" else "s"}"
+        else -> ""
+    }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .width(width)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(50))
+            .background(bg)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = spoken },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 12.dp)) {
+            Icon(sectionIcon(section), null, tint = fg, modifier = Modifier.size(20.dp))
+            AnimatedVisibility(
+                visible = selected,
+                enter = fadeIn(tween(180, delayMillis = 90)) + expandHorizontally(tween(260), expandFrom = Alignment.Start),
+                exit = fadeOut(tween(90)) + shrinkHorizontally(tween(260), shrinkTowards = Alignment.Start),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (count > 0) {
+                        Spacer(Modifier.width(8.dp))
+                        Box(
+                            Modifier.height(20.dp).clip(RoundedCornerShape(50)).background(cs.primary).padding(horizontal = 7.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("$count", fontSize = 11.sp, lineHeight = 11.sp, fontWeight = FontWeight.Bold, color = cs.onPrimary)
+                        }
+                    }
+                }
+            }
+        }
+        // Icon-only pills keep a hint of what's inside: a tab count, or a lock when sign-in is needed.
+        if (!selected && (locked || count > 0)) {
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 2.dp, end = 3.dp)
+                    .size(16.dp)
+                    .clip(CircleShape)
+                    .background(cs.surfaceContainerHighest)
+                    .border(1.dp, cs.surfaceContainer, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (locked) Icon(Icons.Rounded.Lock, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(10.dp))
+                else Text(if (count > 9) "9+" else "$count", fontSize = 9.sp, lineHeight = 9.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
+            }
+        }
     }
 }
 

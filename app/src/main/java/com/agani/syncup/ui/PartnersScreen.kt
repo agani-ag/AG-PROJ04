@@ -188,7 +188,7 @@ fun PartnersScreen(
             title = { Text("Disable ${p.partner}?") },
             text = {
                 Text(
-                    "Its Work links disappear and its notices and verification prompts are refused. ${p.partner} is told you turned it off. " +
+                    "Its SyncUp links disappear and its notices and verification prompts are refused. ${p.partner} is told you turned it off. " +
                         "To enable it again you'll need its password.",
                     color = cs.onSurfaceVariant,
                 )

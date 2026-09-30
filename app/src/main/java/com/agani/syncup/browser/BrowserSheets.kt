@@ -1,5 +1,6 @@
 package com.agani.syncup.browser
 
+import com.agani.syncup.browser.ui.SyncUpMark
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.Image
@@ -32,7 +33,6 @@ import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material.icons.rounded.Work
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -270,7 +270,7 @@ private fun SignInForm(
         Icon(Icons.Rounded.Shield, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(8.dp))
         Text(
-            "Passwords, cookies, Work and Incognito never leave this device.",
+            "Passwords, cookies, SyncUp tabs and Incognito never leave this device.",
             fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant,
         )
     }
@@ -438,8 +438,8 @@ fun AccountSheet(
             if (hasWork) {
                 SectionTheme(Section.WORK) {
                     TonalRow(
-                        "Work links", "From your admin and partners",
-                        leading = { IconTile(Icons.Rounded.Work) },
+                        "SyncUp links", "From your admin and partners",
+                        leading = { IconTile(SyncUpMark) },
                         trailing = { Text("${account.links.size}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 8.dp)) },
                         minHeight = 60.dp,
                         onClick = onWork,
@@ -481,7 +481,7 @@ fun AccountSheet(
             onClick = onSignOut,
         )
         Text(
-            "Signing out keeps this device's bookmarks and history (they stop syncing). It closes Work tabs and signs you out of work sites.",
+            "Signing out keeps this device's bookmarks and history (they stop syncing). It closes SyncUp tabs and signs you out of the sites they opened.",
             fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
         )
@@ -497,7 +497,7 @@ fun SignOutDialog(onDismiss: () -> Unit, onConfirm: () -> Unit) {
         title = { Text("Sign out of SyncUp?") },
         text = {
             Text(
-                "Bookmarks, history and tabs stay on this device and stop syncing. Work tabs close and work sites are signed out.",
+                "Bookmarks, history and tabs stay on this device and stop syncing. SyncUp tabs close and the sites they opened are signed out.",
                 fontSize = 14.sp, lineHeight = 20.sp, color = cs.onSurfaceVariant,
             )
         },

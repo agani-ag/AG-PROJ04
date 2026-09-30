@@ -11,7 +11,7 @@ data class Bookmark(val id: Long, val url: String, val title: String, val create
 
 /**
  * One shared downloads list for every section. Work downloads carry the link name as their source
- * (never the URL) and are labelled "Work" in the list.
+ * (never the URL) and are labelled "SyncUp" in the list.
  */
 data class DownloadEntry(
     val id: Long,

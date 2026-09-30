@@ -278,7 +278,8 @@ fun ProfileScreen(
                     )
                 }
                 Text(
-                    "Never synced: passwords, cookies, Work, Incognito, app lock, downloads and site permissions.",
+                    "Synced data is stored on SyncUp's servers only to reach your other devices — SyncUp staff can't see what you browse. " +
+                        "Never synced: passwords, cookies, SyncUp tabs, Incognito, app lock, downloads and site permissions.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp),
@@ -782,7 +783,7 @@ private fun ClearDataDialog(synced: Boolean, onDismiss: () -> Unit, onClear: (hi
                 CheckRow("Cached images and files", cache) { cache = it }
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "Applies to Normal browsing. Work sessions are wiped when you sign out; Incognito keeps nothing." +
+                    "Applies to Normal browsing. SyncUp sessions are wiped when you sign out; Incognito keeps nothing." +
                         if (synced) " Cleared history is also removed from your other signed-in devices." else "",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
