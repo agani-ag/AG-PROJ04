@@ -30,6 +30,21 @@ import kotlin.random.Random
 internal const val SONG_ID = "song:"
 internal const val RADIO_ID = "radio:"
 
+/** Where the shuffle / repeat choices are kept (written by the app and by the player service). */
+internal const val MUSIC_PREFS = "music"
+internal const val PREF_SHUFFLE = "shuffle"
+internal const val PREF_REPEAT = "repeat"
+
+/** True while the player is on one of the phone's songs (not a station, not empty). */
+internal fun Player.isSong(): Boolean = mediaItemCount > 0 && currentMediaItem?.mediaId?.startsWith(SONG_ID) == true
+
+/** Off → all → one → off. */
+internal fun nextRepeatMode(mode: Int): Int = when (mode) {
+    Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+    Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+    else -> Player.REPEAT_MODE_OFF
+}
+
 /** The app's one [PlayerHandle], provided by MainActivity. */
 val LocalPlayer = staticCompositionLocalOf<PlayerHandle?> { null }
 
@@ -52,8 +67,8 @@ class PlayerHandle internal constructor(private val prefs: SharedPreferences) {
     var error by mutableStateOf<String?>(null); private set
 
     /** Saved choices. They apply to songs; Radio never shuffles or repeats. */
-    var shuffle by mutableStateOf(prefs.getBoolean("shuffle", false)); private set
-    var repeat by mutableIntStateOf(prefs.getInt("repeat", Player.REPEAT_MODE_OFF)); private set
+    var shuffle by mutableStateOf(prefs.getBoolean(PREF_SHUFFLE, false)); private set
+    var repeat by mutableIntStateOf(prefs.getInt(PREF_REPEAT, Player.REPEAT_MODE_OFF)); private set
 
     val isRadio: Boolean get() = item?.mediaId?.startsWith(RADIO_ID) == true
     val songId: Long? get() = item?.mediaId?.takeIf { it.startsWith(SONG_ID) }?.removePrefix(SONG_ID)?.toLongOrNull()
@@ -85,6 +100,12 @@ class PlayerHandle internal constructor(private val prefs: SharedPreferences) {
         hasPrevious = p.hasPreviousMediaItem()
         durationMs = p.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
         if (p.isPlaying) error = null
+        // Shuffle / repeat can also change on the lock screen or in the notification: follow the
+        // player while songs play (a station always has them off, so that isn't mirrored).
+        if (p.isSong()) {
+            shuffle = p.shuffleModeEnabled
+            repeat = p.repeatMode
+        }
     }
 
     internal fun failed(e: PlaybackException) {
@@ -97,9 +118,10 @@ class PlayerHandle internal constructor(private val prefs: SharedPreferences) {
         if (songs.isEmpty()) return
         error = null
         if (shuffled) updateShuffle(true)
-        c.setMediaItems(songs.map { it.toMediaItem() }, if (shuffled) Random.nextInt(songs.size) else start, 0L)
+        // Modes first, so the player never reports songs with a station's shuffle / repeat (off).
         c.shuffleModeEnabled = shuffle
         c.repeatMode = repeat
+        c.setMediaItems(songs.map { it.toMediaItem() }, if (shuffled) Random.nextInt(songs.size) else start, 0L)
         c.prepare()
         c.play()
     }
@@ -152,18 +174,14 @@ class PlayerHandle internal constructor(private val prefs: SharedPreferences) {
 
     fun updateShuffle(on: Boolean) {
         shuffle = on
-        prefs.edit().putBoolean("shuffle", on).apply()
+        prefs.edit().putBoolean(PREF_SHUFFLE, on).apply()
         if (!isRadio) controller?.shuffleModeEnabled = on
     }
 
     /** Off → all → one → off. */
     fun cycleRepeat() {
-        repeat = when (repeat) {
-            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-            else -> Player.REPEAT_MODE_OFF
-        }
-        prefs.edit().putInt("repeat", repeat).apply()
+        repeat = nextRepeatMode(repeat)
+        prefs.edit().putInt(PREF_REPEAT, repeat).apply()
         if (!isRadio) controller?.repeatMode = repeat
     }
 }
@@ -172,7 +190,7 @@ class PlayerHandle internal constructor(private val prefs: SharedPreferences) {
 @Composable
 fun rememberPlayerHandle(): PlayerHandle {
     val context = LocalContext.current.applicationContext
-    val handle = remember { PlayerHandle(context.getSharedPreferences("music", Context.MODE_PRIVATE)) }
+    val handle = remember { PlayerHandle(context.getSharedPreferences(MUSIC_PREFS, Context.MODE_PRIVATE)) }
     DisposableEffect(Unit) {
         val token = SessionToken(context, ComponentName(context, MusicPlaybackService::class.java))
         val future = MediaController.Builder(context, token).buildAsync()
