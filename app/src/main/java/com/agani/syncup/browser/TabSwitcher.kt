@@ -27,13 +27,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Tab
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import com.agani.syncup.browser.ui.IconTile
+import com.agani.syncup.browser.ui.SheetDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -99,6 +106,8 @@ private fun sketchColor(tab: BrowserTab): Color = when {
 @Composable
 internal fun TabSwitcher(
     tabs: TabManager,
+    shown: Section,
+    onShow: (Section) -> Unit,
     signedIn: Boolean,
     hasWork: Boolean,
     otherDevices: List<OtherDevice> = emptyList(),
@@ -107,7 +116,8 @@ internal fun TabSwitcher(
     onUndo: (message: String, undo: () -> Unit) -> Unit,
     onClose: () -> Unit,
 ) {
-    var shown by remember { mutableStateOf(tabs.section) }
+    // The SyncUp link whose pages sheet is open (its group id).
+    var pagesOf by remember { mutableStateOf<Long?>(null) }
     val sections = buildList {
         add(Section.NORMAL)
         if (!signedIn || hasWork) add(Section.WORK)
@@ -124,28 +134,43 @@ internal fun TabSwitcher(
                     SectionSwitch(
                         sections = sections,
                         shown = shown,
-                        count = { s -> tabs.tabsIn(s).count { !it.isHome || s == shown } },
+                        count = { s -> tabs.cardsIn(s).count { !it.isHome || s == shown } },
                         locked = { s -> s == Section.WORK && !signedIn },
-                        onPick = { s -> if (s == Section.WORK && !signedIn) onSignIn() else shown = s },
+                        onPick = { s -> if (s == Section.WORK && !signedIn) onSignIn() else onShow(s) },
                         modifier = Modifier.weight(1f),
                     )
                     BarIcon(Icons.Rounded.Close, "Close tab switcher", tint = cs.onSurface, onClick = onClose)
                 }
 
-                val list = tabs.tabsIn(shown)
+                // SyncUp: one card per link (its latest page); elsewhere one per tab.
+                val list = tabs.cardsIn(shown)
+                // One SyncUp link: one tab is all there can be, so nothing new to open on that side.
+                val direct = tabs.directLink.takeIf { shown == Section.WORK }
                 val onlyHome = list.all { it.isHome } && list.size <= 1
                 val others = if (shown == Section.NORMAL) otherDevices.filter { !it.tabs.isNullOrEmpty() } else emptyList()
                 Box(Modifier.weight(1f)) {
                     if (onlyHome && others.isEmpty()) {
+                        // New Normal / Incognito tabs come from the + below; only SyncUp has its own
+                        // way in (its link list).
+                        val work = shown == Section.WORK
                         EmptyState(
-                            Icons.Rounded.Tab, "No open tabs",
-                            if (shown == Section.WORK) "Open a link from your SyncUp home" else "Your tabs will show here",
-                            action = if (shown == Section.WORK) "SyncUp links" else "New tab",
-                            actionIcon = if (shown == Section.WORK) SyncUpMark else Icons.Rounded.Add,
-                            onAction = {
-                                list.firstOrNull()?.let { tabs.select(it) } ?: tabs.newTab(shown)
-                                onClose()
+                            if (shown == Section.NORMAL) Icons.Rounded.Tab else sectionIcon(shown),
+                            if (shown == Section.INCOGNITO) "No incognito tabs" else "No open tabs",
+                            when {
+                                direct != null -> "Your SyncUp link isn't open"
+                                shown == Section.WORK -> "Open a link from your SyncUp home"
+                                shown == Section.INCOGNITO -> "Incognito tabs aren't saved. Tap + to open one."
+                                else -> "Tap + to open a new tab"
                             },
+                            action = if (direct != null) "Open ${direct.name}" else if (work) "SyncUp links" else null,
+                            actionIcon = if (work) SyncUpMark else null,
+                            onAction = if (work) {
+                                {
+                                    if (direct != null) tabs.switchTo(Section.WORK)
+                                    else list.firstOrNull()?.let { tabs.select(it) } ?: tabs.newTab(shown)
+                                    onClose()
+                                }
+                            } else null,
                         )
                     } else {
                         LazyVerticalGrid(
@@ -155,18 +180,31 @@ internal fun TabSwitcher(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxSize(),
                         ) {
-                            items(list, key = { it.id }) { t ->
-                                val current = t.id == tabs.activeTab(shown)?.id && shown == tabs.section
+                            items(list, key = { if (shown == Section.WORK) "g${it.groupId}" else "t${it.id}" }) { t ->
+                                val onScreen = tabs.activeTab(shown)
+                                val link = shown == Section.WORK && !t.isHome
+                                val pages = if (link) tabs.groupPages(t.groupId).size else 1
+                                val current = shown == tabs.section && onScreen != null &&
+                                    (onScreen.id == t.id || (link && onScreen.groupId == t.groupId))
                                 TabCard(
-                                    t, current,
+                                    t, current, pages,
                                     onSelect = {
                                         tabs.select(t)
                                         onClose()
                                     },
-                                    onCloseTab = { tabs.close(t) },
+                                    onCloseTab = {
+                                        if (pages > 1) {
+                                            // A link and all its pages, with Undo.
+                                            val closed = tabs.closeGroup(t.groupId)
+                                            onUndo("${t.workName ?: "SyncUp link"} closed (${closed.size} pages)") { tabs.reopen(closed) }
+                                        } else {
+                                            tabs.close(t)
+                                        }
+                                    },
+                                    onPages = { pagesOf = t.groupId },
                                 )
                             }
-                            item(key = "new") {
+                            if (direct == null) item(key = "new") {
                                 NewTabCard(if (shown == Section.WORK) "Open a SyncUp link" else "New tab") {
                                     val home = tabs.tabsIn(shown).firstOrNull { it.isHome }
                                     if (home != null) tabs.select(home) else tabs.newTab(shown)
@@ -197,40 +235,180 @@ internal fun TabSwitcher(
                     modifier = Modifier.fillMaxWidth().height(72.dp).background(cs.surfaceContainer).padding(horizontal = 12.dp),
                 ) {
                     val closable = list.any { !it.isHome }
-                    TextButton(
-                        enabled = closable,
-                        onClick = {
-                            val closed = tabs.closeAll(shown)
-                            val n = closed.size
-                            if (n > 0) onUndo("$n tab${if (n == 1) "" else "s"} closed") { tabs.reopen(closed) }
-                        },
-                    ) { Text("Close all", color = if (!closable) cs.onSurface.copy(alpha = .38f) else if (shown == Section.INCOGNITO) cs.error else cs.primary) }
-                    Spacer(Modifier.weight(1f))
-                    Box(
-                        Modifier.size(56.dp).clip(RoundedCornerShape(20.dp)).background(cs.primary).clickable {
-                            tabs.newTab(shown)
+                    // Nothing to close → no button (the + stays centred either way).
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                        if (closable) {
+                            TextButton(onClick = {
+                                val closed = tabs.closeAll(shown)
+                                val n = closed.size
+                                if (n > 0) onUndo("$n tab${if (n == 1) "" else "s"} closed") { tabs.reopen(closed) }
+                            }) { Text("Close all", color = if (shown == Section.INCOGNITO) cs.error else cs.primary) }
+                        }
+                    }
+                    if (direct == null) {
+                        Box(
+                            Modifier.size(56.dp).clip(RoundedCornerShape(20.dp)).background(cs.primary).clickable {
+                                tabs.newTab(shown)
+                                onClose()
+                            },
+                            contentAlignment = Alignment.Center,
+                        ) { Icon(Icons.Rounded.Add, if (shown == Section.INCOGNITO) "New incognito tab" else "New tab", tint = cs.onPrimary, modifier = Modifier.size(26.dp)) }
+                    }
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                        TextButton(onClick = {
+                            if (shown != tabs.section) tabs.switchTo(shown)
                             onClose()
-                        },
-                        contentAlignment = Alignment.Center,
-                    ) { Icon(Icons.Rounded.Add, "New tab", tint = cs.onPrimary, modifier = Modifier.size(26.dp)) }
-                    Spacer(Modifier.weight(1f))
-                    TextButton(onClick = {
-                        if (shown != tabs.section) tabs.switchTo(shown)
-                        onClose()
-                    }) { Text("Done", fontWeight = FontWeight.Medium) }
+                        }) { Text("Done", fontWeight = FontWeight.Medium) }
+                    }
                 }
+            }
+        }
+        pagesOf?.let { group ->
+            LinkPagesSheet(
+                tabs = tabs,
+                groupId = group,
+                onOpen = { page ->
+                    pagesOf = null
+                    tabs.select(page)
+                    onClose()
+                },
+                onCloseLink = { name ->
+                    pagesOf = null
+                    val closed = tabs.closeGroup(group)
+                    onUndo("$name closed (${closed.size} pages)") { tabs.reopen(closed) }
+                },
+                onDismiss = { pagesOf = null },
+            )
+        }
+    }
+}
+
+/**
+ * A SyncUp link's pages: its first page and the ones its site opened in new windows. Open one, close
+ * one, or close the whole link. Pages beyond the latest few are asleep and reload when opened.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LinkPagesSheet(
+    tabs: TabManager,
+    groupId: Long,
+    onOpen: (BrowserTab) -> Unit,
+    onCloseLink: (name: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val pages = tabs.groupPages(groupId)
+    if (pages.isEmpty()) {
+        LaunchedEffect(Unit) { onDismiss() }
+        return
+    }
+    val cs = MaterialTheme.colorScheme
+    val head = pages.first()
+    val name = head.workName ?: "SyncUp link"
+    val onScreen = tabs.activeTab(Section.WORK)?.id
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 12.dp)) {
+                IconTile(SyncUpMark, size = 48.dp)
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(name, fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${pages.size} page${if (pages.size == 1) "" else "s"}", fontSize = 13.sp, color = cs.onSurfaceVariant)
+                }
+            }
+            pages.forEach { p ->
+                val on = p.id == onScreen
+                val origin = if (p.id == head.id) {
+                    "The link itself"
+                } else {
+                    tabs.tabs.firstOrNull { it.id == p.openerId }?.let { "Opened from ${it.title.ifBlank { it.label }}" } ?: "Opened by the site"
+                }
+                val state = when {
+                    on -> "Showing now"
+                    p.asleep -> "Asleep"
+                    else -> null
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (on) cs.primaryContainer else Color.Transparent)
+                        .clickable { onOpen(p) }
+                        .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                ) {
+                    Box(
+                        Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White)
+                            .alpha(if (p.asleep) .45f else 1f),
+                    ) {
+                        val thumb = p.thumbnail
+                        if (thumb != null) {
+                            Image(thumb, null, contentScale = ContentScale.Crop, alignment = Alignment.TopCenter, modifier = Modifier.fillMaxSize())
+                        } else {
+                            Box(Modifier.fillMaxWidth().height(12.dp).background(sketchColor(p)))
+                        }
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            p.title.ifBlank { p.label }, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = when {
+                                on -> cs.onPrimaryContainer
+                                p.asleep -> cs.onSurfaceVariant
+                                else -> cs.onSurface
+                            },
+                        )
+                        Text(
+                            listOfNotNull(state, origin).joinToString(" · "), fontSize = 12.sp, lineHeight = 16.sp, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis, color = if (on) cs.onPrimaryContainer.copy(alpha = .8f) else cs.onSurfaceVariant,
+                        )
+                    }
+                    Box(Modifier.size(44.dp).clip(CircleShape).clickable { tabs.close(p) }, contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Close, "Close ${p.title.ifBlank { p.label }}", tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+            SheetDivider()
+            TextButton(onClick = { onCloseLink(name) }, modifier = Modifier.padding(horizontal = 12.dp)) {
+                Icon(Icons.Rounded.Close, null, tint = cs.error, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (pages.size == 1) "Close $name" else "Close $name and its ${pages.size} pages",
+                    color = cs.error, fontWeight = FontWeight.Medium,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun TabCard(t: BrowserTab, current: Boolean, onSelect: () -> Unit, onCloseTab: () -> Unit) {
+private fun TabCard(
+    t: BrowserTab,
+    current: Boolean,
+    pages: Int,
+    onSelect: () -> Unit,
+    onCloseTab: () -> Unit,
+    onPages: () -> Unit,
+) {
     val cs = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(20.dp)
     val color = sketchColor(t)
+    val stacked = pages > 1
+    // Every card keeps the same 10 dp above it so rows line up; a link with more pages shows two
+    // pages stacked behind its card there.
+    Box(Modifier.height(214.dp)) {
+    if (stacked) {
+        val top = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+        Box(Modifier.align(Alignment.TopCenter).padding(horizontal = 16.dp).fillMaxWidth().height(24.dp).clip(top).background(cs.surfaceContainerHigh))
+        Box(Modifier.align(Alignment.TopCenter).padding(start = 8.dp, end = 8.dp, top = 5.dp).fillMaxWidth().height(24.dp).clip(top).background(cs.surfaceContainerHighest))
+    }
     Column(
         Modifier
+            .padding(top = 10.dp)
             .height(204.dp)
             .clip(shape)
             .background(cs.surfaceContainerLow)
@@ -261,7 +439,7 @@ private fun TabCard(t: BrowserTab, current: Boolean, onSelect: () -> Unit, onClo
                 modifier = Modifier.weight(1f), color = if (current) cs.onPrimaryContainer else cs.onSurface,
             )
             Box(Modifier.size(32.dp).clip(CircleShape).clickable(onClick = onCloseTab), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Close, "Close tab", modifier = Modifier.size(18.dp), tint = cs.onSurfaceVariant)
+                Icon(Icons.Rounded.Close, if (stacked) "Close ${t.label} and its pages" else "Close tab", modifier = Modifier.size(18.dp), tint = cs.onSurfaceVariant)
             }
         }
         Box(
@@ -279,7 +457,25 @@ private fun TabCard(t: BrowserTab, current: Boolean, onSelect: () -> Unit, onClo
                 t.isHome -> HomeSketch(t.section)
                 else -> PageSketch(t, color)
             }
+            if (stacked) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(6.dp)
+                        .height(32.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(cs.primary)
+                        .clickable(onClickLabel = "Show its pages", onClick = onPages)
+                        .padding(start = 8.dp, end = 12.dp),
+                ) {
+                    Icon(Icons.Rounded.Layers, null, tint = cs.onPrimary, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("$pages pages", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = cs.onPrimary)
+                }
+            }
         }
+    }
     }
 }
 
@@ -426,20 +622,25 @@ private fun SectionSegment(section: Section, selected: Boolean, locked: Boolean,
                 }
             }
         }
-        // Icon-only pills keep a hint of what's inside: a tab count, or a lock when sign-in is needed.
+        // Icon-only pills keep a hint of what's inside: a tab count in that section's own colour
+        // (Normal blue, SyncUp teal, Incognito purple), or a lock when sign-in is needed.
         if (!selected && (locked || count > 0)) {
-            Box(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 2.dp, end = 3.dp)
-                    .size(16.dp)
-                    .clip(CircleShape)
-                    .background(cs.surfaceContainerHighest)
-                    .border(1.dp, cs.surfaceContainer, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (locked) Icon(Icons.Rounded.Lock, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(10.dp))
-                else Text(if (count > 9) "9+" else "$count", fontSize = 9.sp, lineHeight = 9.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
+            val ring = cs.surfaceContainer
+            SectionTheme(section) {
+                val sc = MaterialTheme.colorScheme
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 2.dp, end = 2.dp)
+                        .size(18.dp)
+                        .clip(CircleShape)
+                        .background(if (locked) sc.surfaceContainerHighest else sc.primary)
+                        .border(1.5.dp, ring, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (locked) Icon(Icons.Rounded.Lock, null, tint = sc.onSurfaceVariant, modifier = Modifier.size(10.dp))
+                    else Text(if (count > 9) "9+" else "$count", fontSize = 10.sp, lineHeight = 10.sp, fontWeight = FontWeight.Bold, color = sc.onPrimary)
+                }
             }
         }
     }

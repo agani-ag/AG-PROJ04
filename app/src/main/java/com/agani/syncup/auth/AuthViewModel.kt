@@ -39,7 +39,12 @@ data class AuthState(
     val chatUnread: Int = 0,
     // Partners that added this user and wait to be enabled — badge on the Partners rows.
     val partnersWaiting: Int = 0,
+    // Partner connections (any status); Partners is shown only to users who have one.
+    val partnerCount: Int = 0,
 ) {
+    /** Show Partners: a connection, one waiting to be enabled, or partner links on the account. */
+    val hasPartners: Boolean get() = partnerCount > 0 || partnersWaiting > 0 || urls.any { it.source == "partner" }
+
     val isLoggedIn: Boolean get() = user != null
 }
 
@@ -139,6 +144,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                     state = state.copy(
                         user = s.user, urls = s.urls, chatUnread = s.chatUnread,
                         partnersWaiting = s.partnersWaiting,
+                        partnerCount = s.partnerCount,
                         refreshing = false, urlsLoaded = true,
                     )
                     onConfig(s.config)
@@ -176,7 +182,10 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- partners page
     suspend fun partners(): Result<List<PartnerDto>> =
-        repository.partners().onSuccess { list -> setPartnersWaiting(list.count { it.status == "not_enabled" }) }
+        repository.partners().onSuccess { list ->
+            setPartnersWaiting(list.count { it.status == "not_enabled" })
+            if (list.size != state.partnerCount) state = state.copy(partnerCount = list.size)
+        }
 
     suspend fun enablePartner(id: String, password: String) = repository.enablePartner(id, password)
     suspend fun disablePartner(id: String) = repository.disablePartner(id)

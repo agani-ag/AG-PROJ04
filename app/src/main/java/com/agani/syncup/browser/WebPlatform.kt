@@ -78,6 +78,8 @@ class WebPlatform(private val activity: ComponentActivity) {
     interface Listener {
         /** target="_blank" / window.open → open [url] in a new tab of the same section. */
         fun onNewWindow(from: BrowserTab, url: String)
+        /** The page called window.close() (e.g. a sign-in pop-up finishing). */
+        fun onCloseWindow(tab: BrowserTab)
         /** A main-frame page finished loading. */
         fun onPageLoaded(tab: BrowserTab, url: String, title: String)
         /** A download was handed to the system download manager. */
@@ -305,6 +307,10 @@ class WebPlatform(private val activity: ComponentActivity) {
                 transport.webView = temp
                 resultMsg.sendToTarget()
                 return true
+            }
+
+            override fun onCloseWindow(window: WebView?) {
+                listener.onCloseWindow(tab)
             }
 
             override fun onReceivedTitle(view: WebView?, title: String?) {

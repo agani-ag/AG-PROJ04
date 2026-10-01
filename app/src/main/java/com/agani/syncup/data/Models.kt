@@ -194,7 +194,7 @@ data class ConfigResponse(
     @SerializedName("privacy_policy_url") val privacyPolicyUrl: String = "",
     // Global on/off for the in-app chat button (users + support agents).
     @SerializedName("chat_enabled") val chatEnabled: Boolean = true,
-    // Radio feature visibility (master switch AND this user's per-user switch).
+    // Radio on/off for everyone (the admin's Radio page); shown as a tab in Music when signed in.
     @SerializedName("radio_enabled") val radioEnabled: Boolean = false,
     // "Allow sign-up" on the admin's Config page — shows "Create account" on the sign-in sheet.
     @SerializedName("signup_enabled") val signupEnabled: Boolean = false,
@@ -230,6 +230,8 @@ data class SyncResponse(
     val config: ConfigResponse = ConfigResponse(),
     // Partners that added this user and wait to be enabled (badge on the Partners rows).
     @SerializedName("partners_waiting") val partnersWaiting: Int = 0,
+    // Partner connections of any status — the Partners page is shown only when there's one.
+    @SerializedName("partner_count") val partnerCount: Int = 0,
 )
 
 /** A partner verification prompt shown on the phone (GET /action/{id}). */

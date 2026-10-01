@@ -145,14 +145,13 @@ fun AgHubTheme(
         else -> LightColors
     }
 
-    // Make the status/navigation bars match the app theme (dark bg → light icons).
+    // Bar icons follow the app theme (dark bg → light icons). The bars themselves are transparent
+    // (edge-to-edge, see MainActivity): each screen draws its own colour behind them.
     val view = LocalView.current
     if (!view.isInEditMode) {
         val lightIcons = !(amoled || darkTheme)
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = scheme.background.toArgb()
-            window.navigationBarColor = scheme.background.toArgb()
             val controller = WindowCompat.getInsetsController(window, view)
             controller.isAppearanceLightStatusBars = lightIcons
             controller.isAppearanceLightNavigationBars = lightIcons

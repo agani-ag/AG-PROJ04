@@ -29,7 +29,6 @@ import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MailOutline
 import androidx.compose.material.icons.rounded.ManageAccounts
-import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -94,12 +93,41 @@ internal fun isIndianMobile(raw: String): Boolean {
 }
 
 /**
+ * What the user typed in the sign-in / sign-up sheet. It lives outside the sheet, so a swipe or
+ * Back that closes the sheet by accident doesn't throw the typing away; cleared once signed in.
+ */
+class AuthFormState {
+    var creating by mutableStateOf(false)
+    var mode by mutableStateOf(LoginMode.EMAIL)
+    val logins = mutableStateMapOf<LoginMode, String>()
+    var password by mutableStateOf("")
+    var name by mutableStateOf("")
+    var email by mutableStateOf("")
+    var phone by mutableStateOf("")
+    var newPassword by mutableStateOf("")
+    var agreed by mutableStateOf(false)
+
+    fun clear() {
+        creating = false
+        mode = LoginMode.EMAIL
+        logins.clear()
+        password = ""
+        name = ""
+        email = ""
+        phone = ""
+        newPassword = ""
+        agreed = false
+    }
+}
+
+/**
  * Optional SyncUp sign-in, as a sheet over the browser so the user's tabs stay put. Sign in with
  * email, phone or username (password is the only way in); "Create account" appears while the
  * admin allows sign-up.
  */
 @Composable
 fun SignInSheet(
+    form: AuthFormState,
     loading: Boolean,
     error: String?,
     supportEmail: String,
@@ -110,7 +138,7 @@ fun SignInSheet(
     onSignup: (name: String, email: String, phone: String, password: String) -> Unit,
     onClearError: () -> Unit,
 ) {
-    var creating by remember { mutableStateOf(false) }
+    var creating by form::creating
     Column(
         Modifier
             .fillMaxWidth()
@@ -119,12 +147,12 @@ fun SignInSheet(
             .padding(start = 24.dp, end = 24.dp, bottom = 20.dp),
     ) {
         if (creating && signupEnabled) {
-            SignUpForm(loading, error, privacyUrl, onSignup) {
+            SignUpForm(form, loading, error, privacyUrl, onSignup) {
                 onClearError()
                 creating = false
             }
         } else {
-            SignInForm(loading, error, supportEmail, supportPhone, signupEnabled, onLogin) {
+            SignInForm(form, loading, error, supportEmail, supportPhone, signupEnabled, onLogin) {
                 onClearError()
                 creating = true
             }
@@ -191,6 +219,7 @@ private fun PrimaryButton(text: String, loading: Boolean, enabled: Boolean, onCl
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SignInForm(
+    form: AuthFormState,
     loading: Boolean,
     error: String?,
     supportEmail: String,
@@ -200,9 +229,9 @@ private fun SignInForm(
     onCreate: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    var mode by remember { mutableStateOf(LoginMode.EMAIL) }
-    val values = remember { mutableStateMapOf<LoginMode, String>() }
-    var password by remember { mutableStateOf("") }
+    var mode by form::mode
+    val values = form.logins
+    var password by form::password
     var showHelp by remember { mutableStateOf(false) }
     val login = values[mode].orEmpty()
 
@@ -312,6 +341,7 @@ private fun SignInForm(
 /** Self sign-up: name, email and/or phone (India), password, privacy consent. No verification. */
 @Composable
 private fun SignUpForm(
+    form: AuthFormState,
     loading: Boolean,
     error: String?,
     privacyUrl: String,
@@ -321,11 +351,11 @@ private fun SignUpForm(
     val cs = MaterialTheme.colorScheme
     val context = LocalContext.current
     val shape = RoundedCornerShape(12.dp)
-    var name by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var agreed by remember { mutableStateOf(false) }
+    var name by form::name
+    var email by form::email
+    var phone by form::phone
+    var password by form::newPassword
+    var agreed by form::agreed
 
     val emailBad = email.isNotBlank() && !android.util.Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()
     val phoneBad = phone.isNotBlank() && !isIndianMobile(phone)
@@ -408,8 +438,8 @@ private fun HelpRow(icon: ImageVector, label: String, kind: String, onClick: () 
 }
 
 /**
- * Opened from the avatar: rows appear only for what the admin enabled for this user (Work links,
- * Chat, Radio), then account settings and sign out.
+ * Opened from the avatar: rows appear only for what the admin enabled for this user (SyncUp links,
+ * Chat), then account settings and sign out.
  */
 @Composable
 fun AccountSheet(
@@ -417,7 +447,6 @@ fun AccountSheet(
     hasWork: Boolean,
     onWork: () -> Unit,
     onChat: () -> Unit,
-    onRadio: () -> Unit,
     onSettings: () -> Unit,
     onPartners: () -> Unit,
     onSignOut: () -> Unit,
@@ -433,14 +462,18 @@ fun AccountSheet(
                 Text(user.loginLabel, fontSize = 13.sp, color = cs.onSurfaceVariant, maxLines = 1)
             }
         }
-        if (hasWork || account.chatEnabled || account.radioEnabled) {
+        if (hasWork || account.chatEnabled) {
             SheetDivider()
             if (hasWork) {
                 SectionTheme(Section.WORK) {
+                    // One link: the row is that link and opens the website directly.
+                    val single = account.links.singleOrNull()
                     TonalRow(
-                        "SyncUp links", "From your admin and partners",
+                        single?.title ?: "SyncUp links", if (single != null) "Your SyncUp link" else "From your admin and partners",
                         leading = { IconTile(SyncUpMark) },
-                        trailing = { Text("${account.links.size}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 8.dp)) },
+                        trailing = if (single != null) null else ({
+                            Text("${account.links.size}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 8.dp))
+                        }),
                         minHeight = 60.dp,
                         onClick = onWork,
                     )
@@ -455,18 +488,17 @@ fun AccountSheet(
                     onClick = onChat,
                 )
             }
-            if (account.radioEnabled) {
-                TonalRow("Radio", "Live stations", leading = { IconTile(Icons.Rounded.Radio) }, minHeight = 60.dp, onClick = onRadio)
-            }
         }
         SheetDivider()
-        TonalRow(
-            "Partners", if (account.partnersWaiting > 0) "Waiting for you to enable" else "Services that added you",
-            leading = { IconTile(Icons.Rounded.Handshake, container = cs.surfaceContainerHigh, content = cs.onSurfaceVariant) },
-            trailing = { if (account.partnersWaiting > 0) CountBadge("${account.partnersWaiting} new") },
-            minHeight = 60.dp,
-            onClick = onPartners,
-        )
+        if (account.hasPartners) {
+            TonalRow(
+                "Partners", if (account.partnersWaiting > 0) "Waiting for you to enable" else "Services that added you",
+                leading = { IconTile(Icons.Rounded.Handshake, container = cs.surfaceContainerHigh, content = cs.onSurfaceVariant) },
+                trailing = { if (account.partnersWaiting > 0) CountBadge("${account.partnersWaiting} new") },
+                minHeight = 60.dp,
+                onClick = onPartners,
+            )
+        }
         TonalRow(
             "Account & security", "Sign-in details, sync, app lock",
             leading = { IconTile(Icons.Rounded.ManageAccounts, container = cs.surfaceContainerHigh, content = cs.onSurfaceVariant) },

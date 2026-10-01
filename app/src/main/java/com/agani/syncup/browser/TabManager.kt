@@ -18,7 +18,10 @@ import java.util.concurrent.Executors
  *
  * - Each section remembers its own active tab; [section] is the one on screen.
  * - WebViews are created lazily (a tab showing its section's home page has none) and live until the
- *   tab closes, so switching tabs keeps each page's state.
+ *   tab closes, so switching tabs keeps each page's state — except that a SyncUp link keeps only its
+ *   [AWAKE_PAGES_PER_LINK] latest pages loaded; older ones sleep (still listed) and reload when shown.
+ * - SyncUp tabs are grouped by link: pages a link's site opens in new windows join that link
+ *   ([BrowserTab.groupId]), so the tab switcher and the tab count show one entry per link.
  * - Only Normal tabs are persisted across app restarts. Work tabs are never saved (they need the
  *   login and must not outlive a sign-out) and Incognito tabs are never saved by definition.
  */
@@ -34,13 +37,38 @@ class TabManager(
     private val active = mutableStateMapOf<Section, Long>()
     private val views = HashMap<Long, WebView>()
     private var nextId = 1L
+    private var useClock = 0L
     private val prefs = context.getSharedPreferences("browser_tabs", Context.MODE_PRIVATE)
     private val io = Executors.newSingleThreadExecutor()
 
     /** The open Normal tabs changed (browser sync shows them on the user's other devices). */
     var onNormalTabsChanged: (() -> Unit)? = null
 
+    /** A SyncUp link to open directly — the user's only one. */
+    data class DirectLink(val name: String, val url: String, val id: String, val notifyToken: String)
+
+    /**
+     * Set while the user has exactly one SyncUp link: SyncUp then IS that website. Going to SyncUp
+     * opens it, Back from its first page goes to the Normal browser, and the SyncUp links page
+     * (the section's home tab) is never shown.
+     */
+    var directLink by mutableStateOf<DirectLink?>(null)
+
     fun tabsIn(s: Section): List<BrowserTab> = tabs.filter { it.section == s }
+
+    /** What the tab switcher and the tab count show: one entry per SyncUp link (its latest page), one per tab elsewhere. */
+    fun cardsIn(s: Section): List<BrowserTab> =
+        if (s == Section.WORK) tabsIn(s).groupBy { it.groupId }.values.map { g -> g.maxBy { it.lastUsed } } else tabsIn(s)
+
+    /** A SyncUp link's pages: its first page plus the ones its site opened, in the order they opened. */
+    fun groupPages(groupId: Long): List<BrowserTab> = tabs.filter { it.section == Section.WORK && it.groupId == groupId }
+
+    /** The page of an open SyncUp link that was last on screen, or null when the link isn't open. */
+    fun linkFront(linkId: String): BrowserTab? =
+        tabs.filter { it.section == Section.WORK && it.workLinkId == linkId && !it.isHome }.maxByOrNull { it.lastUsed }
+
+    /** How many pages a SyncUp link has open (0 = not open). */
+    fun linkPageCount(linkId: String): Int = tabs.count { it.section == Section.WORK && it.workLinkId == linkId && !it.isHome }
 
     fun activeTab(s: Section = section): BrowserTab? = active[s]?.let { id -> tabs.firstOrNull { it.id == id } }
 
@@ -50,6 +78,12 @@ class TabManager(
 
     fun switchTo(s: Section) {
         if (s != section) captureActive()
+        // One SyncUp link: going to SyncUp opens that website (its open tab, or a new one).
+        val direct = directLink
+        if (s == Section.WORK && direct != null) {
+            openWorkLink(direct.name, direct.url, direct.id, direct.notifyToken)
+            return
+        }
         section = s
         ensureTab(s)
     }
@@ -62,40 +96,75 @@ class TabManager(
         workRoots: List<String> = emptyList(),
         notifyToken: String = "",
         select: Boolean = true,
+        openerId: Long? = null,
+        groupId: Long? = null,
     ): BrowserTab {
         val tab = BrowserTab(nextId++, s, "", workName, workLinkId, workRoots, notifyToken)
+        tab.openerId = openerId
+        groupId?.let { tab.groupId = it }
         tabs.add(tab)
         if (select) {
             active[s] = tab.id
             section = s
         }
         if (url.isNotBlank()) load(tab, url)
+        if (select) touch(tab)
         persist()
         return tab
     }
 
-    /** Open a SyncUp link as a Work tab: shown by [name], its site's address hidden. */
-    fun openWorkLink(name: String, url: String, linkId: String? = null, notifyToken: String = ""): BrowserTab =
-        newTab(
+    /**
+     * Open a SyncUp link as a Work tab: shown by [name], its site's address hidden. One tab per link —
+     * a link that's already open goes back to its page that was last on screen.
+     */
+    fun openWorkLink(name: String, url: String, linkId: String? = null, notifyToken: String = ""): BrowserTab {
+        val tab = linkId?.let { linkFront(it) }?.also { select(it) } ?: newTab(
             Section.WORK, url,
             workName = name.ifBlank { "SyncUp link" },
             workLinkId = linkId,
             workRoots = listOfNotNull(UrlInput.rootDomainOf(url)),
             notifyToken = notifyToken,
         )
+        // A one-link user never sees the SyncUp links page: drop any leftover one.
+        if (directLink != null) tabs.removeAll { it.section == Section.WORK && it.isHome }
+        return tab
+    }
 
     fun select(tab: BrowserTab) {
         captureActive()
         active[tab.section] = tab.id
         section = tab.section
+        touch(tab)
         persist()
+    }
+
+    /** [tab] is on screen now: newest in its link, and the link's oldest loaded pages go to sleep. */
+    private fun touch(tab: BrowserTab) {
+        tab.lastUsed = ++useClock
+        if (tab.section != Section.WORK) return
+        groupPages(tab.groupId)
+            .filter { it.id != tab.id && views.containsKey(it.id) }
+            .sortedByDescending { it.lastUsed }
+            .drop(AWAKE_PAGES_PER_LINK - 1)
+            .forEach { sleep(it) }
+    }
+
+    /** Unload a page to free memory. It stays in its link's list and reloads (history kept) when shown. */
+    private fun sleep(tab: BrowserTab) {
+        val wv = views[tab.id] ?: return
+        tab.savedState = runCatching { android.os.Bundle().also { wv.saveState(it) } }.getOrNull()
+        destroyView(tab.id)
+        tab.loading = false
+        tab.asleep = true
     }
 
     fun close(tab: BrowserTab) {
         destroyView(tab.id)
         tabs.remove(tab)
         if (active[tab.section] == tab.id) {
-            val next = tabsIn(tab.section).lastOrNull()
+            // A SyncUp page closing stays within its link while the link has other pages.
+            val sibling = if (tab.isWork) groupPages(tab.groupId).maxByOrNull { it.lastUsed } else null
+            val next = sibling ?: tabsIn(tab.section).lastOrNull()
             if (next != null) active[tab.section] = next.id else active.remove(tab.section)
         }
         if (tab.section == Section.INCOGNITO && tabsIn(Section.INCOGNITO).isEmpty()) {
@@ -117,17 +186,33 @@ class TabManager(
         return closed
     }
 
-    /** Undo for [closeAll]: bring the tabs back (their pages reload when shown). */
+    /** Close a SyncUp link: all its pages. Returns them for Undo ([reopen]). */
+    fun closeGroup(groupId: Long): List<BrowserTab> {
+        val closed = groupPages(groupId)
+        if (closed.isEmpty()) return closed
+        closed.forEach { sleep(it) } // keeps each page's history for Undo
+        tabs.removeAll(closed)
+        if (closed.any { it.id == active[Section.WORK] }) {
+            tabsIn(Section.WORK).lastOrNull()?.let { active[Section.WORK] = it.id } ?: active.remove(Section.WORK)
+        }
+        keepSectionUsable()
+        persist()
+        return closed
+    }
+
+    /** Undo for [closeAll] / [closeGroup]: bring the tabs back (their pages reload when shown). */
     fun reopen(closed: List<BrowserTab>) {
         if (closed.isEmpty()) return
         val s = closed.first().section
-        tabs.removeAll { it.section == s && it.isHome } // the placeholder home tab added on close
+        // The placeholder home tab the close added (created after the closed tabs).
+        val newest = closed.maxOf { it.id }
+        tabs.removeAll { it.section == s && it.isHome && it.id > newest }
         closed.forEach {
             it.loading = false
             it.error = null
         }
         tabs.addAll(closed)
-        active[s] = closed.last().id
+        active[s] = closed.maxBy { it.lastUsed }.id
         section = s
         persist()
     }
@@ -159,7 +244,8 @@ class TabManager(
     /** The section on screen always has a tab; an emptied Incognito section drops back to Normal. */
     private fun keepSectionUsable() {
         if (tabsIn(section).isNotEmpty()) return
-        if (section == Section.INCOGNITO) section = Section.NORMAL
+        // An emptied one-link SyncUp section has no links page to show either.
+        if (section == Section.INCOGNITO || (section == Section.WORK && directLink != null)) section = Section.NORMAL
         ensureTab(section)
     }
 
@@ -214,7 +300,14 @@ class TabManager(
 
     /** The tab's WebView, created on first use (and loading the tab's URL if it has one). */
     fun webView(tab: BrowserTab): WebView = views.getOrPut(tab.id) {
-        web.create(tab, this).also { if (tab.url.isNotBlank()) it.loadUrl(tab.url) }
+        web.create(tab, this).also { wv ->
+            // A page waking from sleep gets its history back; otherwise it just loads its URL.
+            val saved = tab.savedState
+            tab.savedState = null
+            tab.asleep = false
+            val restored = saved != null && runCatching { wv.restoreState(saved) }.getOrNull() != null
+            if (!restored && tab.url.isNotBlank()) wv.loadUrl(tab.url)
+        }
     }
 
     /** The tab's WebView detached from any previous parent, ready to be hosted on screen. */
@@ -227,6 +320,8 @@ class TabManager(
     /** Return the tab to its section's home page (drops the page and its WebView). */
     fun goHome(tab: BrowserTab) {
         destroyView(tab.id)
+        tab.savedState = null
+        tab.asleep = false
         tab.url = ""
         tab.title = ""
         tab.error = null
@@ -245,7 +340,23 @@ class TabManager(
             wv.goBack()
             return true
         }
+        // A tab a page opened: close it and go back to the page that opened it (like Chrome) — for a
+        // SyncUp page whose opener was closed, to its link's latest other page.
+        val back = tab.openerId?.let { id -> tabs.firstOrNull { it.id == id } }
+            ?: tab.takeIf { it.isWork && it.openerId != null }
+                ?.let { t -> groupPages(t.groupId).filter { it.id != t.id }.maxByOrNull { it.lastUsed } }
+        if (back != null) {
+            close(tab)
+            select(back)
+            return true
+        }
         if (!tab.isHome) {
+            // One SyncUp link: from the website's first page Back goes to the Normal browser, and
+            // the website stays open for next time (there's no links page to go back to).
+            if (tab.isWork && directLink != null) {
+                switchTo(Section.NORMAL)
+                return true
+            }
             goHome(tab)
             return true
         }
@@ -269,6 +380,14 @@ class TabManager(
 
     // ------------------------------------------------------------------ WebPlatform.Listener
     override fun onNewWindow(from: BrowserTab, url: String) {
+        // A SyncUp page's new window joins its link (one tab per link); a page the link already has
+        // is shown instead of a copy.
+        if (from.isWork) {
+            groupPages(from.groupId).firstOrNull { it.url == url && it.id != from.id }?.let {
+                select(it)
+                return
+            }
+        }
         // New windows stay in the same section; a work link's new window stays Work (and masked).
         newTab(
             from.section, url,
@@ -276,7 +395,17 @@ class TabManager(
             workLinkId = from.workLinkId,
             workRoots = from.maskedRoots.toList(),
             notifyToken = from.notifyToken,
+            openerId = from.id,
+            groupId = if (from.isWork) from.groupId else null,
         )
+    }
+
+    override fun onCloseWindow(tab: BrowserTab) {
+        // window.close() from a page a site opened (a sign-in or payment pop-up): back to its opener.
+        if (tab.openerId == null || tabs.none { it.id == tab.id }) return
+        val opener = tabs.firstOrNull { it.id == tab.openerId }
+        close(tab)
+        opener?.let { select(it) }
     }
 
     override fun onPageLoaded(tab: BrowserTab, url: String, title: String) {
@@ -345,3 +474,6 @@ class TabManager(
         ensureTab(Section.NORMAL)
     }
 }
+
+/** A SyncUp link keeps this many of its pages loaded; older ones sleep until shown again. */
+private const val AWAKE_PAGES_PER_LINK = 5

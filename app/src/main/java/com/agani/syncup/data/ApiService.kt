@@ -82,7 +82,7 @@ interface ApiService {
     @GET("config")
     suspend fun config(): ConfigResponse
 
-    /** Live radio channels (empty when the feature is off for this user). */
+    /** Live radio channels (empty when the admin has Radio off). */
     @GET("radio/channels")
     suspend fun radioChannels(@Header("Authorization") auth: String): RadioChannelsResponse
 

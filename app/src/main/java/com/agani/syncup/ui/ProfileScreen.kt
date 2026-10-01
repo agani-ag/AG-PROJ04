@@ -40,7 +40,6 @@ import com.agani.syncup.browser.BrowserSettings
 import com.agani.syncup.browser.SearchEngine
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.Fingerprint
@@ -86,6 +85,22 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.RadioButton
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.ManageAccounts
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
 import com.agani.syncup.AppLock
 import com.agani.syncup.data.AppPrefs
 import com.agani.syncup.data.SecurityStore
@@ -142,14 +157,13 @@ fun ProfileScreen(
     chatEnabled: Boolean = true,
     chatUnread: Int = 0,
     onOpenChat: () -> Unit = {},
-    radioEnabled: Boolean = false,
-    onOpenRadio: () -> Unit = {},
     onBack: () -> Unit,
     onLogout: () -> Unit,
     onChangePassword: suspend (current: String, new: String) -> Result<Unit>,
     onDeleteAccount: suspend () -> Result<Unit>,
     onClearBrowsingData: (history: Boolean, cookies: Boolean, cache: Boolean) -> Unit = { _, _, _ -> },
     partnersWaiting: Int = 0,
+    showPartners: Boolean = false,
     onOpenPartners: () -> Unit = {},
     onUpdateProfile: suspend (ProfileUpdateRequest) -> Result<User> = { Result.failure(Exception("Not available")) },
     onCheckUsername: suspend (String) -> Result<UsernameCheckResponse> = { Result.failure(Exception("Not available")) },
@@ -180,6 +194,8 @@ fun ProfileScreen(
     var showUsername by remember { mutableStateOf(false) }
     var showDeleteSynced by remember { mutableStateOf(false) }
     var updatesOn by remember { mutableStateOf(DeviceRegistrar.updatesEnabled(context)) }
+    // Which collapsed group is open (one at a time); kept across rotation.
+    var open by rememberSaveable { mutableStateOf<String?>(null) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
@@ -228,62 +244,6 @@ fun ProfileScreen(
                         }
                     }
                 }
-                Spacer(Modifier.height(4.dp))
-
-                // ---------------- Sync ----------------
-                SectionLabel("Sync")
-                SettingsGroup {
-                    SwitchRow(
-                        icon = Icons.Rounded.Sync,
-                        title = "Sync",
-                        subtitle = syncStatus(),
-                        checked = BrowserSync.enabled,
-                        enabled = true,
-                        onCheckedChange = { BrowserSync.setSyncEnabled(it) },
-                    )
-                    if (BrowserSync.enabled) {
-                        SyncType.entries.forEach { t ->
-                            RowDivider()
-                            SwitchRow(
-                                icon = when (t) {
-                                    SyncType.BOOKMARKS -> Icons.Rounded.StarBorder
-                                    SyncType.HISTORY -> Icons.Rounded.History
-                                    SyncType.TABS -> Icons.Rounded.Devices
-                                    SyncType.SHORTCUTS -> Icons.Rounded.Apps
-                                    SyncType.SETTINGS -> Icons.Rounded.Tune
-                                },
-                                title = t.label,
-                                subtitle = when (t) {
-                                    SyncType.BOOKMARKS -> "Up to 5,000"
-                                    SyncType.HISTORY -> "Normal browsing, last 90 days"
-                                    SyncType.TABS -> "See your open tabs on your other devices"
-                                    SyncType.SHORTCUTS -> "New-tab shortcuts"
-                                    SyncType.SETTINGS -> "Search engine, pop-ups, theme"
-                                },
-                                checked = BrowserSync.isOn(t),
-                                enabled = true,
-                                onCheckedChange = { BrowserSync.setOn(t, it) },
-                            )
-                        }
-                        RowDivider()
-                        SettingRow(icon = Icons.Rounded.CloudSync, title = "Sync now", subtitle = null, onClick = { BrowserSync.syncNow() })
-                    }
-                    RowDivider()
-                    SettingRow(
-                        icon = Icons.Rounded.CloudOff,
-                        title = "Delete synced data",
-                        subtitle = "Erase the copy kept for your account",
-                        danger = true,
-                        onClick = { showDeleteSynced = true },
-                    )
-                }
-                Text(
-                    "Synced data is stored on SyncUp's servers only to reach your other devices — SyncUp staff can't see what you browse. " +
-                        "Never synced: passwords, cookies, SyncUp tabs, Incognito, app lock, downloads and site permissions.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp),
-                )
             } else {
                 // Login is optional — the browser works fully without it; signing in adds SyncUp features.
                 SettingsGroup {
@@ -299,241 +259,324 @@ fun ProfileScreen(
                         Button(onClick = onSignIn) { Text("Sign in") }
                     }
                 }
-                Spacer(Modifier.height(4.dp))
             }
+            Spacer(Modifier.height(12.dp))
 
-            // ---------------- Browser ----------------
-            SectionLabel("Browser")
-            SettingsGroup {
-                SettingRow(icon = Icons.Rounded.Search, title = "Search engine", subtitle = BrowserSettings.searchEngine.label, onClick = { showEngine = true })
-                RowDivider()
-                SettingRow(icon = Icons.Rounded.Home, title = "Home page", subtitle = "New tab", onClick = null)
-                RowDivider()
-                SwitchRow(
-                    icon = Icons.Rounded.Block,
-                    title = "Block pop-ups",
-                    subtitle = null,
-                    checked = BrowserSettings.blockPopups,
-                    enabled = true,
-                    onCheckedChange = { BrowserSettings.updateBlockPopups(it) },
-                )
-                RowDivider()
-                SwitchRow(
-                    icon = Icons.Rounded.VerticalAlignBottom,
-                    title = "Address bar at bottom",
-                    subtitle = null,
-                    checked = BrowserSettings.addressBarBottom,
-                    enabled = true,
-                    onCheckedChange = { BrowserSettings.updateAddressBarBottom(it) },
-                )
-            }
-
-            // ---------------- Security ----------------
-            SectionLabel("Privacy & security")
-            SettingsGroup {
-                PinLockRow(
-                    hasPin = hasPin,
-                    onTapChange = { showSetPin = true },
-                    onToggle = { on -> if (on) showSetPin = true else showRemovePin = true },
-                )
-                RowDivider()
-                SwitchRow(
-                    icon = Icons.Rounded.Fingerprint,
-                    title = "Biometric unlock",
-                    subtitle = when {
-                        !biometricAvailable -> "Not available on this device"
-                        !hasPin -> "Set a PIN first"
-                        else -> "Use fingerprint or face"
-                    },
-                    checked = biometricEnabled,
-                    enabled = biometricAvailable && hasPin,
-                    onCheckedChange = {
-                        biometricEnabled = it
-                        prefs.setBiometricEnabled(it)
-                    },
-                )
-                if (hasPin) {
-                    RowDivider()
-                    SettingRow(
-                        icon = Icons.Rounded.Timer,
-                        title = "Auto-lock",
-                        subtitle = lockGraceLabel(lockGrace),
-                        onClick = { showLockGrace = true },
-                    )
-                }
-                RowDivider()
-                SettingRow(
-                    icon = Icons.Rounded.DeleteSweep,
-                    title = "Clear browsing data",
-                    subtitle = "History, cookies, cache",
-                    onClick = { showClearData = true },
-                )
-                RowDivider()
-                SettingRow(
-                    icon = Icons.Rounded.Tune,
-                    title = "Site settings",
-                    subtitle = "Camera, mic, location, notifications",
-                    onClick = {
-                        runCatching {
-                            context.startActivity(
-                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")),
+            // Collapsed groups: each shows a one-line summary; opening one closes the one before.
+            val notificationsAllowed = remember { NotificationManagerCompat.from(context).areNotificationsEnabled() }
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (user != null) {
+                    SettingsSection(
+                        icon = Icons.Rounded.ManageAccounts,
+                        title = "Account",
+                        summary = buildString {
+                            append("Sign-in details, password")
+                            if (showPartners) append(if (partnersWaiting > 0) " · $partnersWaiting partner waiting" else ", partners")
+                            if (chatEnabled && chatUnread > 0) append(" · $chatUnread new message${if (chatUnread == 1) "" else "s"}")
+                        },
+                        expanded = open == "account",
+                        onToggle = { open = if (open == "account") null else "account" },
+                    ) {
+                        SettingRow(
+                            icon = Icons.Rounded.Email,
+                            title = "Email",
+                            subtitle = user.email.ifBlank { "Add an email · sign in with it" },
+                            onClick = { editIdentifier = "email" },
+                        )
+                        RowDivider()
+                        SettingRow(
+                            icon = Icons.Rounded.PhoneAndroid,
+                            title = "Mobile number",
+                            subtitle = user.phone?.takeIf { it.isNotBlank() }?.let { com.agani.syncup.data.formatPhone(it) } ?: "Add a mobile number · sign in with it",
+                            onClick = { editIdentifier = "phone" },
+                        )
+                        RowDivider()
+                        SettingRow(
+                            icon = Icons.Rounded.AlternateEmail,
+                            title = "Username",
+                            subtitle = user.username?.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "Set a username · sign in with it",
+                            onClick = { showUsername = true },
+                        )
+                        RowDivider()
+                        SettingRow(icon = Icons.Rounded.Lock, title = "Change password", onClick = { showChangePassword = true })
+                        if (showPartners) {
+                            RowDivider()
+                            SettingRow(
+                                icon = Icons.Rounded.Handshake,
+                                title = "Partners",
+                                subtitle = if (partnersWaiting > 0) "$partnersWaiting waiting for you to enable" else "Services that added you",
+                                onClick = onOpenPartners,
                             )
                         }
-                    },
-                )
-            }
-
-            // ---------------- Appearance ----------------
-            SectionLabel("Appearance")
-            SettingsGroup {
-                Box(Modifier.padding(14.dp)) {
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        val options = listOf(
-                            ThemeMode.SYSTEM to "System",
-                            ThemeMode.LIGHT to "Light",
-                            ThemeMode.DARK to "Dark",
-                            ThemeMode.BLACK to "Black",
-                        )
-                        options.forEachIndexed { index, (mode, label) ->
-                            SegmentedButton(
-                                selected = themeMode == mode,
-                                onClick = { onThemeChange(mode) },
-                                shape = SegmentedButtonDefaults.itemShape(index, options.size),
-                            ) { Text(label) }
+                        if (chatEnabled) {
+                            RowDivider()
+                            SettingRow(
+                                icon = Icons.Rounded.ChatBubbleOutline,
+                                title = "Chat with admin",
+                                subtitle = if (chatUnread > 0) "$chatUnread new message${if (chatUnread == 1) "" else "s"}" else "Message support directly",
+                                onClick = onOpenChat,
+                            )
                         }
+                        RowDivider()
+                        SettingRow(
+                            icon = Icons.Rounded.DeleteOutline,
+                            title = "Delete account",
+                            subtitle = "Deactivate your account and sign out",
+                            danger = true,
+                            onClick = { showDeleteAccount = true },
+                        )
+                    }
+
+                    SettingsSection(
+                        icon = Icons.Rounded.Sync,
+                        title = "Sync",
+                        summary = syncStatus(),
+                        expanded = open == "sync",
+                        onToggle = { open = if (open == "sync") null else "sync" },
+                    ) {
+                        SwitchRow(
+                            icon = Icons.Rounded.Sync,
+                            title = "Sync on this phone",
+                            subtitle = if (BrowserSync.enabled) "Your browsing reaches your other devices" else "Off · this phone's data stays here",
+                            checked = BrowserSync.enabled,
+                            enabled = true,
+                            onCheckedChange = { BrowserSync.setSyncEnabled(it) },
+                        )
+                        if (BrowserSync.enabled) {
+                            SyncType.entries.forEach { t ->
+                                RowDivider()
+                                SwitchRow(
+                                    icon = when (t) {
+                                        SyncType.BOOKMARKS -> Icons.Rounded.StarBorder
+                                        SyncType.HISTORY -> Icons.Rounded.History
+                                        SyncType.TABS -> Icons.Rounded.Devices
+                                        SyncType.SHORTCUTS -> Icons.Rounded.Apps
+                                        SyncType.SETTINGS -> Icons.Rounded.Tune
+                                    },
+                                    title = t.label,
+                                    subtitle = when (t) {
+                                        SyncType.BOOKMARKS -> "Up to 5,000"
+                                        SyncType.HISTORY -> "Normal browsing, last 90 days"
+                                        SyncType.TABS -> "See your open tabs on your other devices"
+                                        SyncType.SHORTCUTS -> "New-tab shortcuts"
+                                        SyncType.SETTINGS -> "Search engine, pop-ups, theme"
+                                    },
+                                    checked = BrowserSync.isOn(t),
+                                    enabled = true,
+                                    onCheckedChange = { BrowserSync.setOn(t, it) },
+                                )
+                            }
+                            RowDivider()
+                            SettingRow(icon = Icons.Rounded.CloudSync, title = "Sync now", subtitle = null, onClick = { BrowserSync.syncNow() })
+                        }
+                        RowDivider()
+                        SettingRow(
+                            icon = Icons.Rounded.CloudOff,
+                            title = "Delete synced data",
+                            subtitle = "Erase the copy kept for your account",
+                            danger = true,
+                            onClick = { showDeleteSynced = true },
+                        )
+                        Text(
+                            "Synced data is stored on SyncUp's servers only to reach your other devices — SyncUp staff can't see what you browse. " +
+                                "Never synced: passwords, cookies, SyncUp tabs, Incognito, app lock, downloads and site permissions.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 14.dp),
+                        )
                     }
                 }
-            }
 
-            // ---------------- Notifications ----------------
-            SectionLabel("Notifications")
-            SettingsGroup {
-                SwitchRow(
-                    icon = Icons.Rounded.Campaign,
-                    title = "SyncUp updates",
-                    subtitle = "News and announcements from SyncUp",
-                    checked = updatesOn,
-                    enabled = true,
-                    onCheckedChange = {
-                        updatesOn = it
-                        DeviceRegistrar.setUpdatesEnabled(context, it)
-                    },
-                )
-                RowDivider()
-                val allowed = remember { NotificationManagerCompat.from(context).areNotificationsEnabled() }
-                SettingRow(
-                    icon = Icons.Rounded.NotificationsActive,
-                    title = "Notification settings",
-                    subtitle = if (allowed) "Allowed" else "Blocked · tap to allow",
-                    onClick = {
-                        runCatching {
-                            context.startActivity(
-                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                                } else {
-                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
-                                },
-                            )
-                        }
-                    },
-                )
-            }
-
-            // ---------------- Account ----------------
-            if (user != null) {
-            SectionLabel("Account")
-            SettingsGroup {
-                SettingRow(
-                    icon = Icons.Rounded.Email,
-                    title = "Email",
-                    subtitle = user.email.ifBlank { "Add an email · sign in with it" },
-                    onClick = { editIdentifier = "email" },
-                )
-                RowDivider()
-                SettingRow(
-                    icon = Icons.Rounded.PhoneAndroid,
-                    title = "Mobile number",
-                    subtitle = user.phone?.takeIf { it.isNotBlank() }?.let { com.agani.syncup.data.formatPhone(it) } ?: "Add a mobile number · sign in with it",
-                    onClick = { editIdentifier = "phone" },
-                )
-                RowDivider()
-                SettingRow(
-                    icon = Icons.Rounded.AlternateEmail,
-                    title = "Username",
-                    subtitle = user.username?.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "Set a username · sign in with it",
-                    onClick = { showUsername = true },
-                )
-                RowDivider()
-                SettingRow(icon = Icons.Rounded.Lock, title = "Change password", onClick = { showChangePassword = true })
-                RowDivider()
-                SettingRow(
-                    icon = Icons.Rounded.Handshake,
-                    title = "Partners",
-                    subtitle = if (partnersWaiting > 0) "$partnersWaiting waiting for you to enable" else "Services that added you",
-                    onClick = onOpenPartners,
-                )
-                RowDivider()
-                SettingRow(
-                    icon = Icons.Rounded.DeleteOutline,
-                    title = "Delete account",
-                    subtitle = "Deactivate your account and sign out",
-                    danger = true,
-                    onClick = { showDeleteAccount = true },
-                )
-                if (user != null && chatEnabled) {
+                SettingsSection(
+                    icon = Icons.Rounded.Language,
+                    title = "Browser",
+                    summary = "${BrowserSettings.searchEngine.label} · pop-ups ${if (BrowserSettings.blockPopups) "blocked" else "allowed"} · " +
+                        "address bar at ${if (BrowserSettings.addressBarBottom) "bottom" else "top"}",
+                    expanded = open == "browser",
+                    onToggle = { open = if (open == "browser") null else "browser" },
+                ) {
+                    SettingRow(icon = Icons.Rounded.Search, title = "Search engine", subtitle = BrowserSettings.searchEngine.label, onClick = { showEngine = true })
                     RowDivider()
-                    SettingRow(
-                        icon = Icons.Rounded.ChatBubbleOutline,
-                        title = "Chat with admin",
-                        subtitle = if (chatUnread > 0) {
-                            "$chatUnread new message${if (chatUnread == 1) "" else "s"}"
-                        } else {
-                            "Message support directly"
+                    SwitchRow(
+                        icon = Icons.Rounded.Block,
+                        title = "Block pop-ups",
+                        subtitle = null,
+                        checked = BrowserSettings.blockPopups,
+                        enabled = true,
+                        onCheckedChange = { BrowserSettings.updateBlockPopups(it) },
+                    )
+                    RowDivider()
+                    SwitchRow(
+                        icon = Icons.Rounded.VerticalAlignBottom,
+                        title = "Address bar at bottom",
+                        subtitle = null,
+                        checked = BrowserSettings.addressBarBottom,
+                        enabled = true,
+                        onCheckedChange = { BrowserSettings.updateAddressBarBottom(it) },
+                    )
+                }
+
+                SettingsSection(
+                    icon = Icons.Rounded.Shield,
+                    title = "Privacy & security",
+                    summary = "App lock ${if (hasPin) "on" else "off"}${if (hasPin && biometricEnabled) " · fingerprint" else ""} · clear data · site settings",
+                    expanded = open == "privacy",
+                    onToggle = { open = if (open == "privacy") null else "privacy" },
+                ) {
+                    PinLockRow(
+                        hasPin = hasPin,
+                        onTapChange = { showSetPin = true },
+                        onToggle = { on -> if (on) showSetPin = true else showRemovePin = true },
+                    )
+                    RowDivider()
+                    SwitchRow(
+                        icon = Icons.Rounded.Fingerprint,
+                        title = "Biometric unlock",
+                        subtitle = when {
+                            !biometricAvailable -> "Not available on this device"
+                            !hasPin -> "Set a PIN first"
+                            else -> "Use fingerprint or face"
                         },
-                        onClick = onOpenChat,
+                        checked = biometricEnabled,
+                        enabled = biometricAvailable && hasPin,
+                        onCheckedChange = {
+                            biometricEnabled = it
+                            prefs.setBiometricEnabled(it)
+                        },
                     )
-                }
-                if (user != null && radioEnabled) {
+                    if (hasPin) {
+                        RowDivider()
+                        SettingRow(
+                            icon = Icons.Rounded.Timer,
+                            title = "Auto-lock",
+                            subtitle = lockGraceLabel(lockGrace),
+                            onClick = { showLockGrace = true },
+                        )
+                    }
                     RowDivider()
                     SettingRow(
-                        icon = Icons.Rounded.Radio,
-                        title = "Radio",
-                        subtitle = "Listen to live stations",
-                        onClick = onOpenRadio,
+                        icon = Icons.Rounded.DeleteSweep,
+                        title = "Clear browsing data",
+                        subtitle = "History, cookies, cache",
+                        onClick = { showClearData = true },
                     )
-                }
-            }
-            }
-
-            // ---------------- About ----------------
-            SectionLabel("About")
-            SettingsGroup {
-                SettingRow(
-                    icon = Icons.AutoMirrored.Rounded.HelpOutline,
-                    title = "Help & support",
-                    subtitle = "Contact support (password / PIN help)",
-                    onClick = { showHelp = true },
-                )
-                if (privacyPolicyUrl.isNotBlank()) {
                     RowDivider()
                     SettingRow(
-                        icon = Icons.Rounded.Policy,
-                        title = "Privacy policy",
-                        subtitle = "How your data is handled",
+                        icon = Icons.Rounded.Tune,
+                        title = "Site settings",
+                        subtitle = "Camera, mic, location, notifications",
                         onClick = {
-                            // Open inside the app (in-app WebView), not an external browser.
                             runCatching {
                                 context.startActivity(
-                                    WebViewActivity.intent(context, privacyPolicyUrl, "Privacy Policy"),
+                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")),
                                 )
-                            }.onFailure {
-                                Toast.makeText(context, "Can't open the privacy policy", Toast.LENGTH_SHORT).show()
                             }
                         },
                     )
                 }
-                RowDivider()
-                SettingRow(icon = Icons.Rounded.Info, title = "App version", subtitle = appVersion, onClick = null)
+
+                SettingsSection(
+                    icon = Icons.Rounded.Palette,
+                    title = "Appearance",
+                    summary = when (themeMode) {
+                        ThemeMode.SYSTEM -> "Theme follows the system"
+                        ThemeMode.LIGHT -> "Light theme"
+                        ThemeMode.DARK -> "Dark theme"
+                        ThemeMode.BLACK -> "Black theme"
+                    },
+                    expanded = open == "appearance",
+                    onToggle = { open = if (open == "appearance") null else "appearance" },
+                ) {
+                    Box(Modifier.padding(14.dp)) {
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            val options = listOf(
+                                ThemeMode.SYSTEM to "System",
+                                ThemeMode.LIGHT to "Light",
+                                ThemeMode.DARK to "Dark",
+                                ThemeMode.BLACK to "Black",
+                            )
+                            options.forEachIndexed { index, (mode, label) ->
+                                SegmentedButton(
+                                    selected = themeMode == mode,
+                                    onClick = { onThemeChange(mode) },
+                                    shape = SegmentedButtonDefaults.itemShape(index, options.size),
+                                ) { Text(label) }
+                            }
+                        }
+                    }
+                }
+
+                SettingsSection(
+                    icon = Icons.Rounded.NotificationsActive,
+                    title = "Notifications",
+                    summary = "SyncUp updates ${if (updatesOn) "on" else "off"} · notifications ${if (notificationsAllowed) "allowed" else "blocked"}",
+                    expanded = open == "notifications",
+                    onToggle = { open = if (open == "notifications") null else "notifications" },
+                ) {
+                    SwitchRow(
+                        icon = Icons.Rounded.Campaign,
+                        title = "SyncUp updates",
+                        subtitle = "News and announcements from SyncUp",
+                        checked = updatesOn,
+                        enabled = true,
+                        onCheckedChange = {
+                            updatesOn = it
+                            DeviceRegistrar.setUpdatesEnabled(context, it)
+                        },
+                    )
+                    RowDivider()
+                    SettingRow(
+                        icon = Icons.Rounded.NotificationsActive,
+                        title = "Notification settings",
+                        subtitle = if (notificationsAllowed) "Allowed" else "Blocked · tap to allow",
+                        onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                    } else {
+                                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+                                    },
+                                )
+                            }
+                        },
+                    )
+                }
+
+                SettingsSection(
+                    icon = Icons.Rounded.Info,
+                    title = "About",
+                    summary = "Help, privacy policy · version $appVersion",
+                    expanded = open == "about",
+                    onToggle = { open = if (open == "about") null else "about" },
+                ) {
+                    SettingRow(
+                        icon = Icons.AutoMirrored.Rounded.HelpOutline,
+                        title = "Help & support",
+                        subtitle = "Contact support (password / PIN help)",
+                        onClick = { showHelp = true },
+                    )
+                    if (privacyPolicyUrl.isNotBlank()) {
+                        RowDivider()
+                        SettingRow(
+                            icon = Icons.Rounded.Policy,
+                            title = "Privacy policy",
+                            subtitle = "How your data is handled",
+                            onClick = {
+                                // Open inside the app (in-app WebView), not an external browser.
+                                runCatching {
+                                    context.startActivity(
+                                        WebViewActivity.intent(context, privacyPolicyUrl, "Privacy Policy"),
+                                    )
+                                }.onFailure {
+                                    Toast.makeText(context, "Can't open the privacy policy", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                        )
+                    }
+                    RowDivider()
+                    SettingRow(icon = Icons.Rounded.Info, title = "App version", subtitle = appVersion, onClick = null)
+                }
             }
 
             if (user != null) {
@@ -977,19 +1020,6 @@ private fun ChangePasswordDialog(
 }
 
 @Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        fontWeight = FontWeight.Medium,
-        letterSpacing = .1.sp,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, top = 20.dp, bottom = 8.dp),
-    )
-}
-
-@Composable
 private fun SettingsGroup(content: @Composable () -> Unit) {
     Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
         Column { content() }
@@ -1262,4 +1292,62 @@ private fun UsernameDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } },
     )
+}
+
+
+/**
+ * A collapsed settings group: icon, title and a one-line summary of the current state. Tapping it
+ * opens the group's rows below (and the screen closes whichever group was open before).
+ */
+@Composable
+private fun SettingsSection(
+    icon: ImageVector,
+    title: String,
+    summary: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    val chevron by animateFloatAsState(if (expanded) 180f else 0f, tween(220), label = "chevron")
+    val tile by animateColorAsState(if (expanded) cs.primaryContainer else cs.surfaceContainerHigh, tween(220), label = "tile")
+    Surface(shape = RoundedCornerShape(20.dp), color = cs.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
+        Column {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClickLabel = if (expanded) "Collapse" else "Expand", onClick = onToggle)
+                    .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+                    .heightIn(min = 72.dp)
+                    .padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+            ) {
+                Box(
+                    Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(tile),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(icon, null, tint = if (expanded) cs.onPrimaryContainer else cs.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                }
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(title, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
+                    Text(
+                        summary, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                Icon(Icons.Rounded.ExpandMore, null, tint = cs.onSurfaceVariant, modifier = Modifier.rotate(chevron))
+            }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(tween(240)) + fadeIn(tween(200)),
+                exit = shrinkVertically(tween(200)) + fadeOut(tween(120)),
+            ) {
+                Column {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(1.dp).background(cs.outlineVariant))
+                    content()
+                }
+            }
+        }
+    }
 }

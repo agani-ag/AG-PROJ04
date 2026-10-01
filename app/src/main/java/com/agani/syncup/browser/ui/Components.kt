@@ -38,9 +38,11 @@ import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.res.vectorResource
 import com.agani.syncup.R
 import androidx.compose.runtime.LaunchedEffect
@@ -48,12 +50,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,22 +69,43 @@ import androidx.core.view.WindowCompat
 import com.agani.syncup.browser.Section
 import com.agani.syncup.data.User
 import com.agani.syncup.ui.theme.IncognitoScheme
+import com.agani.syncup.ui.theme.isLight
 import com.agani.syncup.ui.theme.workScheme
 import kotlinx.coroutines.delay
 
 // Shared building blocks of the v2 browser design (docs/mockup/v2/mockup.css).
 
-/** Normal = app theme · Work = teal accent on the same surfaces · Incognito = fixed dark violet. */
+/** The app's own scheme, kept by the outermost [SectionTheme] so nested ones start from it. */
+private val LocalAppScheme = staticCompositionLocalOf<ColorScheme?> { null }
+
+/**
+ * Normal = app theme · Work = teal accent on the same surfaces · Incognito = fixed dark violet.
+ * Nests correctly: a Normal badge inside the SyncUp tab switcher is still Normal blue.
+ */
 @Composable
 fun SectionTheme(section: Section, content: @Composable () -> Unit) {
-    val base = MaterialTheme.colorScheme
-    val scheme = when (section) {
+    val base = LocalAppScheme.current ?: MaterialTheme.colorScheme
+    CompositionLocalProvider(LocalAppScheme provides base) {
+        MaterialTheme(colorScheme = sectionScheme(section), typography = MaterialTheme.typography, shapes = MaterialTheme.shapes, content = content)
+    }
+}
+
+/** A section's colours, for drawing outside its [SectionTheme] (e.g. the system bars). */
+@Composable
+fun sectionScheme(section: Section): ColorScheme {
+    val base = LocalAppScheme.current ?: MaterialTheme.colorScheme
+    return when (section) {
         Section.NORMAL -> base
         Section.WORK -> workScheme(base)
         Section.INCOGNITO -> IncognitoScheme
     }
-    MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes, content = content)
 }
+
+/**
+ * The browser's bars — address bar, find bar, bottom bar — and the system bars next to them: the
+ * surface in light, one tone up in dark, black and Incognito so a bar reads as a bar, not a hole.
+ */
+val ColorScheme.chrome: Color get() = if (isLight) surface else surfaceContainer
 
 /** The SyncUp mark (the app's two-arrow logo): the icon of the SyncUp section — links SyncUp provides. */
 val SyncUpMark: ImageVector
@@ -143,25 +169,23 @@ fun PillButton(icon: ImageVector, desc: String, size: Dp = 34.dp, tint: Color = 
     }
 }
 
-/** The one filled control in the bottom bar: section glyph + name, in the section colour. */
+/** The section switcher in the bottom bar: the section's glyph on a tinted pill, in its colour. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SectionKey(section: Section, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) {
     val cs = MaterialTheme.colorScheme
-    val bg by animateColorAsState(cs.primary, tween(350), label = "key")
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+    val bg by animateColorAsState(cs.primaryContainer, tween(350), label = "key")
+    val fg by animateColorAsState(cs.primary, tween(350), label = "keyIcon")
+    Box(
+        contentAlignment = Alignment.Center,
         modifier = Modifier
-            .height(44.dp)
+            .size(width = 52.dp, height = 36.dp)
             .clip(RoundedCornerShape(50))
             .background(bg)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .widthIn(min = 104.dp)
-            .padding(start = 12.dp, end = 16.dp),
+            .combinedClickable(onClickLabel = "Switch section", onClick = onClick, onLongClick = onLongClick)
+            .semantics { contentDescription = "${sectionName(section)} section" },
     ) {
-        Icon(sectionIcon(section), null, tint = cs.onPrimary, modifier = Modifier.size(20.dp))
-        Text(sectionName(section), color = cs.onPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium, letterSpacing = .1.sp, maxLines = 1)
+        Icon(sectionIcon(section), null, tint = fg, modifier = Modifier.size(22.dp))
     }
 }
 

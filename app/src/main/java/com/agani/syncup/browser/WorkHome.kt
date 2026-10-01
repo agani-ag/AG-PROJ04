@@ -18,6 +18,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Handshake
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sync
+import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Tab
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -45,7 +46,7 @@ import com.agani.syncup.browser.ui.SyncPill
 import com.agani.syncup.browser.ui.TonalRow
 import com.agani.syncup.data.UrlItem
 
-/** Links grouped by where they come from: each partner first, then SyncUp (the admin). */
+/** Links grouped by where they come from: each partner first, then "Apps For You" (the admin). */
 private class LinkGroup(val name: String, val partner: Boolean, val items: List<UrlItem>)
 
 private fun groupLinks(links: List<UrlItem>): List<LinkGroup> {
@@ -53,7 +54,7 @@ private fun groupLinks(links: List<UrlItem>): List<LinkGroup> {
     val admin = links - partner.toSet()
     return partner.groupBy { it.sourceName!! }.toSortedMap(String.CASE_INSENSITIVE_ORDER)
         .map { (name, items) -> LinkGroup(name, true, items) } +
-        listOfNotNull(admin.takeIf { it.isNotEmpty() }?.let { LinkGroup("SyncUp", false, it) })
+        listOfNotNull(admin.takeIf { it.isNotEmpty() }?.let { LinkGroup("Apps For You", false, it) })
 }
 
 /**
@@ -140,7 +141,11 @@ internal fun WorkHome(
                         title = item.title,
                         subtitle = item.description?.takeIf { it.isNotBlank() },
                         leading = { IconTile(iconFor(item)) },
-                        trailing = if (open > 0) ({ StatusChip("$open open", Icons.Rounded.Tab) }) else null,
+                        trailing = when {
+                            open > 1 -> ({ StatusChip("$open pages", Icons.Rounded.Layers) })
+                            open == 1 -> ({ StatusChip("Open", Icons.Rounded.Tab) })
+                            else -> null
+                        },
                         onClick = { onOpen(item) },
                     )
                 }

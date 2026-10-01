@@ -3,6 +3,7 @@ package com.agani.syncup.browser
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -40,6 +41,24 @@ class BrowserTab(
 
     /** Work tabs: false until the first page has finished loading (redirects still being collected). */
     var rootsSettled = false
+
+    /** The tab whose page opened this one (a new window); Back returns there when history runs out. */
+    var openerId: Long? = null
+
+    /**
+     * SyncUp tabs: the link this page belongs to — the id of the link's first page. Pages its site
+     * opens in new windows share it, so the tab switcher shows one card per link.
+     */
+    var groupId: Long = id
+
+    /** When the tab was last on screen (a link's card shows its latest page; the oldest sleep first). */
+    var lastUsed by mutableLongStateOf(0L)
+
+    /** Unloaded to save memory (a SyncUp link keeps only its latest pages loaded); reloads when shown. */
+    var asleep by mutableStateOf(false)
+
+    /** A sleeping page's back/forward history, so it wakes up with Back still working. */
+    var savedState: android.os.Bundle? = null
 
     /** Current page URL; "" means the tab shows its section's home page (no WebView yet). */
     var url by mutableStateOf(initialUrl)

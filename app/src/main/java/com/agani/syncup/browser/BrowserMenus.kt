@@ -19,13 +19,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CloudOff
-import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FindInPage
 import androidx.compose.material.icons.rounded.Handshake
@@ -34,7 +32,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
@@ -83,6 +81,7 @@ internal fun SectionSheet(
     signedIn: Boolean,
     hasWork: Boolean,
     workCount: Int,
+    singleLinkName: String? = null,
     onPick: (Section) -> Unit,
     onSignIn: () -> Unit,
 ) {
@@ -98,7 +97,8 @@ internal fun SectionSheet(
         } else if (hasWork) {
             val open = tabs.tabsIn(Section.WORK).count { !it.isHome }
             SectionChoice(
-                Section.WORK, "$workCount link${if (workCount == 1) "" else "s"}" + if (open > 0) " · $open open" else "",
+                Section.WORK,
+                (singleLinkName ?: "$workCount link${if (workCount == 1) "" else "s"}") + if (open > 0) " · $open open" else "",
                 open, current == Section.WORK, locked = false,
             ) { onPick(Section.WORK) }
         }
@@ -166,7 +166,7 @@ private fun SectionChoice(section: Section, subtitle: String, count: Int, select
 // ============================================================================ page menu
 internal enum class MenuAction {
     NEW_TAB, NEW_INCOGNITO, FORWARD, RELOAD, BOOKMARK, SHARE, FIND,
-    CHAT, RADIO, WORK, WORK_INFO, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, SIGN_IN, PARTNERS,
+    CHAT, MUSIC, WORK, WORK_INFO, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, SIGN_IN, PARTNERS,
 }
 
 @Composable
@@ -181,28 +181,35 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
     val workPage = page && tab.isWork
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 12.dp)) {
-        Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp)) {
-            QuickAction(Icons.AutoMirrored.Rounded.ArrowForward, "Forward", tab.canGoForward) { onAction(MenuAction.FORWARD) }
-            if (tab.isWork) {
-                QuickAction(Icons.Rounded.FindInPage, "Find", page) { onAction(MenuAction.FIND) }
-                QuickAction(Icons.Rounded.Refresh, "Reload", page) { onAction(MenuAction.RELOAD) }
-                QuickAction(Icons.Rounded.Info, "About", workPage) { onAction(MenuAction.WORK_INFO) }
-            } else {
-                QuickAction(if (bookmarked) Icons.Rounded.Star else Icons.Rounded.StarBorder, if (bookmarked) "Bookmarked" else "Bookmark", normalPage, on = bookmarked) {
-                    onAction(MenuAction.BOOKMARK)
+        // Quick actions that apply to what's on screen — none on a home page, so no row at all.
+        if (page || tab.canGoForward) {
+            Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp)) {
+                if (tab.canGoForward) QuickAction(Icons.AutoMirrored.Rounded.ArrowForward, "Forward", true) { onAction(MenuAction.FORWARD) }
+                if (normalPage) {
+                    QuickAction(if (bookmarked) Icons.Rounded.Star else Icons.Rounded.StarBorder, if (bookmarked) "Bookmarked" else "Bookmark", true, on = bookmarked) {
+                        onAction(MenuAction.BOOKMARK)
+                    }
                 }
-                QuickAction(Icons.Rounded.FindInPage, "Find", page) { onAction(MenuAction.FIND) }
-                QuickAction(Icons.Rounded.Refresh, "Reload", page) { onAction(MenuAction.RELOAD) }
+                if (page) {
+                    QuickAction(Icons.Rounded.FindInPage, "Find", true) { onAction(MenuAction.FIND) }
+                    QuickAction(Icons.Rounded.Refresh, "Reload", true) { onAction(MenuAction.RELOAD) }
+                }
+                if (workPage) QuickAction(Icons.Rounded.Info, "About", true) { onAction(MenuAction.WORK_INFO) }
             }
         }
         if (workPage) MenuRow(Icons.Rounded.Info, "About this SyncUp link", tint = cs.primary, textColor = cs.primary) { onAction(MenuAction.WORK_INFO) }
         MenuRow(Icons.Rounded.Add, if (tab.isWork) "New Normal tab" else "New tab") { onAction(MenuAction.NEW_TAB) }
         MenuRow(Icons.Rounded.VisibilityOff, "New incognito tab") { onAction(MenuAction.NEW_INCOGNITO) }
-        if (signedIn && !incognito) {
+        if (signedIn && !incognito && (hasWork || account.chatEnabled || account.hasPartners)) {
             SheetDivider()
             if (hasWork && !tab.isWork) {
                 SectionTheme(Section.WORK) {
-                    MenuRow(SyncUpMark, "SyncUp links", "${account.links.size}", tint = MaterialTheme.colorScheme.primary) { onAction(MenuAction.WORK) }
+                    // One link: the row is that link and opens the website directly.
+                    val single = account.links.singleOrNull()
+                    MenuRow(
+                        SyncUpMark, single?.title ?: "SyncUp links", if (single != null) "Your SyncUp link" else "${account.links.size}",
+                        tint = MaterialTheme.colorScheme.primary,
+                    ) { onAction(MenuAction.WORK) }
                 }
             }
             if (account.chatEnabled) {
@@ -210,19 +217,19 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
                     onAction(MenuAction.CHAT)
                 }
             }
-            if (account.radioEnabled) MenuRow(Icons.Rounded.Radio, "Radio") { onAction(MenuAction.RADIO) }
-            MenuRow(Icons.Rounded.Handshake, "Partners", badge = if (account.partnersWaiting > 0) "${account.partnersWaiting} new" else null) {
-                onAction(MenuAction.PARTNERS)
+            if (account.hasPartners) {
+                MenuRow(Icons.Rounded.Handshake, "Partners", badge = if (account.partnersWaiting > 0) "${account.partnersWaiting} new" else null) {
+                    onAction(MenuAction.PARTNERS)
+                }
             }
         }
         SheetDivider()
         MenuRow(Icons.Rounded.Bookmarks, "Bookmarks") { onAction(MenuAction.BOOKMARKS) }
         MenuRow(Icons.Rounded.History, "History") { onAction(MenuAction.HISTORY) }
         MenuRow(Icons.Rounded.Download, "Downloads") { onAction(MenuAction.DOWNLOADS) }
-        if (page) {
-            if (tab.isWork) MenuRow(Icons.Rounded.Share, "Share · Copy link", "Not allowed", enabled = false) {}
-            else MenuRow(Icons.Rounded.Share, "Share page") { onAction(MenuAction.SHARE) }
-        }
+        MenuRow(Icons.Rounded.LibraryMusic, "Music") { onAction(MenuAction.MUSIC) }
+        // SyncUp pages can't be shared, so the row simply isn't there.
+        if (page && !tab.isWork) MenuRow(Icons.Rounded.Share, "Share page") { onAction(MenuAction.SHARE) }
         MenuRow(Icons.Rounded.Settings, "Settings") { onAction(MenuAction.SETTINGS) }
         if (!signedIn) MenuRow(Icons.Rounded.Person, "Sign in to SyncUp", tint = cs.primary, textColor = cs.primary) { onAction(MenuAction.SIGN_IN) }
     }
@@ -290,9 +297,6 @@ internal fun WorkInfoSheet(tab: BrowserTab, onReload: () -> Unit, onSearchNormal
         if (UrlInput.isSecure(tab.url)) MenuRow(Icons.Rounded.Lock, "Connection is secure", tint = cs.success) {}
         MenuRow(Icons.Rounded.Refresh, "Reload", onClick = onReload)
         MenuRow(Icons.Rounded.Search, "Search the web in Normal", onClick = onSearchNormal)
-        MenuRow(Icons.Rounded.ContentCopy, "Copy link", "Not allowed", enabled = false) {}
-        MenuRow(Icons.Rounded.Share, "Share", "Not allowed", enabled = false) {}
-        MenuRow(Icons.AutoMirrored.Rounded.OpenInNew, "Open in another app", "Not allowed", enabled = false) {}
     }
 }
 

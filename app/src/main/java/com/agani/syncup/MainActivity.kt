@@ -6,7 +6,9 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
@@ -15,6 +17,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,6 +64,9 @@ import com.agani.syncup.browser.Section
 import com.agani.syncup.browser.TabManager
 import com.agani.syncup.browser.WebPlatform
 import com.agani.syncup.data.SyncTab
+import com.agani.syncup.music.LocalPlayer
+import com.agani.syncup.music.MusicScreen
+import com.agani.syncup.music.rememberPlayerHandle
 import com.agani.syncup.sync.BrowserSync
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -68,7 +74,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-private enum class AppScreen { Splash, ForceUpdate, Announcement, Browser, Profile, Radio, Library, Partners }
+private enum class AppScreen { Splash, ForceUpdate, Announcement, Browser, Profile, Music, Library, Partners }
 
 class MainActivity : FragmentActivity() {
 
@@ -90,8 +96,8 @@ class MainActivity : FragmentActivity() {
     // Set when a chat entry point (button / bubble / push tap) asks us to open the chat screen.
     private val openChatRequest = mutableStateOf(false)
 
-    // Set when the media notification is tapped — open the Radio player.
-    private val openRadioRequest = mutableStateOf(false)
+    // Set when the media notification is tapped — open the Music player.
+    private val openMusicRequest = mutableStateOf(false)
 
     // Id of a partner verification prompt to open (from an action push tap).
     private val pendingActionId = mutableStateOf<String?>(null)
@@ -101,6 +107,14 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Draw behind the status and navigation bars on every Android version (15+ already does),
+        // so each screen paints its own bars — Incognito dark, a page's theme colour, and so on —
+        // instead of the window's fixed colour. No grey contrast scrim over the button nav bar.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.isNavigationBarContrastEnforced = false
         lockedState.value = security.hasPin() // lock on cold start if a PIN is set
         com.agani.syncup.browser.BrowserSettings.init(this)
         tabManager = TabManager(this, webPlatform, browserDb).also { it.restore() }
@@ -250,9 +264,9 @@ class MainActivity : FragmentActivity() {
             intent.removeExtra(EXTRA_OPEN_PARTNERS)
             intent.removeExtra("type")
         }
-        if (intent?.getBooleanExtra(EXTRA_OPEN_RADIO, false) == true) {
-            openRadioRequest.value = true
-            intent.removeExtra(EXTRA_OPEN_RADIO)
+        if (intent?.getBooleanExtra(EXTRA_OPEN_MUSIC, false) == true) {
+            openMusicRequest.value = true
+            intent.removeExtra(EXTRA_OPEN_MUSIC)
         }
         // EXTRA_OPEN_CHAT = our own foreground path (SyncUpMessagingService / bubble).
         // "type" == "chat" = the FCM data payload delivered by the system tray when the app was
@@ -277,11 +291,13 @@ class MainActivity : FragmentActivity() {
     @Composable
     private fun AppContent(themeMode: ThemeMode, onThemeChange: (ThemeMode) -> Unit) {
         val vm: AuthViewModel = viewModel()
+        // The Music player's state (songs + Radio), shared by every screen through LocalPlayer.
+        val player = rememberPlayerHandle()
 
         var booted by remember { mutableStateOf(false) }
         var forceUpdate by remember { mutableStateOf(false) }
         var showProfile by remember { mutableStateOf(false) }
-        var showRadio by remember { mutableStateOf(false) }
+        var showMusic by remember { mutableStateOf(false) }
         var showLogin by remember { mutableStateOf(false) }
         var showPartners by remember { mutableStateOf(false) }
         var signupEnabled by remember { mutableStateOf(false) }
@@ -346,7 +362,7 @@ class MainActivity : FragmentActivity() {
         LaunchedEffect(booted, state.isLoggedIn) {
             if (booted && state.isLoggedIn) {
                 // The combined /sync: links, chat badge, partners badge and THIS user's config
-                // (chat / radio are per-user; the config fetched at launch is the global one).
+                // (chat is per-user; the config fetched at launch is the global one).
                 vm.syncAll(silent = true) { cfg -> applyConfig(cfg) }
                 withContext(Dispatchers.IO) { ReminderSync.sync(applicationContext) }
             }
@@ -388,17 +404,19 @@ class MainActivity : FragmentActivity() {
                 // A broadcast link: a Normal tab, for everyone.
                 pendingLink.value = null
                 showProfile = false
-                showRadio = false
+                showMusic = false
                 showPartners = false
                 libraryPage = null
                 tabManager.newTab(Section.NORMAL, link.url)
             } else if (link != null && state.isLoggedIn && state.user != null) {
                 pendingLink.value = null
-                // A link from a SyncUp push/reminder is a work link: open it as a Work tab (address hidden).
+                // A link from a SyncUp push/reminder is a work link: open it as a Work tab (address hidden)
+                // — the link's own tab when it's one of the user's links and already open.
                 showProfile = false
-                showRadio = false
+                showMusic = false
                 libraryPage = null
-                tabManager.openWorkLink(link.title, link.url)
+                val item = state.urls.firstOrNull { it.url == link.url }
+                tabManager.openWorkLink(item?.title ?: link.title, link.url, item?.id, item?.notifyToken.orEmpty())
             }
         }
 
@@ -421,23 +439,23 @@ class MainActivity : FragmentActivity() {
         LaunchedEffect(openPartnersRequest.value, state.isLoggedIn) {
             if (openPartnersRequest.value && state.isLoggedIn) {
                 openPartnersRequest.value = false
-                showRadio = false
+                showMusic = false
                 showPartners = true
             }
         }
 
-        // The media-notification tap wants the Radio player.
-        LaunchedEffect(openRadioRequest.value, state.isLoggedIn, state.user) {
-            if (openRadioRequest.value && state.isLoggedIn && state.user != null) {
-                openRadioRequest.value = false
-                showRadio = true
+        // The media-notification tap wants the Music player (open to everyone, signed in or not).
+        LaunchedEffect(openMusicRequest.value) {
+            if (openMusicRequest.value) {
+                openMusicRequest.value = false
+                showMusic = true
             }
         }
 
-        // System back: step Radio -> Profile -> Account instead of exiting the app.
-        androidx.activity.compose.BackHandler(enabled = showRadio) { showRadio = false }
-        androidx.activity.compose.BackHandler(enabled = showPartners && !showRadio) { showPartners = false }
-        androidx.activity.compose.BackHandler(enabled = showProfile && !showRadio && !showPartners) { showProfile = false }
+        // System back: step Music -> Partners -> Settings instead of exiting the app.
+        androidx.activity.compose.BackHandler(enabled = showMusic) { showMusic = false }
+        androidx.activity.compose.BackHandler(enabled = showPartners && !showMusic) { showPartners = false }
+        androidx.activity.compose.BackHandler(enabled = showProfile && !showMusic && !showPartners) { showProfile = false }
         androidx.activity.compose.BackHandler(enabled = libraryPage != null && !showProfile) { libraryPage = null }
 
         // A chat entry point (button / bubble / push tap) wants the chat screen: fetch the one-time
@@ -468,140 +486,151 @@ class MainActivity : FragmentActivity() {
 
         // The app opens straight into the browser. Login is optional and only adds SyncUp features.
         val loggedIn = state.isLoggedIn && state.user != null
+
+        // Radio is for signed-in users while the admin has it on. When that ends (sign-out, or the
+        // admin turns it off), a station that's still playing stops. Songs carry on.
+        val radioAvailable = loggedIn && radioEnabled
+        var radioWasAvailable by remember { mutableStateOf(false) }
+        LaunchedEffect(radioAvailable) {
+            if (radioWasAvailable && !radioAvailable && player.isRadio) player.stop()
+            radioWasAvailable = radioAvailable
+        }
         val screen = when {
             !booted -> AppScreen.Splash
             forceUpdate -> AppScreen.ForceUpdate
             loggedIn && showAnnouncement -> AppScreen.Announcement
-            showRadio && loggedIn -> AppScreen.Radio
+            showMusic -> AppScreen.Music
             showPartners && loggedIn -> AppScreen.Partners
             showProfile -> AppScreen.Profile
             libraryPage != null -> AppScreen.Library
             else -> AppScreen.Browser
         }
 
-        Crossfade(targetState = screen, animationSpec = tween(300), label = "screen") { target ->
-            when (target) {
-                AppScreen.Splash -> SplashScreen()
-                AppScreen.ForceUpdate -> ForceUpdateScreen()
-                AppScreen.Announcement -> AnnouncementScreen(
-                    title = ann?.title ?: "",
-                    message = ann?.message ?: "",
-                    blocking = ann?.blocking ?: false,
-                    onDismiss = {
-                        appPrefs.setAcknowledgedAnnouncement(annHash)
-                        announcementDismissed = true
-                    },
-                )
-                AppScreen.Profile -> run {
-                    ProfileScreen(
-                        user = state.user,
-                        onSignIn = {
-                            showProfile = false
-                            showLogin = true
-                        },
-                        appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                        themeMode = themeMode,
-                        onThemeChange = onThemeChange,
-                        supportEmail = supportEmail,
-                        supportPhone = supportPhone,
-                        privacyPolicyUrl = privacyUrl,
-                        chatEnabled = chatEnabled,
-                        chatUnread = state.chatUnread,
-                        onOpenChat = { openChatRequest.value = true },
-                        radioEnabled = radioEnabled,
-                        onOpenRadio = { showRadio = true },
-                        onBack = { showProfile = false },
-                        onLogout = {
-                            showProfile = false
-                            tabManager.wipeWork()
-                            vm.logout()
-                        },
-                        onChangePassword = { current, new -> vm.changePassword(current, new) },
-                        partnersWaiting = state.partnersWaiting,
-                        onOpenPartners = { showPartners = true },
-                        onUpdateProfile = { vm.updateProfile(it) },
-                        onCheckUsername = { vm.checkUsername(it) },
-                        onClearBrowsingData = { history, cookies, cache -> tabManager.clearBrowsingData(history, cookies, cache) },
-                        onDeleteAccount = {
-                            val result = vm.deleteAccount()
-                            if (result.isSuccess) {
-                                showProfile = false
-                                tabManager.wipeWork()
-                            }
-                            result
+        CompositionLocalProvider(LocalPlayer provides player) {
+            Crossfade(targetState = screen, animationSpec = tween(300), label = "screen") { target ->
+                when (target) {
+                    AppScreen.Splash -> SplashScreen()
+                    AppScreen.ForceUpdate -> ForceUpdateScreen()
+                    AppScreen.Announcement -> AnnouncementScreen(
+                        title = ann?.title ?: "",
+                        message = ann?.message ?: "",
+                        blocking = ann?.blocking ?: false,
+                        onDismiss = {
+                            appPrefs.setAcknowledgedAnnouncement(annHash)
+                            announcementDismissed = true
                         },
                     )
-                }
-                AppScreen.Partners -> com.agani.syncup.ui.PartnersScreen(
-                    load = { vm.partners() },
-                    enable = { id, password -> vm.enablePartner(id, password) },
-                    disable = { id -> vm.disablePartner(id) },
-                    // Enabled/disabled partners' Work links appear/disappear; the badge updates.
-                    onChanged = { runFullRefresh(silent = true) },
-                    onBack = { showPartners = false },
-                )
-                AppScreen.Radio -> {
-                    RequestNotificationPermission() // media notification (status bar + lock screen)
-                    com.agani.syncup.ui.RadioScreen(
-                        viewModel = vm,
-                        onClose = { showRadio = false },
-                    )
-                }
-                AppScreen.Browser -> {
-                    // Asked once on first launch for every install (signed in or not) — SyncUp can notify anyone.
-                    RequestNotificationPermission(onceOnly = true)
-                    BrowserScreen(
-                        tabs = tabManager,
-                        web = webPlatform,
-                        db = browserDb,
-                        account = if (loggedIn) BrowserAccount(
+                    AppScreen.Profile -> run {
+                        ProfileScreen(
                             user = state.user,
-                            links = state.urls,
-                            chatEnabled = chatEnabled,
-                            chatUnread = state.chatUnread,
-                            radioEnabled = radioEnabled,
-                            announcement = announcement,
-                            refreshing = state.refreshing,
-                            partnersWaiting = state.partnersWaiting,
-                        ) else BrowserAccount(
-                            loginLoading = state.loading,
-                            loginError = state.error,
+                            onSignIn = {
+                                showProfile = false
+                                showLogin = true
+                            },
+                            appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                            themeMode = themeMode,
+                            onThemeChange = onThemeChange,
                             supportEmail = supportEmail,
                             supportPhone = supportPhone,
-                            signupEnabled = signupEnabled,
-                            privacyUrl = privacyUrl,
-                        ),
-                        signInVisible = showLogin && !loggedIn,
-                        actions = BrowserActions(
-                            onSignIn = { showLogin = true },
-                            onDismissSignIn = { showLogin = false },
-                            onLogin = { mode, login, password -> vm.login(mode, login.trim(), password) },
-                            onSignup = { name, email, phone, password -> vm.signup(name, email, phone, password) },
-                            onClearAuthError = { vm.clearError() },
-                            onSignOut = {
+                            privacyPolicyUrl = privacyUrl,
+                            chatEnabled = chatEnabled,
+                            chatUnread = state.chatUnread,
+                            onOpenChat = { openChatRequest.value = true },
+                            onBack = { showProfile = false },
+                            onLogout = {
+                                showProfile = false
                                 tabManager.wipeWork()
                                 vm.logout()
                             },
+                            onChangePassword = { current, new -> vm.changePassword(current, new) },
+                            partnersWaiting = state.partnersWaiting,
+                            showPartners = state.hasPartners,
                             onOpenPartners = { showPartners = true },
-                            onOpenSettings = { showProfile = true },
-                            onOpenChat = { openChatRequest.value = true },
-                            onOpenRadio = { showRadio = true },
-                            onOpenLibrary = { libraryPage = it },
-                            onRefreshLinks = { runFullRefresh(silent = false) },
-                        ),
+                            onUpdateProfile = { vm.updateProfile(it) },
+                            onCheckUsername = { vm.checkUsername(it) },
+                            onClearBrowsingData = { history, cookies, cache -> tabManager.clearBrowsingData(history, cookies, cache) },
+                            onDeleteAccount = {
+                                val result = vm.deleteAccount()
+                                if (result.isSuccess) {
+                                    showProfile = false
+                                    tabManager.wipeWork()
+                                }
+                                result
+                            },
+                        )
+                    }
+                    AppScreen.Partners -> com.agani.syncup.ui.PartnersScreen(
+                        load = { vm.partners() },
+                        enable = { id, password -> vm.enablePartner(id, password) },
+                        disable = { id -> vm.disablePartner(id) },
+                        // Enabled/disabled partners' Work links appear/disappear; the badge updates.
+                        onChanged = { runFullRefresh(silent = true) },
+                        onBack = { showPartners = false },
+                    )
+                    AppScreen.Music -> {
+                        RequestNotificationPermission() // media notification (status bar + lock screen)
+                        MusicScreen(
+                            radioAvailable = radioAvailable,
+                            loadStations = { vm.radioChannels() },
+                            onBack = { showMusic = false },
+                        )
+                    }
+                    AppScreen.Browser -> {
+                        // Asked once on first launch for every install (signed in or not) — SyncUp can notify anyone.
+                        RequestNotificationPermission(onceOnly = true)
+                        BrowserScreen(
+                            tabs = tabManager,
+                            web = webPlatform,
+                            db = browserDb,
+                            account = if (loggedIn) BrowserAccount(
+                                user = state.user,
+                                links = state.urls,
+                                chatEnabled = chatEnabled,
+                                chatUnread = state.chatUnread,
+                                announcement = announcement,
+                                refreshing = state.refreshing,
+                                partnersWaiting = state.partnersWaiting,
+                                hasPartners = state.hasPartners,
+                            ) else BrowserAccount(
+                                loginLoading = state.loading,
+                                loginError = state.error,
+                                supportEmail = supportEmail,
+                                supportPhone = supportPhone,
+                                signupEnabled = signupEnabled,
+                                privacyUrl = privacyUrl,
+                            ),
+                            signInVisible = showLogin && !loggedIn,
+                            actions = BrowserActions(
+                                onSignIn = { showLogin = true },
+                                onDismissSignIn = { showLogin = false },
+                                onLogin = { mode, login, password -> vm.login(mode, login.trim(), password) },
+                                onSignup = { name, email, phone, password -> vm.signup(name, email, phone, password) },
+                                onClearAuthError = { vm.clearError() },
+                                onSignOut = {
+                                    tabManager.wipeWork()
+                                    vm.logout()
+                                },
+                                onOpenPartners = { showPartners = true },
+                                onOpenSettings = { showProfile = true },
+                                onOpenChat = { openChatRequest.value = true },
+                                onOpenMusic = { showMusic = true },
+                                onOpenLibrary = { libraryPage = it },
+                                onRefreshLinks = { runFullRefresh(silent = false) },
+                            ),
+                        )
+                    }
+                    AppScreen.Library -> LibraryScreen(
+                        page = libraryPage ?: LibraryPage.HISTORY,
+                        db = browserDb,
+                        onOpen = { url ->
+                            libraryPage = null
+                            val t = tabManager.activeTab(Section.NORMAL)
+                            if (tabManager.section == Section.NORMAL && t != null && t.isHome) tabManager.load(t, url)
+                            else tabManager.newTab(Section.NORMAL, url)
+                        },
+                        onBack = { libraryPage = null },
                     )
                 }
-                AppScreen.Library -> LibraryScreen(
-                    page = libraryPage ?: LibraryPage.HISTORY,
-                    db = browserDb,
-                    onOpen = { url ->
-                        libraryPage = null
-                        val t = tabManager.activeTab(Section.NORMAL)
-                        if (tabManager.section == Section.NORMAL && t != null && t.isHome) tabManager.load(t, url)
-                        else tabManager.newTab(Section.NORMAL, url)
-                    },
-                    onBack = { libraryPage = null },
-                )
             }
         }
 
@@ -652,8 +681,8 @@ class MainActivity : FragmentActivity() {
         /** Intent extra: when true, MainActivity opens the chat screen (used by chat push taps). */
         const val EXTRA_OPEN_CHAT = "extra_open_chat"
 
-        /** Intent extra: when true, MainActivity opens the Radio player (media-notification tap). */
-        const val EXTRA_OPEN_RADIO = "extra_open_radio"
+        /** Intent extra: when true, MainActivity opens the Music player (media-notification tap). */
+        const val EXTRA_OPEN_MUSIC = "extra_open_music"
 
         /** Intent extra: id of a partner verification prompt to open (used by action push taps). */
         const val EXTRA_ACTION_ID = "extra_action_id"

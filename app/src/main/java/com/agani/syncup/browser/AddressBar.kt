@@ -1,5 +1,7 @@
 package com.agani.syncup.browser
 
+import com.agani.syncup.browser.ui.chrome
+
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -99,13 +101,13 @@ internal fun PageBar(tab: BrowserTab, db: BrowserDb, atBottom: Boolean, onTap: (
         modifier = Modifier
             .fillMaxWidth()
             .height(60.dp)
-            .background(if (atBottom) cs.surfaceContainer else cs.surface)
+            .background(cs.chrome)
             .padding(start = 12.dp, end = if (normal) 4.dp else 12.dp),
     ) {
         SyncPill(
             modifier = Modifier.weight(1f),
             height = 44.dp,
-            container = if (atBottom) cs.surfaceContainerHighest else cs.surfaceContainerHigh,
+            container = cs.surfaceContainerHigh,
             onClick = onTap,
         ) {
             val icon = when {
@@ -211,7 +213,7 @@ internal fun FindBar(webViewProvider: () -> android.webkit.WebView, onClose: () 
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().height(60.dp).background(cs.surface).padding(start = 12.dp, end = 4.dp),
+        modifier = Modifier.fillMaxWidth().height(60.dp).background(cs.chrome).padding(start = 12.dp, end = 4.dp),
     ) {
         SyncPill(modifier = Modifier.weight(1f), height = 44.dp, endPadding = 12.dp) {
             Icon(Icons.Rounded.Search, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp))

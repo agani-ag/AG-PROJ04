@@ -127,7 +127,7 @@ class AuthRepository(private val tokenStore: TokenStore) {
         resp
     }
 
-    /** Fetch the live radio channel list (empty when radio is off for this user). */
+    /** Fetch the live radio channel list (empty when the admin has Radio off). */
     suspend fun radioChannels(): Result<RadioChannelsResponse> = runCatching {
         ApiClient.service.radioChannels("Bearer ${tokenStore.token().orEmpty()}")
     }

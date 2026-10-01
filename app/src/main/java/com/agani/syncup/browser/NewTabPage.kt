@@ -54,6 +54,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import com.agani.syncup.music.LocalPlayer
+import com.agani.syncup.music.MiniPlayer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
@@ -70,6 +72,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import com.agani.syncup.data.UrlItem
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.R
@@ -102,23 +105,25 @@ private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_
 /**
  * No address bar. Signed out: account icon, SyncUp mark, search, shortcuts. Signed in: greeting +
  * avatar, search, admin announcement (strip), Work card (only when the user has work links),
- * shortcuts; the Radio mini-player floats above the bottom bar with space reserved for it.
+ * shortcuts; the Music mini player floats above the bottom bar while something is loaded.
  */
 @Composable
 internal fun NormalHome(
     account: BrowserAccount,
     hasWork: Boolean,
     workOpenTabs: Int,
+    singleLink: UrlItem? = null,
     onSearch: () -> Unit,
     onVoice: () -> Unit,
     onOpenUrl: (String) -> Unit,
     onAvatar: () -> Unit,
     onOpenWork: () -> Unit,
-    onOpenRadio: () -> Unit,
+    onOpenMusic: () -> Unit,
     onUndo: (message: String, undo: () -> Unit) -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     val user = account.user
+    val playerShown = LocalPlayer.current?.item != null
     var editing by remember { mutableStateOf(false) }
     var showAdd by remember { mutableStateOf(false) }
 
@@ -127,7 +132,7 @@ internal fun NormalHome(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = if (user != null && account.radioEnabled) 96.dp else 20.dp),
+                .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = if (playerShown) 96.dp else 20.dp),
         ) {
             if (user == null) {
                 Row(Modifier.fillMaxWidth().padding(end = 0.dp), horizontalArrangement = Arrangement.End) {
@@ -203,10 +208,18 @@ internal fun NormalHome(
                         }
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("SyncUp", fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = w.onPrimaryContainer)
+                            // One link: the card is that link and opens the website itself.
+                            Text(
+                                singleLink?.title ?: "SyncUp", fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium,
+                                color = w.onPrimaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
                             val n = account.links.size
                             Text(
-                                "$n link${if (n == 1) "" else "s"} · $workOpenTabs open tab${if (workOpenTabs == 1) "" else "s"}",
+                                when {
+                                    singleLink == null -> "$n link${if (n == 1) "" else "s"} · $workOpenTabs open tab${if (workOpenTabs == 1) "" else "s"}"
+                                    workOpenTabs > 0 -> "Open · $workOpenTabs page${if (workOpenTabs == 1) "" else "s"}"
+                                    else -> "Your SyncUp link"
+                                },
                                 fontSize = 12.sp, lineHeight = 16.sp, color = w.onPrimaryContainer.copy(alpha = .85f),
                             )
                         }
@@ -239,8 +252,8 @@ internal fun NormalHome(
                 onLongPress = { editing = true },
             )
         }
-        if (user != null && account.radioEnabled) {
-            RadioMiniPlayer(onOpen = onOpenRadio, modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 12.dp, vertical = 12.dp))
+        if (playerShown) {
+            MiniPlayer(onOpen = onOpenMusic, modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 12.dp, vertical = 12.dp))
         }
     }
 

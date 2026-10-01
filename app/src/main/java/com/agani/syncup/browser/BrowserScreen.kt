@@ -3,6 +3,7 @@ package com.agani.syncup.browser
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.os.SystemClock
 import android.speech.RecognizerIntent
 import android.view.WindowManager
 import android.widget.Toast
@@ -10,6 +11,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -29,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -43,6 +46,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -58,6 +62,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.agani.syncup.browser.ui.ProgressLine
 import com.agani.syncup.browser.ui.SectionTheme
+import com.agani.syncup.browser.ui.sectionScheme
+import com.agani.syncup.browser.ui.chrome
 import com.agani.syncup.browser.ui.setBarIcons
 import com.agani.syncup.data.AnnouncementDto
 import com.agani.syncup.data.LoginMode
@@ -74,7 +80,6 @@ data class BrowserAccount(
     val links: List<UrlItem> = emptyList(),
     val chatEnabled: Boolean = false,
     val chatUnread: Int = 0,
-    val radioEnabled: Boolean = false,
     val announcement: AnnouncementDto? = null,
     val refreshing: Boolean = false,
     val loginLoading: Boolean = false,
@@ -84,6 +89,7 @@ data class BrowserAccount(
     val signupEnabled: Boolean = false,
     val privacyUrl: String = "",
     val partnersWaiting: Int = 0,
+    val hasPartners: Boolean = false,
 )
 
 enum class LibraryPage { HISTORY, BOOKMARKS, DOWNLOADS }
@@ -99,7 +105,7 @@ class BrowserActions(
     val onOpenPartners: () -> Unit,
     val onOpenSettings: () -> Unit,
     val onOpenChat: () -> Unit,
-    val onOpenRadio: () -> Unit,
+    val onOpenMusic: () -> Unit,
     val onOpenLibrary: (LibraryPage) -> Unit,
     val onRefreshLinks: () -> Unit,
 )
@@ -125,6 +131,8 @@ fun BrowserScreen(
     var editing by remember { mutableStateOf(false) }
     var editValue by remember { mutableStateOf(TextFieldValue("")) }
     var showTabs by remember { mutableStateOf(false) }
+    // The section the tab switcher is showing (it can look at another section than the one in use).
+    var switcherSection by remember { mutableStateOf(tabs.section) }
     var showSections by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showWorkInfo by remember { mutableStateOf(false) }
@@ -133,6 +141,9 @@ fun BrowserScreen(
     var finding by remember { mutableStateOf(false) }
     var previousSection by remember { mutableStateOf(Section.NORMAL) }
     val snackbar = remember { SnackbarHostState() }
+    // Sign-in / sign-up typing survives the sheet being closed by accident; cleared once signed in.
+    val authForm = remember { AuthFormState() }
+    LaunchedEffect(account.user?.id) { if (account.user != null) authForm.clear() }
 
     val signedIn = account.user != null
     // Work exists only for signed-in users the admin/partners gave links to (or who still have work tabs open).
@@ -154,6 +165,15 @@ fun BrowserScreen(
         tabs.switchTo(s)
     }
 
+    // A user with exactly one SyncUp link goes straight to it wherever SyncUp is opened (TabManager.directLink).
+    val singleLink = account.links.singleOrNull()?.takeIf { signedIn }
+    val direct = singleLink?.let { TabManager.DirectLink(it.title, it.url, it.id, it.notifyToken) }
+    LaunchedEffect(direct) {
+        tabs.directLink = direct
+        // Down to one link while the SyncUp links page is showing: show the website instead.
+        if (direct != null && tabs.section == Section.WORK && tabs.activeTab()?.isHome == true) tabs.switchTo(Section.WORK)
+    }
+
     fun startEditing(prefill: String) {
         editValue = TextFieldValue(prefill, TextRange(0, prefill.length))
         editing = true
@@ -164,11 +184,9 @@ fun BrowserScreen(
         if (t.isWork) tabs.newTab(Section.NORMAL, url) else tabs.load(t, url)
     }
 
-    fun openTabsFor(item: UrlItem) = tabs.tabsIn(Section.WORK).filter { it.workLinkId == item.id && !it.isHome }
-
     fun openWorkLink(item: UrlItem) {
-        // A link that already has a tab switches to it (the "N open" chip), like "switch to tab".
-        openTabsFor(item).lastOrNull()?.let {
+        // One tab per link: an open link goes back to its page that was last on screen.
+        tabs.linkFront(item.id)?.let {
             tabs.select(it)
             return
         }
@@ -200,7 +218,11 @@ fun BrowserScreen(
         }
     }
 
-    BackHandler(enabled = web.fullscreen || editing || finding || showTabs || (tab != null && (tab.canGoBack || !tab.isHome))) {
+    // Back stays in the app: page history → the tab that opened this one → the tab's home →
+    // Normal (from the SyncUp or Incognito home) → on Normal's home, a second Back within 2 s
+    // sends the app to the background (tabs are kept, like the system's own Back).
+    var lastBackAt by remember { mutableLongStateOf(0L) }
+    BackHandler(enabled = true) {
         when {
             web.fullscreen -> web.exitFullscreen()
             editing -> editing = false
@@ -209,7 +231,21 @@ fun BrowserScreen(
                 tab?.let { tabs.webView(it).clearMatches() }
             }
             showTabs -> showTabs = false
-            else -> tabs.back()
+            tabs.back() -> Unit
+            section != Section.NORMAL -> switchSection(Section.NORMAL)
+            else -> {
+                val now = SystemClock.elapsedRealtime()
+                if (now - lastBackAt < 2_000) {
+                    snackbar.currentSnackbarData?.dismiss()
+                    activity?.moveTaskToBack(true)
+                } else {
+                    lastBackAt = now
+                    scope.launch {
+                        snackbar.currentSnackbarData?.dismiss()
+                        snackbar.showSnackbar("Press back again to exit", duration = SnackbarDuration.Short)
+                    }
+                }
+            }
         }
     }
 
@@ -224,18 +260,36 @@ fun BrowserScreen(
         val onPage = tab != null && !tab.isHome
         // Work pages have no address bar: the page runs up to the status bar (link info lives in ⋮).
         val showPageBar = onPage && tab?.isWork == false
-        // Status + navigation bars take the page's theme-color; otherwise the chrome's surface.
-        val pageColor = tab?.themeColor?.takeIf { onPage && !editing && !finding && !showTabs }?.let { Color(it) }
-        val topColor = pageColor ?: cs.surface
-        // The navigation-bar strip continues the bottom bar's tone (or the page colour on web pages).
-        val navColor = pageColor ?: if (editing) cs.surface else cs.surfaceContainer
-        val lightTop = topColor.luminance() > 0.5f
-        val lightNav = navColor.luminance() > 0.5f
+        val barBottom = BrowserSettings.addressBarBottom
+        // Each system bar takes the colour of what it touches. The navigation bar continues our bottom
+        // bar (never the website's colour). The status bar matches the address / find bar under it; only
+        // where the website itself reaches the top (SyncUp pages, or the address bar set to the bottom)
+        // does it take the site's theme-color — never in Incognito, which stays one dark frame. With the
+        // tab switcher open, both take the switcher's section.
+        val pageColor = tab?.themeColor
+            ?.takeIf { onPage && !editing && !finding && !showTabs && section != Section.INCOGNITO }
+            ?.let { Color(it) }
+        val siteAtTop = onPage && !editing && !finding && (!showPageBar || barBottom)
+        val switcherColors = sectionScheme(switcherSection)
+        val topTarget = when {
+            showTabs -> switcherColors.surface
+            siteAtTop -> pageColor ?: cs.surface
+            onPage && !editing -> cs.chrome
+            else -> cs.surface
+        }
+        val navTarget = when {
+            showTabs -> switcherColors.surfaceContainer
+            editing -> cs.surface
+            else -> cs.chrome
+        }
+        val topColor by animateColorAsState(topTarget, tween(250), label = "statusBar")
+        val navColor by animateColorAsState(navTarget, tween(250), label = "navBar")
+        val lightTop = topTarget.luminance() > 0.5f
+        val lightNav = navTarget.luminance() > 0.5f
         DisposableEffect(lightTop, lightNav) {
             setBarIcons(activity, lightTop, lightNav)
             onDispose { }
         }
-        val barBottom = BrowserSettings.addressBarBottom
 
         Column(Modifier.fillMaxSize().background(navColor)) {
         Spacer(Modifier.fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars).background(topColor))
@@ -268,7 +322,7 @@ fun BrowserScreen(
                     )
                     showPageBar && !barBottom -> {
                         PageBar(tab, db, atBottom = false, onTap = { startEditing(tab.url) }, onReload = { tabs.reload(tab) }, onStop = { tabs.stop(tab) })
-                        ProgressLine(tab.loading, tab.progress, Modifier.background(cs.surface))
+                        ProgressLine(tab.loading, tab.progress, Modifier.background(cs.chrome))
                     }
                 }
 
@@ -279,29 +333,33 @@ fun BrowserScreen(
                                 Section.NORMAL -> NormalHome(
                                     account = account,
                                     hasWork = hasWork,
-                                    workOpenTabs = tabs.tabsIn(Section.WORK).count { !it.isHome },
+                                    workOpenTabs = singleLink?.let { tabs.linkPageCount(it.id) } ?: tabs.tabsIn(Section.WORK).count { !it.isHome },
+                                    singleLink = singleLink,
                                     onSearch = { startEditing("") },
                                     onVoice = { voiceSearch() },
                                     onOpenUrl = { openInCurrent(it) },
                                     onAvatar = { if (!signedIn) actions.onSignIn() else showAccount = true },
                                     onOpenWork = { switchSection(Section.WORK) },
-                                    onOpenRadio = actions.onOpenRadio,
+                                    onOpenMusic = actions.onOpenMusic,
                                     onUndo = ::offerUndo,
                                 )
                                 Section.INCOGNITO -> IncognitoHome(onSearch = { startEditing("") })
                                 Section.WORK -> WorkHome(
                                     account = account,
-                                    openCount = { openTabsFor(it).size },
+                                    openCount = { tabs.linkPageCount(it.id) },
                                     onOpen = { openWorkLink(it) },
                                     onAvatar = { showAccount = true },
                                     onRefresh = actions.onRefreshLinks,
                                 )
                             }
+                        } else if (tab.error != null) {
+                            // The WebView is left out while the error shows (it stays alive for Retry):
+                            // with nothing to show, some GPUs let its surface paint over the address bar.
+                            ErrorPage(tab.error.orEmpty()) { tabs.reload(tab) }
                         } else {
                             key(tab.id) {
                                 AndroidView(factory = { tabs.attachable(tab) }, modifier = Modifier.fillMaxSize())
                             }
-                            tab.error?.let { msg -> ErrorPage(msg) { tabs.reload(tab) } }
                             if (!showPageBar) ProgressLine(tab.loading, tab.progress, Modifier.align(Alignment.TopStart))
                         }
                     }
@@ -319,15 +377,19 @@ fun BrowserScreen(
                     }
                 }
 
-                if (tab != null && showPageBar && barBottom && !editing && !finding) {
-                    ProgressLine(tab.loading, tab.progress, Modifier.background(cs.surfaceContainer))
+                val bottomPageBar = tab != null && showPageBar && barBottom && !editing && !finding
+                if (tab != null && bottomPageBar) {
+                    // Address bar at the bottom: it and the bottom bar read as one block under one line.
+                    HorizontalDivider(thickness = 1.dp, color = cs.outlineVariant)
+                    ProgressLine(tab.loading, tab.progress, Modifier.background(cs.chrome))
                     PageBar(tab, db, atBottom = true, onTap = { startEditing(tab.url) }, onReload = { tabs.reload(tab) }, onStop = { tabs.stop(tab) })
                 }
                 if (tab != null && !editing) {
                     BottomBar(
+                        divider = !bottomPageBar,
                         tab = tab,
                         section = section,
-                        tabCount = tabs.tabsIn(section).size,
+                        tabCount = tabs.cardsIn(section).size,
                         onBack = { tabs.back() },
                         onForward = { tabs.forward() },
                         onSection = { showSections = true },
@@ -337,6 +399,7 @@ fun BrowserScreen(
                         },
                         onTabs = {
                             tabs.captureActive()
+                            switcherSection = section
                             showTabs = true
                         },
                         onMenu = { showMenu = true },
@@ -351,6 +414,8 @@ fun BrowserScreen(
             ) {
                 TabSwitcher(
                     tabs = tabs,
+                    shown = switcherSection,
+                    onShow = { switcherSection = it },
                     signedIn = signedIn,
                     hasWork = hasWork,
                     // Open Normal tabs on the user's other devices (browser sync).
@@ -388,6 +453,7 @@ fun BrowserScreen(
                     signedIn = signedIn,
                     hasWork = hasWork,
                     workCount = account.links.size,
+                    singleLinkName = singleLink?.title,
                     onPick = { s ->
                         showSections = false
                         switchSection(s)
@@ -425,7 +491,7 @@ fun BrowserScreen(
                             }
                             MenuAction.FIND -> finding = true
                             MenuAction.CHAT -> actions.onOpenChat()
-                            MenuAction.RADIO -> actions.onOpenRadio()
+                            MenuAction.MUSIC -> actions.onOpenMusic()
                             MenuAction.WORK -> switchSection(Section.WORK)
                             MenuAction.WORK_INFO -> showWorkInfo = true
                             MenuAction.BOOKMARKS -> actions.onOpenLibrary(LibraryPage.BOOKMARKS)
@@ -472,10 +538,6 @@ fun BrowserScreen(
                     showAccount = false
                     actions.onOpenChat()
                 },
-                onRadio = {
-                    showAccount = false
-                    actions.onOpenRadio()
-                },
                 onSettings = {
                     showAccount = false
                     actions.onOpenSettings()
@@ -509,6 +571,7 @@ fun BrowserScreen(
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
             SignInSheet(
+                form = authForm,
                 loading = account.loginLoading,
                 error = account.loginError,
                 supportEmail = account.supportEmail,

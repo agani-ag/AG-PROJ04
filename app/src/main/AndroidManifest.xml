@@ -2,10 +2,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Foreground service for the Live Radio player (keeps audio alive with the screen off /
-         app backgrounded, and shows lock-screen controls). -->
+    <!-- Foreground service for the Music player — songs and live Radio (keeps audio alive with the
+         screen off / app backgrounded, and shows lock-screen controls). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Music: list and play the songs on the phone. Asked for only when Music is opened; the
+         songs never leave the device. Android 13+ has a music-only permission; older versions
+         only have the storage one. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -104,9 +110,9 @@
             </intent-filter>
         </service>
 
-        <!-- Live Radio: native media player (background + lock-screen controls) -->
+        <!-- Music (songs + live Radio): native media player (background + lock-screen controls) -->
         <service
-            android:name=".radio.RadioPlaybackService"
+            android:name=".music.MusicPlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
