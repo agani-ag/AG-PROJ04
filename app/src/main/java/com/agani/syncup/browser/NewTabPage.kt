@@ -1,12 +1,9 @@
 package com.agani.syncup.browser
 
 import com.agani.syncup.browser.ui.SyncUpMark
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,13 +24,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
-import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Campaign
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.History
@@ -42,13 +36,10 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.NoPhotography
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,14 +50,12 @@ import androidx.compose.ui.Alignment
 import com.agani.syncup.music.LocalPlayer
 import com.agani.syncup.music.MiniPlayer
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import com.agani.syncup.data.UrlItem
@@ -75,10 +64,8 @@ import androidx.compose.ui.unit.sp
 import com.agani.syncup.R
 import com.agani.syncup.browser.ui.Avatar
 import com.agani.syncup.browser.ui.BarIcon
-import com.agani.syncup.browser.ui.SectionHeader
 import com.agani.syncup.browser.ui.SectionTheme
 import com.agani.syncup.browser.ui.SyncPill
-import com.agani.syncup.ui.theme.dialogSurface
 import java.util.Calendar
 
 private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
@@ -105,13 +92,10 @@ internal fun NormalHome(
     onAvatar: () -> Unit,
     onOpenWork: () -> Unit,
     onOpenMusic: () -> Unit,
-    onUndo: (message: String, undo: () -> Unit) -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     val user = account.user
     val playerShown = LocalPlayer.current?.item != null
-    var editing by remember { mutableStateOf(false) }
-    var showAdd by remember { mutableStateOf(false) }
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -145,7 +129,7 @@ internal fun NormalHome(
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    Box(Modifier.offset(x = 4.dp)) { Avatar(user, unread = account.chatUnread > 0 || account.partnersWaiting > 0, onClick = onAvatar) }
+                    Box(Modifier.offset(x = 4.dp)) { Avatar(user, unread = account.partnersWaiting > 0, onClick = onAvatar) }
                 }
                 Spacer(Modifier.height(12.dp))
             }
@@ -214,77 +198,15 @@ internal fun NormalHome(
                 }
             }
 
-            // The user's own shortcuts first (Add / Edit, synced to their account) …
-            Spacer(Modifier.height(20.dp))
-            if (editing) {
-                SectionHeader("Edit my shortcuts", action = "Done", onAction = { editing = false })
-            } else {
-                SectionHeader("My shortcuts", action = if (BrowserSettings.shortcuts.isNotEmpty()) "Edit" else null, onAction = { editing = true })
-            }
-            Spacer(Modifier.height(8.dp))
-            MyShortcuts(
-                editing = editing,
-                onOpen = onOpenUrl,
-                onAdd = { showAdd = true },
-                onRemove = { s ->
-                    val index = BrowserSettings.shortcuts.indexOf(s)
-                    BrowserSettings.removeShortcut(s)
-                    onUndo("${s.name} removed") { BrowserSettings.restoreShortcut(s, index) }
-                },
-                onLongPress = { editing = true },
-            )
-            if (editing) {
-                Text(
-                    "Remove your own shortcuts with ×. The categories below come from SyncUp; long-press one to add it to My shortcuts.",
-                    fontSize = 12.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(cs.surfaceContainerHigh).padding(12.dp),
-                )
-            }
-            // … then SyncUp's catalogue, by category.
+            // SyncUp's shortcut catalogue, by category.
             LaunchedEffect(Unit) { ShortcutCatalog.refresh() }
-            Spacer(Modifier.height(18.dp))
-            CatalogShortcuts(
-                dimmed = editing,
-                onOpen = onOpenUrl,
-                onKeep = { item ->
-                    if (BrowserSettings.shortcuts.none { it.url == item.url }) {
-                        BrowserSettings.addShortcut(item.title, item.url)
-                        onUndo("${item.title} added to My shortcuts") {
-                            BrowserSettings.shortcuts.firstOrNull { it.url == item.url }?.let { BrowserSettings.removeShortcut(it) }
-                        }
-                    } else {
-                        onUndo("${item.title} is already in My shortcuts") {}
-                    }
-                },
-            )
+            Spacer(Modifier.height(24.dp))
+            CatalogShortcuts(onOpen = onOpenUrl)
         }
         if (playerShown) {
             MiniPlayer(onOpen = onOpenMusic, modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 12.dp, vertical = 12.dp))
         }
     }
-
-    if (showAdd) AddShortcutDialog(onDismiss = { showAdd = false })
-}
-
-@Composable
-private fun MyShortcuts(
-    editing: Boolean,
-    onOpen: (String) -> Unit,
-    onAdd: () -> Unit,
-    onRemove: (UserShortcut) -> Unit,
-    onLongPress: () -> Unit,
-) {
-    val cells = buildList<@Composable RowScope.() -> Unit> {
-        BrowserSettings.shortcuts.toList().forEach { sc ->
-            add {
-                ShortcutTile(sc.name, editing, onClick = { if (!editing) onOpen(sc.url) }, onRemove = { onRemove(sc) }, onLongPress = onLongPress) {
-                    SiteMark(sc.url, sc.name)
-                }
-            }
-        }
-        if (!editing) add { AddTile(onAdd) }
-    }
-    TileRows(cells)
 }
 
 /** How many of each category "All" shows before "Show all". */
@@ -295,13 +217,10 @@ private const val PER_CATEGORY = 8
  * [PER_CATEGORY] of each category with "Show all", or a chosen category's whole grid.
  */
 @Composable
-private fun CatalogShortcuts(dimmed: Boolean, onOpen: (String) -> Unit, onKeep: (CatalogShortcut) -> Unit) {
+private fun CatalogShortcuts(onOpen: (String) -> Unit) {
     val cs = MaterialTheme.colorScheme
     val cats = ShortcutCatalog.categories
     val chosen = ShortcutCatalog.chosen?.let { id -> cats.firstOrNull { it.id == id } }
-    // Faded while My shortcuts is being edited — per part, since a fade over the whole column
-    // would cut the chips off at the page's margins.
-    val fade = if (dimmed) .5f else 1f
     Column {
         if (cats.size > 1) {
             // The chips run to the screen's edges (past the page's side margins) and keep the
@@ -321,17 +240,16 @@ private fun CatalogShortcuts(dimmed: Boolean, onOpen: (String) -> Unit, onKeep: 
                         val placeable = measurable.measure(constraints.copy(maxWidth = constraints.maxWidth + bleed * 2))
                         layout(constraints.maxWidth, placeable.height) { placeable.place(-bleed, 0) }
                     }
-                    .alpha(fade)
-                    .padding(bottom = 4.dp),
+                    .padding(bottom = 6.dp),
             ) {
                 item { CategoryChip("All", chosen == null) { ShortcutCatalog.chosen = null } }
                 items(cats, key = { it.id }) { cat -> CategoryChip(cat.name, chosen?.id == cat.id) { ShortcutCatalog.chosen = cat.id } }
             }
         }
         val shown = if (chosen != null) listOf(chosen) else cats
-        Column(Modifier.alpha(fade)) { shown.forEach { cat ->
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp)) {
-                Text(cat.name, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
+        Column { shown.forEach { cat ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 10.dp)) {
+                Text(cat.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = cs.onSurface)
                 Spacer(Modifier.width(8.dp))
                 Text(
                     if (chosen != null) "${cat.items.size} link${if (cat.items.size == 1) "" else "s"}" else "${cat.items.size}",
@@ -345,7 +263,7 @@ private fun CatalogShortcuts(dimmed: Boolean, onOpen: (String) -> Unit, onKeep: 
                 }
             }
             val items = if (chosen != null) cat.items else cat.items.take(PER_CATEGORY)
-            TileRows(items.map { item -> { CatalogTile(item, onOpen, onKeep) } })
+            TileRows(items.map { item -> { CatalogTile(item, onOpen) } })
         } }
     }
 }
@@ -362,16 +280,15 @@ private fun CategoryChip(text: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RowScope.CatalogTile(item: CatalogShortcut, onOpen: (String) -> Unit, onKeep: (CatalogShortcut) -> Unit) {
+private fun RowScope.CatalogTile(item: CatalogShortcut, onOpen: (String) -> Unit) {
     val cs = MaterialTheme.colorScheme
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .weight(1f)
             .clip(RoundedCornerShape(12.dp))
-            .combinedClickable(onClick = { onOpen(item.url) }, onLongClick = { onKeep(item) })
+            .clickable { onOpen(item.url) }
             .padding(vertical = 4.dp),
     ) {
         Box(Modifier.size(56.dp).clip(CircleShape).background(cs.surfaceContainerHigh), contentAlignment = Alignment.Center) {
@@ -385,7 +302,7 @@ private fun RowScope.CatalogTile(item: CatalogShortcut, onOpen: (String) -> Unit
 /** Tiles four to a row. */
 @Composable
 private fun TileRows(cells: List<@Composable RowScope.() -> Unit>) {
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
         cells.chunked(4).forEach { row ->
             Row(Modifier.fillMaxWidth()) {
                 row.forEach { cell -> cell() }
@@ -393,100 +310,6 @@ private fun TileRows(cells: List<@Composable RowScope.() -> Unit>) {
             }
         }
     }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun RowScope.ShortcutTile(
-    label: String,
-    editing: Boolean,
-    onClick: () -> Unit,
-    onRemove: () -> Unit,
-    onLongPress: () -> Unit,
-    mark: @Composable () -> Unit,
-) {
-    val cs = MaterialTheme.colorScheme
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .weight(1f)
-            .clip(RoundedCornerShape(12.dp))
-            .combinedClickable(onClick = onClick, onLongClick = onLongPress)
-            .padding(vertical = 4.dp),
-    ) {
-        Box {
-            Box(Modifier.size(56.dp).clip(CircleShape).background(cs.surfaceContainerHigh), contentAlignment = Alignment.Center) { mark() }
-            if (editing) {
-                Box(
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .offset(x = 6.dp, y = (-4).dp)
-                        .size(24.dp)
-                        .clip(CircleShape)
-                        .background(cs.onSurface)
-                        .clickable(onClick = onRemove),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Rounded.Close, "Remove $label", tint = cs.surface, modifier = Modifier.size(14.dp))
-                }
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(label, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = .3.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
-
-@Composable
-private fun RowScope.AddTile(onAdd: () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = onAdd).padding(vertical = 4.dp),
-    ) {
-        Box(Modifier.size(56.dp).clip(CircleShape).border(1.5.dp, cs.outline, CircleShape), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.Add, null, tint = cs.onSurfaceVariant)
-        }
-        Spacer(Modifier.height(8.dp))
-        Text("Add", fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = .3.sp, color = cs.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun AddShortcutDialog(onDismiss: () -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var url by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = MaterialTheme.colorScheme.dialogSurface,
-        title = { Text("Add shortcut") },
-        text = {
-            Column {
-                OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    url, { url = it }, label = { Text("Web address") }, singleLine = true, shape = RoundedCornerShape(12.dp),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), modifier = Modifier.fillMaxWidth(),
-                )
-                error?.let {
-                    Spacer(Modifier.height(8.dp))
-                    Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                val target = UrlInput.toUrl(url)
-                if (name.isBlank() || target.isBlank() || UrlInput.isSearchPage(target)) {
-                    error = "Enter a name and a web address, like example.com"
-                } else {
-                    BrowserSettings.addShortcut(name.trim(), target)
-                    onDismiss()
-                }
-            }) { Text("Add") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
 }
 
 // ============================================================================ Incognito home

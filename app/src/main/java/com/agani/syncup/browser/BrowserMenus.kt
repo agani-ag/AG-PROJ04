@@ -22,7 +22,6 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bookmarks
-import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.CloudOff
@@ -167,7 +166,7 @@ private fun SectionChoice(section: Section, subtitle: String, count: Int, select
 // ============================================================================ page menu
 internal enum class MenuAction {
     NEW_TAB, NEW_INCOGNITO, FORWARD, RELOAD, BOOKMARK, SHARE, FIND, DESKTOP, OPEN_IN_CHROME, ADS,
-    CHAT, MUSIC, TOOLS, WORK, WORK_INFO, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, SIGN_IN, PARTNERS,
+    MUSIC, TOOLS, WORK, WORK_INFO, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, SIGN_IN, PARTNERS,
 }
 
 @Composable
@@ -216,7 +215,7 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
         if (workPage) MenuRow(Icons.Rounded.Info, "About this SyncUp link", tint = cs.primary, textColor = cs.primary) { onAction(MenuAction.WORK_INFO) }
         MenuRow(Icons.Rounded.Add, if (tab.isWork) "New Normal tab" else "New tab") { onAction(MenuAction.NEW_TAB) }
         MenuRow(Icons.Rounded.VisibilityOff, "New incognito tab") { onAction(MenuAction.NEW_INCOGNITO) }
-        if (signedIn && !incognito && (hasWork || account.chatEnabled || account.hasPartners)) {
+        if (signedIn && !incognito && (hasWork || account.hasPartners)) {
             SheetDivider()
             if (hasWork && !tab.isWork) {
                 SectionTheme(Section.WORK) {
@@ -226,11 +225,6 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
                         SyncUpMark, single?.title ?: "SyncUp links", if (single != null) "Your SyncUp link" else "${account.links.size}",
                         tint = MaterialTheme.colorScheme.primary,
                     ) { onAction(MenuAction.WORK) }
-                }
-            }
-            if (account.chatEnabled) {
-                MenuRow(Icons.Rounded.ChatBubbleOutline, "Chat with admin", badge = if (account.chatUnread > 0) "${account.chatUnread} new" else null) {
-                    onAction(MenuAction.CHAT)
                 }
             }
             if (account.hasPartners) {

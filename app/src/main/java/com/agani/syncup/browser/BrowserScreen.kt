@@ -82,8 +82,6 @@ import kotlinx.coroutines.withContext
 data class BrowserAccount(
     val user: User? = null,
     val links: List<UrlItem> = emptyList(),
-    val chatEnabled: Boolean = false,
-    val chatUnread: Int = 0,
     val announcement: AnnouncementDto? = null,
     val refreshing: Boolean = false,
     val loginLoading: Boolean = false,
@@ -108,7 +106,6 @@ class BrowserActions(
     val onSignOut: () -> Unit,
     val onOpenPartners: () -> Unit,
     val onOpenSettings: () -> Unit,
-    val onOpenChat: () -> Unit,
     val onOpenMusic: () -> Unit,
     val onOpenTools: () -> Unit,
     val onOpenLibrary: (LibraryPage) -> Unit,
@@ -368,7 +365,6 @@ fun BrowserScreen(
                                     onAvatar = { if (!signedIn) actions.onSignIn() else showAccount = true },
                                     onOpenWork = { switchSection(Section.WORK) },
                                     onOpenMusic = actions.onOpenMusic,
-                                    onUndo = ::offerUndo,
                                 )
                                 Section.INCOGNITO -> IncognitoHome(onSearch = { startEditing("") })
                                 Section.WORK -> WorkHome(
@@ -614,7 +610,6 @@ fun BrowserScreen(
                                 tabs.reload(tab)
                             }
                             MenuAction.OPEN_IN_CHROME -> openInBrowserApp(context, tab.url)
-                            MenuAction.CHAT -> actions.onOpenChat()
                             MenuAction.MUSIC -> actions.onOpenMusic()
                             MenuAction.TOOLS -> actions.onOpenTools()
                             MenuAction.WORK -> switchSection(Section.WORK)
@@ -658,10 +653,6 @@ fun BrowserScreen(
                 onWork = {
                     showAccount = false
                     switchSection(Section.WORK)
-                },
-                onChat = {
-                    showAccount = false
-                    actions.onOpenChat()
                 },
                 onSettings = {
                     showAccount = false

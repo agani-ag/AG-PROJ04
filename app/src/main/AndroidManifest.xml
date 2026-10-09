@@ -17,6 +17,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Network folders: receive WS-Discovery's multicast replies when looking for Windows PCs on
+         this Wi-Fi (normal permission, no runtime prompt — Android filters multicast packets by
+         default to save power, this un-filters them only while discovery is running). -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Required by the WebRTC/getUserMedia audio stack in the WebView to configure the mic

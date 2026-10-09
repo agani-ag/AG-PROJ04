@@ -75,9 +75,13 @@ import kotlinx.coroutines.withContext
 
 /**
  * Tools → Video player: a video SyncUp downloaded, a video picked once from the phone (the system
- * picker — no permission, no browsing the rest of the library), or a pasted link. No YouTube handling
- * (would mean either breaking YouTube's terms by pulling its stream out, or just handing off to the
- * YouTube app — neither is in scope right now).
+ * picker — no permission, no browsing the rest of the library), or a pasted direct video link. No
+ * YouTube handling (would mean either breaking YouTube's terms by pulling its stream out, or just
+ * handing off to the YouTube app — neither is in scope right now).
+ *
+ * M3U/M3U8 playlist links are handled entirely in Tools → Channels instead (see [ChannelsHomeScreen],
+ * [M3uPlaylist]) — this screen no longer inspects a pasted link for a channel list, it just plays
+ * whatever URL is pasted here directly, same as any other video link.
  */
 @Composable
 fun VideoLibraryScreen(onBack: () -> Unit) {
@@ -103,10 +107,9 @@ fun VideoLibraryScreen(onBack: () -> Unit) {
     }
     fun playLink() {
         val u = link.trim().let { if (it.isNotBlank() && "://" !in it) "https://$it" else it }
-        if (u.startsWith("http://") || u.startsWith("https://")) {
-            play(u, Uri.parse(u).lastPathSegment ?: u, "Video link")
-            link = ""
-        }
+        if (!(u.startsWith("http://") || u.startsWith("https://"))) return
+        play(u, Uri.parse(u).lastPathSegment ?: u, "Video link")
+        link = ""
     }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -137,7 +140,7 @@ fun VideoLibraryScreen(onBack: () -> Unit) {
                         Icon(Icons.Rounded.Link, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
                         TextField(
                             value = link, onValueChange = { link = it }, singleLine = true,
-                            placeholder = { Text("Paste a video link (mp4, m3u8…)", fontSize = 14.sp) },
+                            placeholder = { Text("Paste a video link (mp4…)", fontSize = 14.sp) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
                             keyboardActions = KeyboardActions(onGo = { playLink() }),
                             colors = TextFieldDefaults.colors(
@@ -190,9 +193,9 @@ fun VideoLibraryScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun SectionLabel(text: String) {
+private fun SectionLabel(text: String, modifier: Modifier = Modifier) {
     Text(text, fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = .3.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp))
+        modifier = modifier.padding(start = 20.dp, end = 4.dp, top = 18.dp, bottom = 8.dp))
 }
 
 @Composable

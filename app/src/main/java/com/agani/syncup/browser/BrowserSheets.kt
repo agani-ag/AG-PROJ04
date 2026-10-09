@@ -25,7 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Call
-import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.MailOutline
 import androidx.compose.material.icons.rounded.ManageAccounts
@@ -438,15 +437,14 @@ private fun HelpRow(icon: ImageVector, label: String, kind: String, onClick: () 
 }
 
 /**
- * Opened from the avatar: rows appear only for what the admin enabled for this user (SyncUp links,
- * Chat), then account settings and sign out.
+ * Opened from the avatar: a row for SyncUp links when the admin gave this user any, then account
+ * settings and sign out. Chat lives only on the Settings page now (top-right bubble).
  */
 @Composable
 fun AccountSheet(
     account: BrowserAccount,
     hasWork: Boolean,
     onWork: () -> Unit,
-    onChat: () -> Unit,
     onSettings: () -> Unit,
     onPartners: () -> Unit,
     onSignOut: () -> Unit,
@@ -462,30 +460,19 @@ fun AccountSheet(
                 Text(user.loginLabel, fontSize = 13.sp, color = cs.onSurfaceVariant, maxLines = 1)
             }
         }
-        if (hasWork || account.chatEnabled) {
+        if (hasWork) {
             SheetDivider()
-            if (hasWork) {
-                SectionTheme(Section.WORK) {
-                    // One link: the row is that link and opens the website directly.
-                    val single = account.links.singleOrNull()
-                    TonalRow(
-                        single?.title ?: "SyncUp links", if (single != null) "Your SyncUp link" else "From your admin and partners",
-                        leading = { IconTile(SyncUpMark) },
-                        trailing = if (single != null) null else ({
-                            Text("${account.links.size}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 8.dp))
-                        }),
-                        minHeight = 60.dp,
-                        onClick = onWork,
-                    )
-                }
-            }
-            if (account.chatEnabled) {
+            SectionTheme(Section.WORK) {
+                // One link: the row is that link and opens the website directly.
+                val single = account.links.singleOrNull()
                 TonalRow(
-                    "Chat with admin", "SyncUp support",
-                    leading = { IconTile(Icons.Rounded.ChatBubbleOutline) },
-                    trailing = { if (account.chatUnread > 0) CountBadge("${account.chatUnread} new") },
+                    single?.title ?: "SyncUp links", if (single != null) "Your SyncUp link" else "From your admin and partners",
+                    leading = { IconTile(SyncUpMark) },
+                    trailing = if (single != null) null else ({
+                        Text("${account.links.size}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 8.dp))
+                    }),
                     minHeight = 60.dp,
-                    onClick = onChat,
+                    onClick = onWork,
                 )
             }
         }

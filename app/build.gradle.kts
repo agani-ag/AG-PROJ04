@@ -117,9 +117,10 @@ dependencies {
     // Video player (Tools → Video player): the player view and HLS (m3u8) streams.
     implementation("androidx.media3:media3-ui:1.4.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
+    // Live TV channel logos (remote images) and nothing else — small, Apache 2.0.
+    implementation("io.coil-kt:coil-compose:2.7.0")
 
-    // Tools → Files: browse a folder the user opened via Android's own folder picker (SAF) — no
-    // broad storage permission needed.
+    // SAF documents: Network folders' (SMB) local-cache copy/paste, no broad storage permission needed.
     implementation("androidx.documentfile:documentfile:1.0.1")
     // Tools → Network folders: SMB2/SMB3 client (Apache 2.0), so Windows/Samba/NAS shares work.
     implementation("com.hierynomus:smbj:0.15.0")

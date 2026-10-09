@@ -10,10 +10,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -25,10 +25,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Dns
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.LibraryMusic
-import androidx.compose.material.icons.rounded.Radar
+import androidx.compose.material.icons.rounded.LiveTv
+import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -39,46 +38,48 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.ui.BarIcon
-import com.agani.syncup.downloads.Downloads
 import com.agani.syncup.music.LocalPlayer
 import com.agani.syncup.ui.theme.isLight
+import com.agani.syncup.video.SavedPlaylists
 
 /** What's open inside Tools. */
-enum class ToolsPage { HOME, VIDEOS, FILES, FOLDER, NETWORK_FOLDERS, NETWORK_SERVER, NETWORK_SCANNER }
+enum class ToolsPage { HOME, VIDEOS, CHANNELS, NETWORK_FOLDERS, NETWORK_SERVER }
 
 /** One line for the ⋮ menu's Tools row: what's going on inside right now (null = nothing). */
 @Composable
 fun toolsStatus(): String? {
     val player = LocalPlayer.current
     return when {
-        player?.isPlaying == true -> "Playing music"
-        else -> null
+        player?.isPlaying != true -> null
+        player.isRadio -> "On air"
+        else -> "Playing music"
     }
 }
 
 /**
- * SyncUp's extra features in one place — Music, Video player, Downloads — each tile showing
+ * SyncUp's extra features in one place — Music, Video player, Radio, Downloads — each tile showing
  * what it's doing right now. New tools are added here as tiles.
  */
 @Composable
 fun ToolsScreen(
+    radioAvailable: Boolean,
     onMusic: () -> Unit,
     onVideos: () -> Unit,
-    onDownloads: () -> Unit,
-    onFiles: () -> Unit,
+    onRadio: () -> Unit,
+    onChannels: () -> Unit,
     onNetworkFolders: () -> Unit,
-    onNetworkScanner: () -> Unit,
     onBack: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     val light = cs.isLight
     val player = LocalPlayer.current
-    val running = Downloads.tasks.filter { it.active }
+    val savedChannelsCount = SavedPlaylists.all(LocalContext.current).size
     Box(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
         Column(Modifier.fillMaxSize()) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
@@ -91,31 +92,39 @@ fun ToolsScreen(
                     TileRow {
                         Tile(
                             Icons.Rounded.LibraryMusic, accent(0xFF6D28D9, 0xFFC4B5FD, light), tint(0xFFEDE9FE, 0xFF3B2A63, light),
-                            "Music", "Songs on your phone · Radio",
-                            status = player?.title?.takeIf { player.isPlaying && it.isNotBlank() }?.let { "Playing: $it" },
+                            "Music", "Songs on your phone",
+                            status = player?.title?.takeIf { player.isPlaying && !player.isRadio && it.isNotBlank() }?.let { "Playing: $it" },
                             onClick = onMusic,
                         )
                         Tile(
                             Icons.Rounded.SmartDisplay, accent(0xFFBE123C, 0xFFFDA4AF, light), tint(0xFFFFE4E6, 0xFF4C0519, light),
-                            "Video player", "Your videos, downloads and video links",
+                            "Video player", "Videos, downloads & links",
                             onClick = onVideos,
                         )
                     }
                 }
-                item { Label("INTERNET") }
                 item {
                     TileRow {
                         Tile(
-                            Icons.Rounded.Download, accent(0xFF2563EB, 0xFF9EB8FF, light), tint(0xFFDCE7FF, 0xFF25345C, light),
-                            "Downloads",
-                            if (running.isEmpty()) "Files you save from pages" else "${running.size} running",
-                            onClick = onDownloads,
+                            Icons.Rounded.LiveTv, accent(0xFF15803D, 0xFF86EFAC, light), tint(0xFFDCFCE7, 0xFF14532D, light),
+                            "Channels",
+                            if (savedChannelsCount == 0) "Add an M3U / M3U8 link" else "$savedChannelsCount saved list${if (savedChannelsCount == 1) "" else "s"}",
+                            onClick = onChannels,
                         )
-                        Tile(
-                            Icons.Rounded.Folder, accent(0xFFB45309, 0xFFFCD34D, light), tint(0xFFFEF3C7, 0xFF4A3300, light),
-                            "Files", "Folders on your phone",
-                            onClick = onFiles,
-                        )
+                        Spacer(Modifier.weight(1f))
+                    }
+                }
+                if (radioAvailable) {
+                    item {
+                        TileRow {
+                            Tile(
+                                Icons.Rounded.Radio, accent(0xFFC2410C, 0xFFFDBA74, light), tint(0xFFFFEDD5, 0xFF431407, light),
+                                "Radio", "SyncUp's live stations",
+                                status = player?.title?.takeIf { player.isPlaying && player.isRadio && it.isNotBlank() }?.let { "On air: $it" },
+                                onClick = onRadio,
+                            )
+                            Spacer(Modifier.weight(1f))
+                        }
                     }
                 }
                 item { Label("NETWORK") }
@@ -126,11 +135,7 @@ fun ToolsScreen(
                             "Network folders", "PCs and NAS boxes on this Wi-Fi",
                             onClick = onNetworkFolders,
                         )
-                        Tile(
-                            Icons.Rounded.Radar, accent(0xFF15803D, 0xFF86EFAC, light), tint(0xFFDCFCE7, 0xFF0E3B21, light),
-                            "Network scanner", "Find devices on this Wi-Fi",
-                            onClick = onNetworkScanner,
-                        )
+                        Spacer(Modifier.weight(1f))
                     }
                 }
                 item {
@@ -173,7 +178,7 @@ private fun androidx.compose.foundation.layout.RowScope.Tile(
     val cs = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(22.dp)
     Column(
-        Modifier.weight(1f).heightIn(min = 156.dp).clip(shape)
+        Modifier.weight(1f).aspectRatio(1f).clip(shape)
             .background(if (highlighted) container.copy(alpha = .45f) else cs.surfaceContainerLowest)
             .border(1.dp, if (highlighted) color.copy(alpha = .5f) else cs.outlineVariant, shape)
             .clickable(onClick = onClick).padding(16.dp),
@@ -181,7 +186,7 @@ private fun androidx.compose.foundation.layout.RowScope.Tile(
         Box(Modifier.size(48.dp).clip(RoundedCornerShape(15.dp)).background(container), contentAlignment = Alignment.Center) {
             Icon(icon, null, tint = color, modifier = Modifier.size(28.dp))
         }
-        Spacer(Modifier.weight(1f).heightIn(min = 16.dp))
+        Spacer(Modifier.weight(1f))
         Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
         if (status != null) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {

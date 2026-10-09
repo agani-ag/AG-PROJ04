@@ -66,7 +66,7 @@ object SmbStore {
 /**
  * Servers that advertise file sharing on this Wi-Fi (NSD/mDNS, "_smb._tcp"). Finds Samba and most
  * NAS boxes; a plain Windows PC share usually won't show here (Windows doesn't advertise this way) —
- * add it by address instead, or find it with the Network scanner.
+ * add it by address instead.
  */
 class SmbDiscovery(private val context: Context) {
     val found = mutableStateListOf<FoundHost>()

@@ -5,6 +5,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.documentfile.provider.DocumentFile
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 
@@ -94,4 +96,15 @@ fun pasteInto(context: Context, dest: PasteTarget, items: List<ClipItem>, move: 
         }
     }
     return ok to fail
+}
+
+/** [ClipItem] for a file or folder already on this phone (a SAF document, or a SyncUp download cached from a network share). */
+class LocalClipItem(val doc: DocumentFile) : ClipItem {
+    override val name: String get() = doc.name ?: "file"
+    override val isDirectory: Boolean get() = doc.isDirectory
+    override val sizeHint: Long get() = doc.length()
+    override fun openInput(context: Context): InputStream =
+        context.contentResolver.openInputStream(doc.uri) ?: throw IOException("Can't open $name")
+    override fun listChildren(context: Context): List<ClipItem> = doc.listFiles().map { LocalClipItem(it) }
+    override fun delete(context: Context): Boolean = runCatching { doc.delete() }.getOrDefault(false)
 }

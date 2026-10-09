@@ -19,5 +19,5 @@ data class SmbServer(
 /** One file or folder found while browsing a share, [path] relative to the share's root. */
 data class SmbEntry(val name: String, val path: String, val isDirectory: Boolean, val size: Long, val lastModified: Long)
 
-/** A server found advertising file sharing on the local network (NSD/mDNS), not yet saved. */
+/** A server found on the local network (NSD/mDNS, or WS-Discovery for Windows PCs), not yet saved. */
 data class FoundHost(val name: String, val host: String, val port: Int)

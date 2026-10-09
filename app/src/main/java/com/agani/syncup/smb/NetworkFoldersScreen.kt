@@ -36,6 +36,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,18 +52,27 @@ import com.agani.syncup.browser.ui.EmptyState
 
 /** Tools → Network folders: saved PCs/NAS boxes, ones found on this Wi-Fi, and a way to add one by address. */
 @Composable
-fun NetworkFoldersScreen(onOpenServer: (SmbServer) -> Unit, onBack: () -> Unit, prefillHost: String? = null) {
+fun NetworkFoldersScreen(onOpenServer: (SmbServer) -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
     var reload by remember { mutableStateOf(0) }
     val servers = remember(reload) { SmbStore.servers(context) }
     val discovery = remember { SmbDiscovery(context) }
-    var showAdd by remember { mutableStateOf(prefillHost != null) }
-    var prefill by remember { mutableStateOf(prefillHost.orEmpty()) }
+    val wsDiscovery = remember { WsDiscovery(context) }
+    val scope = rememberCoroutineScope()
+    var showAdd by remember { mutableStateOf(false) }
+    var prefill by remember { mutableStateOf("") }
+
+    // Two discovery methods: NSD/mDNS finds Samba and most NAS boxes; WS-Discovery finds Windows
+    // PCs (the protocol Windows itself uses for its own "Network" view) — neither sees the other's kind.
+    val foundAll = remember(discovery.found.size, wsDiscovery.found.size) {
+        (discovery.found + wsDiscovery.found).distinctBy { it.host }
+    }
 
     DisposableEffect(Unit) {
         discovery.start()
-        onDispose { discovery.stop() }
+        wsDiscovery.start(scope)
+        onDispose { discovery.stop(); wsDiscovery.stop() }
     }
 
     Box(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
@@ -72,7 +82,7 @@ fun NetworkFoldersScreen(onOpenServer: (SmbServer) -> Unit, onBack: () -> Unit, 
                 Text("Network folders", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
                 BarIcon(Icons.Rounded.Add, "Add a network folder") { prefill = ""; showAdd = true }
             }
-            if (servers.isEmpty() && discovery.found.isEmpty()) {
+            if (servers.isEmpty() && foundAll.isEmpty()) {
                 EmptyState(
                     Icons.Rounded.Dns, "No network folders yet",
                     "Add a PC or NAS by its address, or pick one found on this Wi-Fi below.",
@@ -87,15 +97,16 @@ fun NetworkFoldersScreen(onOpenServer: (SmbServer) -> Unit, onBack: () -> Unit, 
                             ServerRow(s.name, s.displayPath, onClick = { SmbStore.touch(context, s.id); onOpenServer(s) }, onRemove = { SmbStore.remove(context, s.id); reload++ })
                         }
                     }
-                    if (discovery.found.isNotEmpty()) {
+                    if (foundAll.isNotEmpty()) {
                         item { SectionLabel("FOUND ON THIS WI-FI") }
-                        items(discovery.found, key = { it.host }) { h ->
+                        items(foundAll, key = { it.host }) { h ->
                             ServerRow(h.name, h.host, onClick = { prefill = h.host; showAdd = true }, onRemove = null)
                         }
                     }
                     item {
                         Text(
-                            "A plain Windows PC share usually won't show up here on its own — add it by its address (see it in the Network scanner, or check with ipconfig on the PC), or share a folder from a NAS, which usually advertises itself.",
+                            "Still don't see a PC here? Make sure "
+                                + "\"Network Discovery\" is turned on in its Wi-Fi settings, or add it by address directly (check with ipconfig on the PC).",
                             fontSize = 12.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
                         )

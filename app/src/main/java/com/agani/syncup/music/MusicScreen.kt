@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
@@ -41,8 +40,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LibraryMusic
-import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.MusicOff
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -84,10 +83,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -108,20 +103,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
- * Music: every song on this phone, with shuffle / repeat, and — when the admin has Radio on and the
- * user is signed in — a Radio tab with SyncUp's live stations. Both play through the same player,
- * so the mini player, the notification and the lock screen work the same for songs and stations.
+ * Music: every song on this phone, with shuffle / repeat. Radio (SyncUp's live stations) is its own
+ * screen now — see [RadioScreen] — but both play through the same player, so the mini player, the
+ * notification and the lock screen work the same whichever screen started playback.
  */
 @Composable
-fun MusicScreen(
-    radioAvailable: Boolean,
-    loadStations: suspend () -> Result<RadioChannelsResponse>,
-    onBack: () -> Unit,
-) {
+fun MusicScreen(onBack: () -> Unit) {
     val player = LocalPlayer.current ?: return
     val cs = MaterialTheme.colorScheme
-    var tab by rememberSaveable { mutableIntStateOf(if (player.isRadio) TAB_RADIO else TAB_SONGS) }
-    val shown = if (radioAvailable) tab else TAB_SONGS
     var nowPlaying by rememberSaveable { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
@@ -129,25 +118,8 @@ fun MusicScreen(
             BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
             Text("Music", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
         }
-        if (radioAvailable) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier
-                    .padding(start = 20.dp, end = 20.dp, bottom = 8.dp)
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(50))
-                    .background(cs.surfaceContainer)
-                    .padding(4.dp),
-            ) {
-                TabPill(Icons.Rounded.MusicNote, "Songs", shown == TAB_SONGS) { tab = TAB_SONGS }
-                TabPill(Icons.Rounded.Radio, "Radio", shown == TAB_RADIO) { tab = TAB_RADIO }
-            }
-        }
         Box(Modifier.weight(1f)) {
-            when (shown) {
-                TAB_RADIO -> RadioTab(player, loadStations, onOpenPlayer = { nowPlaying = true })
-                else -> SongsTab(player, onOpenPlayer = { nowPlaying = true })
-            }
+            SongsTab(player, onOpenPlayer = { nowPlaying = true })
         }
         AnimatedVisibility(
             visible = player.item != null,
@@ -161,33 +133,42 @@ fun MusicScreen(
     if (nowPlaying && player.item != null) NowPlayingSheet(player, onDismiss = { nowPlaying = false })
 }
 
-private const val TAB_SONGS = 0
-private const val TAB_RADIO = 1
-
+/** Radio: SyncUp's live stations (admin on/off, signed-in users only — gated by the caller). */
 @Composable
-private fun RowScope.TabPill(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+fun RadioScreen(loadStations: suspend () -> Result<RadioChannelsResponse>, onBack: () -> Unit) {
+    val player = LocalPlayer.current ?: return
     val cs = MaterialTheme.colorScheme
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-        modifier = Modifier
-            .weight(1f)
-            .height(40.dp)
-            .clip(RoundedCornerShape(50))
-            .background(if (selected) cs.primaryContainer else Color.Transparent)
-            .clickable(onClick = onClick)
-            .semantics {
-                role = Role.Tab
-                this.selected = selected
-            },
-    ) {
-        Icon(icon, null, tint = if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(
-            label, fontSize = 14.sp, fontWeight = FontWeight.Medium,
-            color = if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant,
-        )
+    var nowPlaying by rememberSaveable { mutableStateOf(false) }
+
+    Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
+            BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
+            Text("Radio", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
+        }
+        Row(
+            verticalAlignment = Alignment.Top,
+            modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 10.dp),
+        ) {
+            Icon(Icons.Rounded.Info, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(15.dp).padding(top = 2.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "Private broadcasts via this organization's own AudioSync only — not public radio stations.",
+                fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant,
+            )
+        }
+        Box(Modifier.weight(1f)) {
+            RadioTab(player, loadStations, onOpenPlayer = { nowPlaying = true })
+        }
+        AnimatedVisibility(
+            visible = player.item != null,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+        ) {
+            MiniPlayer(onOpen = { nowPlaying = true }, modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 12.dp))
+        }
     }
+
+    if (nowPlaying && player.item != null) NowPlayingSheet(player, onDismiss = { nowPlaying = false })
 }
 
 // ============================================================================ songs

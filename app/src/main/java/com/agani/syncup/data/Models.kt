@@ -38,8 +38,8 @@ data class User(
     val phone: String? = null,
     val username: String? = null,
     val source: String? = null, // admin | partner | self
-    // Put on every page as window.SyncUp.token; a site that also has the SyncUp notify key can push
-    // to this user with it. Blank until the backend sends it.
+    // Put on every Normal/Work page as window.SyncUp.token (never in Incognito); a site that also has
+    // the SyncUp notify key can push to this user with it. Blank until the backend sends it.
     @SerializedName("notify_token") val notifyToken: String? = null,
 ) {
     /** What the user signs in with, for display: email, else phone, else @username. */

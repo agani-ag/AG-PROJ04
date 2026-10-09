@@ -9,7 +9,6 @@ import androidx.compose.runtime.setValue
 import com.agani.syncup.browser.BrowserDb
 import com.agani.syncup.browser.BrowserSettings
 import com.agani.syncup.browser.PendingSync
-import com.agani.syncup.browser.UserShortcut
 import com.agani.syncup.data.ApiClient
 import com.agani.syncup.data.AppPrefs
 import com.agani.syncup.data.BrowserSyncRequest
@@ -21,7 +20,6 @@ import com.agani.syncup.data.ThemeMode
 import com.agani.syncup.data.TokenStore
 import com.agani.syncup.push.DeviceRegistrar
 import com.google.gson.Gson
-import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,17 +36,16 @@ enum class SyncType(val pref: String, val label: String) {
     BOOKMARKS("bookmarks", "Bookmarks"),
     HISTORY("history", "History"),
     TABS("tabs", "Open tabs"),
-    SHORTCUTS("shortcuts", "Shortcuts"),
     SETTINGS("settings", "Settings"),
 }
 
 /**
  * Browser sync: a signed-in user's Normal-section data across their devices.
  *
- * Synced: bookmarks, Normal history (the server keeps 90 days), new-tab shortcuts (including hidden
- * built-ins), settings (search engine, pop-up blocking, theme) and the open Normal tabs, shown on the
- * user's other devices. Never synced: passwords, cookies, Work, Incognito, the app lock, downloads
- * and site permissions. The latest change wins and deletions travel as tombstones.
+ * Synced: bookmarks, Normal history (the server keeps 90 days), settings (search engine, pop-up
+ * blocking, theme) and the open Normal tabs, shown on the user's other devices. Never synced:
+ * passwords, cookies, Work, Incognito, the app lock, downloads and site permissions. The latest
+ * change wins and deletions travel as tombstones.
  *
  * This phone remembers the last account that signed in:
  *  - first-ever sign-in → what was browsed while signed out is uploaded;
@@ -124,7 +121,7 @@ object BrowserSync {
     /**
      * A user is signed in (fresh sign-in or restored session). Returns true when this is a different
      * account than the last one on this phone — the caller then closes the open Normal tabs and
-     * clears Normal cookies; this function already wiped history, bookmarks and shortcuts.
+     * clears Normal cookies; this function already wiped history and bookmarks.
      */
     suspend fun onSignedIn(id: String): Boolean = withContext(Dispatchers.IO) {
         if (accountId == id) return@withContext false
@@ -143,10 +140,6 @@ object BrowserSync {
                 applyingRemote = true
                 try {
                     db.wipeBrowsingData()
-                    withContext(Dispatchers.Main) {
-                        BrowserSettings.replaceShortcuts(emptyList())
-                        BrowserSettings.replaceHiddenBuiltins(emptyList())
-                    }
                 } finally {
                     applyingRemote = false
                 }
@@ -217,7 +210,7 @@ object BrowserSync {
             scope.launch {
                 when (type) {
                     SyncType.BOOKMARKS, SyncType.HISTORY -> db.markAllDirty()
-                    SyncType.SHORTCUTS, SyncType.SETTINGS -> markExistingSettingsDirty()
+                    SyncType.SETTINGS -> markExistingSettingsDirty()
                     SyncType.TABS -> Unit
                 }
                 prefs.edit().putString("cursor", "").apply()
@@ -352,9 +345,7 @@ object BrowserSync {
                     }
                 }
             }
-            val prefsChanges = changes.filter {
-                (it.kind == "shortcut" && isOn(SyncType.SHORTCUTS)) || (it.kind == "setting" && isOn(SyncType.SETTINGS))
-            }
+            val prefsChanges = changes.filter { it.kind == "setting" && isOn(SyncType.SETTINGS) }
             if (prefsChanges.isNotEmpty()) {
                 withContext(Dispatchers.Main) { prefsChanges.forEach { applyRemoteSetting(it) } }
             }
@@ -364,9 +355,9 @@ object BrowserSync {
         if (touched) dataVersion++
     }
 
-    // ------------------------------------------------------------------ settings + shortcuts
-    // Each synced setting/shortcut list is one item. "ms_<kind>/<key>" = when this phone last
-    // changed it (or applied it from the server); "dirty_<kind>/<key>" = waiting to upload.
+    // ------------------------------------------------------------------ settings
+    // Each synced setting is one item. "ms_<kind>/<key>" = when this phone last changed it
+    // (or applied it from the server); "dirty_<kind>/<key>" = waiting to upload.
 
     private fun localSettingChanged(kind: String, key: String) {
         if (applyingRemote) return
@@ -378,17 +369,14 @@ object BrowserSync {
     /** The theme lives in AppPrefs (the Activity reports changes here). */
     fun themeChanged() = localSettingChanged("setting", "theme")
 
-    private fun allSettingIds(): List<String> =
-        SETTING_KEYS.split(',').map { "setting/$it" } + listOf("shortcut/user", "shortcut/hidden")
+    private fun allSettingIds(): List<String> = SETTING_KEYS.split(',').map { "setting/$it" }
 
-    /** Mark this phone's settings and shortcuts for upload — only ones the user actually set. */
+    /** Mark this phone's settings for upload — only ones the user actually set. */
     private fun markExistingSettingsDirty() {
         val edit = prefs.edit()
         allSettingIds().forEach { id ->
             val ms = prefs.getLong("ms_$id", 0L)
             val nonDefault = when (id) {
-                "shortcut/user" -> BrowserSettings.shortcuts.isNotEmpty()
-                "shortcut/hidden" -> BrowserSettings.hiddenBuiltins.isNotEmpty()
                 "setting/search_engine" -> BrowserSettings.searchEngine.name != "GOOGLE"
                 "setting/block_popups" -> !BrowserSettings.blockPopups
                 "setting/theme" -> AppPrefs(app).themeMode() != ThemeMode.SYSTEM
@@ -403,21 +391,16 @@ object BrowserSync {
         edit.apply()
     }
 
-    /** Dirty settings/shortcuts as (dirty-flag key, change). */
+    /** Dirty settings as (dirty-flag key, change). */
     private fun pendingSettings(): List<Pair<String, SyncChange>> = allSettingIds().mapNotNull { id ->
         if (!prefs.getBoolean("dirty_$id", false)) return@mapNotNull null
         val (kind, key) = id.split('/')
-        if (kind == "shortcut" && !isOn(SyncType.SHORTCUTS)) return@mapNotNull null
-        if (kind == "setting" && !isOn(SyncType.SETTINGS)) return@mapNotNull null
+        if (!isOn(SyncType.SETTINGS)) return@mapNotNull null
         val data = JsonObject()
         when (id) {
             "setting/search_engine" -> data.addProperty("value", BrowserSettings.searchEngine.name)
             "setting/block_popups" -> data.addProperty("value", BrowserSettings.blockPopups)
             "setting/theme" -> data.addProperty("value", AppPrefs(app).themeMode().name)
-            "shortcut/user" -> data.add("items", JsonArray().apply {
-                BrowserSettings.shortcuts.forEach { s -> add(JsonObject().apply { addProperty("name", s.name); addProperty("url", s.url) }) }
-            })
-            "shortcut/hidden" -> data.add("urls", JsonArray().apply { BrowserSettings.hiddenBuiltins.forEach { add(it) } })
         }
         "dirty_$id" to SyncChange(kind, key, data, prefs.getLong("ms_$id", System.currentTimeMillis()), false)
     }
@@ -437,17 +420,6 @@ object BrowserSync {
                     onRemoteTheme?.invoke(mode)
                 }
             }
-            "shortcut/user" -> if (c.deleted) BrowserSettings.replaceShortcuts(emptyList()) else {
-                val items = d.getAsJsonArray("items")?.mapNotNull { e ->
-                    val o = e as? JsonObject ?: return@mapNotNull null
-                    val url = o.str("url") ?: return@mapNotNull null
-                    UserShortcut(o.str("name").orEmpty(), url)
-                }.orEmpty()
-                BrowserSettings.replaceShortcuts(items)
-            }
-            "shortcut/hidden" -> BrowserSettings.replaceHiddenBuiltins(
-                if (c.deleted) emptyList() else d.getAsJsonArray("urls")?.mapNotNull { runCatching { it.asString }.getOrNull() }.orEmpty(),
-            )
         }
         prefs.edit().putLong("ms_$id", c.updatedMs).remove("dirty_$id").apply()
     }

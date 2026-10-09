@@ -315,7 +315,9 @@ class WebPlatform(private val activity: ComponentActivity) {
         webView.addJavascriptInterface(pageFiles.bridge(tab), PageFiles.BRIDGE)
         webView.addJavascriptInterface(AdBridge(tab), "AndroidAdBridge")
         webView.addJavascriptInterface(NotifyStateBridge(tab), "AndroidNotifyState")
-        webView.addJavascriptInterface(PageTokenBridge, TOKEN_BRIDGE)
+        // Incognito gets no SyncUp token at all — not even the bridge object — so a page there can't
+        // read or push-notify this user, matching what "Incognito" already promises everywhere else.
+        if (tab.section != Section.INCOGNITO) webView.addJavascriptInterface(PageTokenBridge, TOKEN_BRIDGE)
         // Page notifications (asked per site) and the media detector talk over message channels,
         // which tell us the real site a message comes from.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
@@ -336,7 +338,7 @@ class WebPlatform(private val activity: ComponentActivity) {
             WebViewCompat.addDocumentStartJavaScript(webView, MediaDetector.SCAN_JS, setOf("*"))
             // YouTube's video ads come from the same servers as its videos: handled in the page.
             WebViewCompat.addDocumentStartJavaScript(webView, AdBlocker.YOUTUBE_JS, AdBlocker.YOUTUBE_ORIGINS)
-            WebViewCompat.addDocumentStartJavaScript(webView, SYNCUP_TOKEN_JS, setOf("*"))
+            if (tab.section != Section.INCOGNITO) WebViewCompat.addDocumentStartJavaScript(webView, SYNCUP_TOKEN_JS, setOf("*"))
         }
 
         webView.webViewClient = object : WebViewClient() {
@@ -369,7 +371,7 @@ class WebPlatform(private val activity: ComponentActivity) {
                 view?.evaluateJavascript(PageFiles.NAME_HINT_JS, null)
                 view?.evaluateJavascript(AD_CSS_JS, null)
                 view?.evaluateJavascript(MediaDetector.SCAN_JS, null)
-                view?.evaluateJavascript(SYNCUP_TOKEN_JS, null)
+                if (tab.section != Section.INCOGNITO) view?.evaluateJavascript(SYNCUP_TOKEN_JS, null)
                 // Tint the status + navigation bars to the page's theme-color (null → app theme).
                 view?.evaluateJavascript(THEME_COLOR_JS) { result -> tab.themeColor = parseCssRgb(result) }
                 if (!url.isNullOrBlank() && url != "about:blank") {
@@ -1132,8 +1134,8 @@ class WebPlatform(private val activity: ComponentActivity) {
 
         /**
          * The signed-in user's notification token (blank when signed out), put on every page in every
-         * tab — Normal, SyncUp and Incognito — as window.SyncUp.token. A site needs the SyncUp notify
-         * key as well to push with it. Set by MainActivity from the account.
+         * Normal and Work tab as window.SyncUp.token — never in Incognito. A site needs the SyncUp
+         * notify key as well to push with it. Set by MainActivity from the account.
          */
         @Volatile var pageToken: String = ""
 

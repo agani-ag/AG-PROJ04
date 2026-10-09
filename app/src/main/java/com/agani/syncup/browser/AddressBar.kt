@@ -311,14 +311,8 @@ internal fun Suggestions(query: String, section: Section, db: BrowserDb, onPick:
             search = listOf(direct) + remote.map { Suggestion(Icons.Rounded.Search, it, null, UrlInput.toUrl(it), it) }
         }
     }
-    // Shortcuts that match (title or site): yours first, then SyncUp's catalogue. All on the phone.
-    val shortcuts = remember(query) {
-        val q = query.trim().lowercase()
-        val mine = if (q.length < 2) emptyList() else BrowserSettings.shortcuts
-            .filter { it.name.lowercase().contains(q) || UrlInput.display(it.url).lowercase().contains(q) }
-            .map { CatalogShortcut(0, it.name, it.url, "My shortcuts") }
-        (mine + ShortcutCatalog.search(query)).distinctBy { it.url }.take(3)
-    }
+    // Shortcuts that match (title or site), from SyncUp's catalogue.
+    val shortcuts = remember(query) { ShortcutCatalog.search(query).distinctBy { it.url }.take(3) }
     Box(Modifier.fillMaxSize().background(cs.surface)) {
         LazyColumn(contentPadding = PaddingValues(bottom = 8.dp)) {
             if (shortcuts.isNotEmpty() && section != Section.WORK) {

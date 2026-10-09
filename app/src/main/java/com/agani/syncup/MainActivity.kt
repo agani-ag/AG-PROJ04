@@ -74,7 +74,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-private enum class AppScreen { Splash, ForceUpdate, Announcement, Browser, Profile, SiteSettings, Music, Library, Partners, Tools }
+private enum class AppScreen { Splash, ForceUpdate, Announcement, Browser, Profile, SiteSettings, Music, Radio, Library, Partners, Tools }
 
 class MainActivity : FragmentActivity() {
 
@@ -318,14 +318,13 @@ class MainActivity : FragmentActivity() {
         var showProfile by remember { mutableStateOf(false) }
         var showSiteSettings by remember { mutableStateOf(false) }
         var showMusic by remember { mutableStateOf(false) }
+        var showRadio by remember { mutableStateOf(false) }
         var showLogin by remember { mutableStateOf(false) }
         var showPartners by remember { mutableStateOf(false) }
         var signupEnabled by remember { mutableStateOf(false) }
         var libraryPage by remember { mutableStateOf<LibraryPage?>(null) }
         var toolsPage by remember { mutableStateOf<com.agani.syncup.tools.ToolsPage?>(null) }
-        var openFolder by remember { mutableStateOf<Pair<android.net.Uri, String>?>(null) }
         var openSmbServer by remember { mutableStateOf<com.agani.syncup.smb.SmbServer?>(null) }
-        var networkFolderPrefill by remember { mutableStateOf<String?>(null) }
         var announcement by remember { mutableStateOf<com.agani.syncup.data.AnnouncementDto?>(null) }
         var supportEmail by remember { mutableStateOf("") }
         var supportPhone by remember { mutableStateOf("") }
@@ -397,7 +396,8 @@ class MainActivity : FragmentActivity() {
         // Signed in (fresh sign-in or restored session): start browser sync. A different account than
         // the last one on this phone gets a clean Normal section (never merged with the previous
         // person's data).
-        // Every page in every tab gets the signed-in user's notification token (window.SyncUp.token).
+        // Every Normal/Work page gets the signed-in user's notification token (window.SyncUp.token) —
+        // never Incognito; WebPlatform itself withholds the token there regardless of this value.
         LaunchedEffect(state.user?.notifyToken) {
             com.agani.syncup.browser.WebPlatform.pageToken = state.user?.notifyToken.orEmpty()
         }
@@ -435,6 +435,7 @@ class MainActivity : FragmentActivity() {
                 pendingLink.value = null
                 showProfile = false
                 showMusic = false
+                showRadio = false
                 showPartners = false
                 libraryPage = null
                 tabManager.newTab(Section.NORMAL, link.url)
@@ -444,6 +445,7 @@ class MainActivity : FragmentActivity() {
                 // — the link's own tab when it's one of the user's links and already open.
                 showProfile = false
                 showMusic = false
+                showRadio = false
                 libraryPage = null
                 val item = state.urls.firstOrNull { it.url == link.url }
                 tabManager.openWorkLink(item?.title ?: link.title, link.url, item?.id)
@@ -470,15 +472,16 @@ class MainActivity : FragmentActivity() {
             if (openPartnersRequest.value && state.isLoggedIn) {
                 openPartnersRequest.value = false
                 showMusic = false
+                showRadio = false
                 showPartners = true
             }
         }
 
-        // The media-notification tap wants the Music player (open to everyone, signed in or not).
+        // The media-notification tap wants whatever's playing — a station opens Radio, a song opens Music.
         LaunchedEffect(openMusicRequest.value) {
             if (openMusicRequest.value) {
                 openMusicRequest.value = false
-                showMusic = true
+                if (player.isRadio) showRadio = true else showMusic = true
             }
         }
 
@@ -487,20 +490,22 @@ class MainActivity : FragmentActivity() {
             if (openDownloadsRequest.value) {
                 openDownloadsRequest.value = false
                 showMusic = false
+                showRadio = false
                 showPartners = false
                 showProfile = false
                 libraryPage = LibraryPage.DOWNLOADS
             }
         }
 
-        // System back: step Music -> Partners -> Settings instead of exiting the app.
+        // System back: step Music/Radio -> Partners -> Settings instead of exiting the app.
         androidx.activity.compose.BackHandler(enabled = showMusic) { showMusic = false }
-        androidx.activity.compose.BackHandler(enabled = showPartners && !showMusic) { showPartners = false }
-        androidx.activity.compose.BackHandler(enabled = showProfile && !showMusic && !showPartners && !showSiteSettings) { showProfile = false }
-        androidx.activity.compose.BackHandler(enabled = showSiteSettings && !showMusic && !showPartners) { showSiteSettings = false }
+        androidx.activity.compose.BackHandler(enabled = showRadio) { showRadio = false }
+        androidx.activity.compose.BackHandler(enabled = showPartners && !showMusic && !showRadio) { showPartners = false }
+        androidx.activity.compose.BackHandler(enabled = showProfile && !showMusic && !showRadio && !showPartners && !showSiteSettings) { showProfile = false }
+        androidx.activity.compose.BackHandler(enabled = showSiteSettings && !showMusic && !showRadio && !showPartners) { showSiteSettings = false }
         androidx.activity.compose.BackHandler(enabled = libraryPage != null && !showProfile) { libraryPage = null }
         // Tools: a tool goes back to the Tools page, the Tools page back to the browser.
-        androidx.activity.compose.BackHandler(enabled = toolsPage != null && !showMusic && libraryPage == null && !showProfile) {
+        androidx.activity.compose.BackHandler(enabled = toolsPage != null && !showMusic && !showRadio && libraryPage == null && !showProfile) {
             toolsPage = if (toolsPage == com.agani.syncup.tools.ToolsPage.HOME) null else com.agani.syncup.tools.ToolsPage.HOME
         }
 
@@ -546,6 +551,7 @@ class MainActivity : FragmentActivity() {
             forceUpdate -> AppScreen.ForceUpdate
             loggedIn && showAnnouncement -> AppScreen.Announcement
             showMusic -> AppScreen.Music
+            showRadio && radioAvailable -> AppScreen.Radio
             showPartners && loggedIn -> AppScreen.Partners
             showSiteSettings -> AppScreen.SiteSettings
             showProfile -> AppScreen.Profile
@@ -619,10 +625,13 @@ class MainActivity : FragmentActivity() {
                     )
                     AppScreen.Music -> {
                         RequestNotificationPermission() // media notification (status bar + lock screen)
-                        MusicScreen(
-                            radioAvailable = radioAvailable,
+                        MusicScreen(onBack = { showMusic = false })
+                    }
+                    AppScreen.Radio -> {
+                        RequestNotificationPermission() // media notification (status bar + lock screen)
+                        com.agani.syncup.music.RadioScreen(
                             loadStations = { vm.radioChannels() },
-                            onBack = { showMusic = false },
+                            onBack = { showRadio = false },
                         )
                     }
                     AppScreen.Browser -> {
@@ -635,8 +644,6 @@ class MainActivity : FragmentActivity() {
                             account = if (loggedIn) BrowserAccount(
                                 user = state.user,
                                 links = state.urls,
-                                chatEnabled = chatEnabled,
-                                chatUnread = state.chatUnread,
                                 announcement = announcement,
                                 refreshing = state.refreshing,
                                 partnersWaiting = state.partnersWaiting,
@@ -662,8 +669,7 @@ class MainActivity : FragmentActivity() {
                                 },
                                 onOpenPartners = { showPartners = true },
                                 onOpenSettings = { showProfile = true },
-                                onOpenChat = { openChatRequest.value = true },
-                                onOpenMusic = { showMusic = true },
+                                onOpenMusic = { if (player.isRadio) showRadio = true else showMusic = true },
                                 onOpenTools = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
                                 onOpenLibrary = { libraryPage = it },
                                 onRefreshLinks = { runFullRefresh(silent = false) },
@@ -674,21 +680,12 @@ class MainActivity : FragmentActivity() {
                         com.agani.syncup.tools.ToolsPage.VIDEOS -> com.agani.syncup.video.VideoLibraryScreen(
                             onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
                         )
-                        com.agani.syncup.tools.ToolsPage.FILES -> com.agani.syncup.files.FilesScreen(
-                            onOpenFolder = { uri, name -> openFolder = uri to name; toolsPage = com.agani.syncup.tools.ToolsPage.FOLDER },
-                            onOpenDownloads = { libraryPage = LibraryPage.DOWNLOADS },
+                        com.agani.syncup.tools.ToolsPage.CHANNELS -> com.agani.syncup.video.ChannelsHomeScreen(
                             onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
                         )
-                        com.agani.syncup.tools.ToolsPage.FOLDER -> openFolder?.let { (uri, name) ->
-                            com.agani.syncup.files.FolderBrowserScreen(
-                                rootUri = uri, rootName = name,
-                                onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.FILES },
-                            )
-                        }
                         com.agani.syncup.tools.ToolsPage.NETWORK_FOLDERS -> com.agani.syncup.smb.NetworkFoldersScreen(
                             onOpenServer = { s -> openSmbServer = s; toolsPage = com.agani.syncup.tools.ToolsPage.NETWORK_SERVER },
                             onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
-                            prefillHost = networkFolderPrefill,
                         )
                         com.agani.syncup.tools.ToolsPage.NETWORK_SERVER -> openSmbServer?.let { server ->
                             com.agani.syncup.smb.SmbBrowserScreen(
@@ -696,20 +693,13 @@ class MainActivity : FragmentActivity() {
                                 onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.NETWORK_FOLDERS },
                             )
                         }
-                        com.agani.syncup.tools.ToolsPage.NETWORK_SCANNER -> com.agani.syncup.netscan.NetworkScannerScreen(
-                            onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
-                            onAddNetworkFolder = { host ->
-                                networkFolderPrefill = host
-                                toolsPage = com.agani.syncup.tools.ToolsPage.NETWORK_FOLDERS
-                            },
-                        )
                         else -> com.agani.syncup.tools.ToolsScreen(
+                            radioAvailable = radioAvailable,
                             onMusic = { showMusic = true },
                             onVideos = { toolsPage = com.agani.syncup.tools.ToolsPage.VIDEOS },
-                            onDownloads = { libraryPage = LibraryPage.DOWNLOADS },
-                            onFiles = { toolsPage = com.agani.syncup.tools.ToolsPage.FILES },
-                            onNetworkFolders = { networkFolderPrefill = null; toolsPage = com.agani.syncup.tools.ToolsPage.NETWORK_FOLDERS },
-                            onNetworkScanner = { toolsPage = com.agani.syncup.tools.ToolsPage.NETWORK_SCANNER },
+                            onRadio = { showRadio = true },
+                            onChannels = { toolsPage = com.agani.syncup.tools.ToolsPage.CHANNELS },
+                            onNetworkFolders = { toolsPage = com.agani.syncup.tools.ToolsPage.NETWORK_FOLDERS },
                             onBack = { toolsPage = null },
                         )
                     }

@@ -663,7 +663,7 @@ fun DownloadSettingsSheet(onDismiss: () -> Unit) {
 @Composable
 fun DownloadSettingsRows() {
     val cs = MaterialTheme.colorScheme
-    ChoiceRow("Parts per file", "More parts = faster on most servers", listOf(1, 2, 4, 8, 16), Downloads.partsPerFile) { Downloads.updatePartsPerFile(it) }
+    ChoiceRow("Parts per file", "More parts = faster on most servers", listOf(1, 2, 4, 8, 16, 24, 32), Downloads.partsPerFile) { Downloads.updatePartsPerFile(it) }
     ChoiceRow("Downloads at once", "The others wait in line", listOf(1, 2, 3, 4, 5), Downloads.atOnce) { Downloads.updateAtOnce(it) }
     SwitchLine("Wi-Fi only", "Wait for Wi-Fi to download", Downloads.wifiOnly) { Downloads.updateWifiOnly(it) }
     SwitchLine("Ask before each download", "Show the name, size and folder first", Downloads.askFirst) { Downloads.updateAskFirst(it) }

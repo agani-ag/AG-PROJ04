@@ -117,7 +117,6 @@ import com.agani.syncup.sync.BrowserSync
 import com.agani.syncup.sync.SyncType
 import androidx.core.app.NotificationManagerCompat
 import androidx.compose.material.icons.rounded.AlternateEmail
-import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.CloudOff
@@ -214,6 +213,23 @@ fun ProfileScreen(
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
                     }
                 },
+                // The only entry point to Chat left in the app — signed-in users only.
+                actions = {
+                    if (user != null && chatEnabled) {
+                        Box {
+                            IconButton(onClick = onOpenChat) {
+                                Icon(Icons.Rounded.ChatBubbleOutline, contentDescription = if (chatUnread > 0) "Chat with admin · $chatUnread new" else "Chat with admin")
+                            }
+                            if (chatUnread > 0) {
+                                Box(
+                                    Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp).size(10.dp)
+                                        .clip(CircleShape).background(MaterialTheme.colorScheme.surface).padding(2.dp)
+                                        .clip(CircleShape).background(MaterialTheme.colorScheme.error),
+                                )
+                            }
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                     titleContentColor = MaterialTheme.colorScheme.onSurface,
@@ -279,7 +295,6 @@ fun ProfileScreen(
                         summary = buildString {
                             append("Sign-in details, password")
                             if (showPartners) append(if (partnersWaiting > 0) " · $partnersWaiting partner waiting" else ", partners")
-                            if (chatEnabled && chatUnread > 0) append(" · $chatUnread new message${if (chatUnread == 1) "" else "s"}")
                         },
                         expanded = open == "account",
                         onToggle = { open = if (open == "account") null else "account" },
@@ -315,15 +330,6 @@ fun ProfileScreen(
                                 onClick = onOpenPartners,
                             )
                         }
-                        if (chatEnabled) {
-                            RowDivider()
-                            SettingRow(
-                                icon = Icons.Rounded.ChatBubbleOutline,
-                                title = "Chat with admin",
-                                subtitle = if (chatUnread > 0) "$chatUnread new message${if (chatUnread == 1) "" else "s"}" else "Message support directly",
-                                onClick = onOpenChat,
-                            )
-                        }
                         RowDivider()
                         SettingRow(
                             icon = Icons.Rounded.DeleteOutline,
@@ -357,7 +363,6 @@ fun ProfileScreen(
                                         SyncType.BOOKMARKS -> Icons.Rounded.StarBorder
                                         SyncType.HISTORY -> Icons.Rounded.History
                                         SyncType.TABS -> Icons.Rounded.Devices
-                                        SyncType.SHORTCUTS -> Icons.Rounded.Apps
                                         SyncType.SETTINGS -> Icons.Rounded.Tune
                                     },
                                     title = t.label,
@@ -365,7 +370,6 @@ fun ProfileScreen(
                                         SyncType.BOOKMARKS -> "Up to 5,000"
                                         SyncType.HISTORY -> "Normal browsing, last 90 days"
                                         SyncType.TABS -> "See your open tabs on your other devices"
-                                        SyncType.SHORTCUTS -> "New-tab shortcuts"
                                         SyncType.SETTINGS -> "Search engine, pop-ups, theme"
                                     },
                                     checked = BrowserSync.isOn(t),
