@@ -28,6 +28,10 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.FormatSize
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Home
@@ -162,6 +166,7 @@ fun ProfileScreen(
     onChangePassword: suspend (current: String, new: String) -> Result<Unit>,
     onDeleteAccount: suspend () -> Result<Unit>,
     onClearBrowsingData: (history: Boolean, cookies: Boolean, cache: Boolean) -> Unit = { _, _, _ -> },
+    onOpenSiteSettings: () -> Unit = {},
     partnersWaiting: Int = 0,
     showPartners: Boolean = false,
     onOpenPartners: () -> Unit = {},
@@ -189,6 +194,8 @@ fun ProfileScreen(
     var showDeleteAccount by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var showEngine by remember { mutableStateOf(false) }
+    var showTextSize by remember { mutableStateOf(false) }
+    var confirmClearPopupSites by remember { mutableStateOf(false) }
     var showClearData by remember { mutableStateOf(false) }
     var editIdentifier by remember { mutableStateOf<String?>(null) } // "email" | "phone"
     var showUsername by remember { mutableStateOf(false) }
@@ -405,6 +412,68 @@ fun ProfileScreen(
                         enabled = true,
                         onCheckedChange = { BrowserSettings.updateBlockPopups(it) },
                     )
+                    val allowedSites = BrowserSettings.popupSites.size
+                    if (BrowserSettings.blockPopups && allowedSites > 0) {
+                        RowDivider()
+                        SettingRow(
+                            icon = Icons.AutoMirrored.Rounded.OpenInNew,
+                            title = "Sites allowed to open pop-ups",
+                            subtitle = "$allowedSites site${if (allowedSites == 1) "" else "s"} · tap to clear",
+                            onClick = { confirmClearPopupSites = true },
+                        )
+                    }
+                    RowDivider()
+                    SwitchRow(
+                        icon = Icons.Rounded.Shield,
+                        title = "Block ads",
+                        subtitle = if (BrowserSettings.blockAds) {
+                            String.format(java.util.Locale.getDefault(), "On every page, SyncUp links too · %,d blocked this week", com.agani.syncup.browser.AdBlocker.weekBlocked)
+                        } else {
+                            "Off · ads and trackers load as each site sends them"
+                        },
+                        checked = BrowserSettings.blockAds,
+                        enabled = true,
+                        onCheckedChange = { BrowserSettings.updateBlockAds(it) },
+                    )
+                    if (BrowserSettings.blockAds) {
+                        RowDivider()
+                        val updated = com.agani.syncup.browser.AdBlocker.lastUpdated
+                        SettingRow(
+                            icon = Icons.Rounded.CloudSync,
+                            title = "Ad filter lists",
+                            subtitle = when {
+                                com.agani.syncup.browser.AdBlocker.updating -> "Updating…"
+                                updated == 0L -> "Built-in list for now · tap to download EasyList"
+                                else -> "EasyList · updated ${android.text.format.DateUtils.getRelativeTimeSpanString(updated)} · tap to update now"
+                            },
+                            onClick = { com.agani.syncup.browser.AdBlocker.updateNow() },
+                        )
+                    }
+                    RowDivider()
+                    SwitchRow(
+                        icon = Icons.Rounded.Download,
+                        title = "Media & file detector",
+                        subtitle = "Show ⬇ when a page has videos, music or files",
+                        checked = BrowserSettings.mediaDetector,
+                        enabled = true,
+                        onCheckedChange = { BrowserSettings.updateMediaDetector(it) },
+                    )
+                    RowDivider()
+                    SettingRow(
+                        icon = Icons.Rounded.FormatSize,
+                        title = "Text size",
+                        subtitle = "${BrowserSettings.textZoom}%",
+                        onClick = { showTextSize = true },
+                    )
+                    RowDivider()
+                    SwitchRow(
+                        icon = Icons.Rounded.DarkMode,
+                        title = "Dark mode for websites",
+                        subtitle = "In the dark theme, darken sites that have no dark look of their own",
+                        checked = BrowserSettings.darkenWebsites,
+                        enabled = true,
+                        onCheckedChange = { BrowserSettings.updateDarkenWebsites(it) },
+                    )
                     RowDivider()
                     SwitchRow(
                         icon = Icons.Rounded.VerticalAlignBottom,
@@ -414,6 +483,17 @@ fun ProfileScreen(
                         enabled = true,
                         onCheckedChange = { BrowserSettings.updateAddressBarBottom(it) },
                     )
+                }
+
+                val dl = com.agani.syncup.downloads.Downloads
+                SettingsSection(
+                    icon = Icons.Rounded.Download,
+                    title = "Downloads",
+                    summary = "${dl.partsPerFile} parts per file · ${dl.atOnce} at once" + if (dl.wifiOnly) " · Wi-Fi only" else "",
+                    expanded = open == "downloads",
+                    onToggle = { open = if (open == "downloads") null else "downloads" },
+                ) {
+                    Column(Modifier.padding(vertical = 8.dp)) { com.agani.syncup.downloads.DownloadSettingsRows() }
                 }
 
                 SettingsSection(
@@ -464,14 +544,8 @@ fun ProfileScreen(
                     SettingRow(
                         icon = Icons.Rounded.Tune,
                         title = "Site settings",
-                        subtitle = "Camera, mic, location, notifications",
-                        onClick = {
-                            runCatching {
-                                context.startActivity(
-                                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")),
-                                )
-                            }
-                        },
+                        subtitle = "Camera, mic, location, notifications, pop-ups, ads",
+                        onClick = onOpenSiteSettings,
                     )
                 }
 
@@ -621,6 +695,55 @@ fun ProfileScreen(
                 }
             },
             confirmButton = { TextButton(onClick = { showEngine = false }) { Text("Close") } },
+        )
+    }
+    if (showTextSize) {
+        AlertDialog(
+            containerColor = MaterialTheme.colorScheme.dialogSurface,
+            onDismissRequest = { showTextSize = false },
+            title = { Text("Text size") },
+            text = {
+                Column {
+                    listOf(85 to "Small", 100 to "Default", 115 to "Large", 130 to "Larger", 150 to "Largest").forEach { (percent, label) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    BrowserSettings.updateTextZoom(percent)
+                                    showTextSize = false
+                                }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = BrowserSettings.textZoom == percent, onClick = null)
+                            Spacer(Modifier.width(10.dp))
+                            Text(label, Modifier.weight(1f))
+                            Text("$percent%", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showTextSize = false }) { Text("Close") } },
+        )
+    }
+    if (confirmClearPopupSites) {
+        AlertDialog(
+            containerColor = MaterialTheme.colorScheme.dialogSurface,
+            onDismissRequest = { confirmClearPopupSites = false },
+            title = { Text("Block pop-ups everywhere?") },
+            text = {
+                Text(
+                    "These sites can open pop-ups without a tap: ${BrowserSettings.popupSites.joinToString(", ")}. They'll be blocked again.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    BrowserSettings.clearPopupSites()
+                    confirmClearPopupSites = false
+                }) { Text("Clear") }
+            },
+            dismissButton = { TextButton(onClick = { confirmClearPopupSites = false }) { Text("Cancel") } },
         )
     }
     if (showClearData) {

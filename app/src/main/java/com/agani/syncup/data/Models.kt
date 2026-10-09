@@ -38,6 +38,9 @@ data class User(
     val phone: String? = null,
     val username: String? = null,
     val source: String? = null, // admin | partner | self
+    // Put on every page as window.SyncUp.token; a site that also has the SyncUp notify key can push
+    // to this user with it. Blank until the backend sends it.
+    @SerializedName("notify_token") val notifyToken: String? = null,
 ) {
     /** What the user signs in with, for display: email, else phone, else @username. */
     val loginLabel: String
@@ -154,8 +157,6 @@ data class UrlItem(
     // and the partner's display name ("GSTSync"). Optional until the backend sends them.
     val source: String? = null,
     @SerializedName("source_name") val sourceName: String? = null,
-    // Non-empty when the link opts into partner push — injected as window.SyncUp.token.
-    @SerializedName("notify_token") val notifyToken: String = "",
 )
 
 data class LoginResponse(
@@ -282,4 +283,22 @@ data class ReminderDto(
     // "Repeat N times" mode: gap between fires (ms) and total fire count (0 = unlimited).
     @SerializedName("repeat_interval_ms") val repeatIntervalMs: Long = 0L,
     @SerializedName("repeat_count") val repeatCount: Int = 0,
+)
+
+/** The home page's shortcut catalogue (GET shortcuts, no sign-in). [version] unchanged → 304. */
+data class ShortcutCatalogResponse(
+    val version: String = "",
+    val categories: List<ShortcutCategoryDto> = emptyList(),
+)
+
+data class ShortcutCategoryDto(
+    val id: Long = 0,
+    val name: String = "",
+    val shortcuts: List<HomeShortcutDto> = emptyList(),
+)
+
+data class HomeShortcutDto(
+    val id: Long = 0,
+    val title: String = "",
+    val url: String = "",
 )

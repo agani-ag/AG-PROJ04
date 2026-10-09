@@ -181,6 +181,22 @@ fun workScheme(base: ColorScheme): ColorScheme = if (base.isLight) {
     )
 }
 
+/** [on]'s colours with Normal's blue accent in the same lightness (light or dark/Incognito). */
+fun normalAccentOn(on: ColorScheme): ColorScheme {
+    val src = if (on.isLight) LightColors else DarkColors
+    return on.copy(
+        primary = src.primary, onPrimary = src.onPrimary,
+        primaryContainer = src.primaryContainer, onPrimaryContainer = src.onPrimaryContainer,
+    )
+}
+
+/** [on]'s colours with Incognito's violet accent; its tile stays dark violet on a light sheet too. */
+fun incognitoAccentOn(on: ColorScheme): ColorScheme = on.copy(
+    primary = if (on.isLight) Color(0xFF6D28D9) else IncognitoScheme.primary,
+    onPrimary = if (on.isLight) Color.White else IncognitoScheme.onPrimary,
+    primaryContainer = IncognitoScheme.primaryContainer, onPrimaryContainer = IncognitoScheme.onPrimaryContainer,
+)
+
 /** Incognito = a fixed dark palette with a violet accent; ignores the app theme. */
 val IncognitoScheme: ColorScheme = darkColorScheme(
     primary = Color(0xFFC4B5FD), onPrimary = Color(0xFF2E1065),

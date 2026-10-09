@@ -5,6 +5,7 @@ import com.agani.syncup.browser.ui.chrome
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,6 +57,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.agani.syncup.ui.theme.isLight
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -305,8 +311,20 @@ internal fun Suggestions(query: String, section: Section, db: BrowserDb, onPick:
             search = listOf(direct) + remote.map { Suggestion(Icons.Rounded.Search, it, null, UrlInput.toUrl(it), it) }
         }
     }
+    // Shortcuts that match (title or site): yours first, then SyncUp's catalogue. All on the phone.
+    val shortcuts = remember(query) {
+        val q = query.trim().lowercase()
+        val mine = if (q.length < 2) emptyList() else BrowserSettings.shortcuts
+            .filter { it.name.lowercase().contains(q) || UrlInput.display(it.url).lowercase().contains(q) }
+            .map { CatalogShortcut(0, it.name, it.url, "My shortcuts") }
+        (mine + ShortcutCatalog.search(query)).distinctBy { it.url }.take(3)
+    }
     Box(Modifier.fillMaxSize().background(cs.surface)) {
         LazyColumn(contentPadding = PaddingValues(bottom = 8.dp)) {
+            if (shortcuts.isNotEmpty() && section != Section.WORK) {
+                item { SuggestionHeader("Shortcuts") }
+                items(shortcuts, key = { "sc" + it.url }) { sc -> ShortcutSuggestion(sc) { onPick(sc.url) } }
+            }
             if (search.isNotEmpty()) {
                 item { SuggestionHeader("Search") }
                 items(search) { s -> SuggestionRow(s, query, onPick, onFill) }
@@ -335,6 +353,24 @@ internal fun Suggestions(query: String, section: Section, db: BrowserDb, onPick:
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ShortcutSuggestion(sc: CatalogShortcut, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 8.dp),
+    ) {
+        Box(Modifier.size(40.dp).clip(CircleShape).background(cs.surfaceContainerHigh), contentAlignment = Alignment.Center) {
+            SiteMark(sc.url, sc.title, circle = 40.dp, iconSize = 24.dp)
+        }
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(sc.title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("${UrlInput.display(sc.url).substringBefore('/')} · ${sc.category}", fontSize = 12.sp, color = cs.onSurfaceVariant, maxLines = 1)
         }
     }
 }

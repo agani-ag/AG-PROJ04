@@ -2,7 +2,9 @@ package com.agani.syncup.browser
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.SystemClock
 import android.speech.RecognizerIntent
 import android.view.WindowManager
@@ -13,6 +15,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -106,6 +110,7 @@ class BrowserActions(
     val onOpenSettings: () -> Unit,
     val onOpenChat: () -> Unit,
     val onOpenMusic: () -> Unit,
+    val onOpenTools: () -> Unit,
     val onOpenLibrary: (LibraryPage) -> Unit,
     val onRefreshLinks: () -> Unit,
 )
@@ -139,6 +144,7 @@ fun BrowserScreen(
     var showAccount by remember { mutableStateOf(false) }
     var confirmSignOut by remember { mutableStateOf(false) }
     var finding by remember { mutableStateOf(false) }
+    var showDetected by remember { mutableStateOf(false) }
     var previousSection by remember { mutableStateOf(Section.NORMAL) }
     val snackbar = remember { SnackbarHostState() }
     // Sign-in / sign-up typing survives the sheet being closed by accident; cleared once signed in.
@@ -167,7 +173,7 @@ fun BrowserScreen(
 
     // A user with exactly one SyncUp link goes straight to it wherever SyncUp is opened (TabManager.directLink).
     val singleLink = account.links.singleOrNull()?.takeIf { signedIn }
-    val direct = singleLink?.let { TabManager.DirectLink(it.title, it.url, it.id, it.notifyToken) }
+    val direct = singleLink?.let { TabManager.DirectLink(it.title, it.url, it.id) }
     LaunchedEffect(direct) {
         tabs.directLink = direct
         // Down to one link while the SyncUp links page is showing: show the website instead.
@@ -191,7 +197,7 @@ fun BrowserScreen(
             return
         }
         val home = tabs.activeTab(Section.WORK)?.takeIf { it.isHome }
-        tabs.openWorkLink(item.title, item.url, item.id, item.notifyToken)
+        tabs.openWorkLink(item.title, item.url, item.id)
         home?.let { tabs.close(it) }
     }
 
@@ -202,6 +208,19 @@ fun BrowserScreen(
             if (r == SnackbarResult.ActionPerformed) undo()
         }
     }
+
+    // A pop-up the user didn't tap for was blocked: offer it, like Chrome ("Allow" also lets this site
+    // open pop-ups from now on).
+    val blocked = tabs.blockedPopup
+    LaunchedEffect(blocked) {
+        blocked ?: return@LaunchedEffect
+        snackbar.currentSnackbarData?.dismiss()
+        val r = snackbar.showSnackbar("Pop-up blocked", actionLabel = "Allow", withDismissAction = true, duration = SnackbarDuration.Long)
+        if (r == SnackbarResult.ActionPerformed) tabs.allowBlockedPopup(blocked) else tabs.dismissBlockedPopup()
+    }
+
+    // Text size and website darkening reach pages that are already open.
+    LaunchedEffect(BrowserSettings.textZoom, BrowserSettings.darkenWebsites) { tabs.applySettings() }
 
     val voiceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
@@ -261,6 +280,8 @@ fun BrowserScreen(
         // Work pages have no address bar: the page runs up to the status bar (link info lives in ⋮).
         val showPageBar = onPage && tab?.isWork == false
         val barBottom = BrowserSettings.addressBarBottom
+        // The address bar slides away while the page scrolls down (the bottom bar always stays).
+        val barHidden = showPageBar && tab?.barHidden == true && !editing && !finding && !showTabs
         // Each system bar takes the colour of what it touches. The navigation bar continues our bottom
         // bar (never the website's colour). The status bar matches the address / find bar under it; only
         // where the website itself reaches the top (SyncUp pages, or the address bar set to the bottom)
@@ -269,7 +290,7 @@ fun BrowserScreen(
         val pageColor = tab?.themeColor
             ?.takeIf { onPage && !editing && !finding && !showTabs && section != Section.INCOGNITO }
             ?.let { Color(it) }
-        val siteAtTop = onPage && !editing && !finding && (!showPageBar || barBottom)
+        val siteAtTop = onPage && !editing && !finding && (!showPageBar || barBottom || barHidden)
         val switcherColors = sectionScheme(switcherSection)
         val topTarget = when {
             showTabs -> switcherColors.surface
@@ -320,9 +341,15 @@ fun BrowserScreen(
                             tabs.webView(tab).clearMatches()
                         },
                     )
-                    showPageBar && !barBottom -> {
-                        PageBar(tab, db, atBottom = false, onTap = { startEditing(tab.url) }, onReload = { tabs.reload(tab) }, onStop = { tabs.stop(tab) })
-                        ProgressLine(tab.loading, tab.progress, Modifier.background(cs.chrome))
+                    showPageBar && !barBottom -> androidx.compose.animation.AnimatedVisibility(
+                        visible = !barHidden,
+                        enter = expandVertically(tween(160)),
+                        exit = shrinkVertically(tween(160)),
+                    ) {
+                        Column {
+                            PageBar(tab, db, atBottom = false, onTap = { startEditing(tab.url) }, onReload = { tabs.reload(tab) }, onStop = { tabs.stop(tab) })
+                            ProgressLine(tab.loading, tab.progress, Modifier.background(cs.chrome))
+                        }
                     }
                 }
 
@@ -360,7 +387,12 @@ fun BrowserScreen(
                             key(tab.id) {
                                 AndroidView(factory = { tabs.attachable(tab) }, modifier = Modifier.fillMaxSize())
                             }
-                            if (!showPageBar) ProgressLine(tab.loading, tab.progress, Modifier.align(Alignment.TopStart))
+                            if (!showPageBar || barHidden) ProgressLine(tab.loading, tab.progress, Modifier.align(Alignment.TopStart))
+                            PullIndicator(tab, Modifier.align(Alignment.TopCenter))
+                            // Videos, music and files on the page that can be downloaded.
+                            if (BrowserSettings.mediaDetector && tab.detected.isNotEmpty() && !editing) {
+                                DetectorButton(tab.detected.size, onClick = { showDetected = true }, Modifier.align(Alignment.BottomEnd).padding(12.dp))
+                            }
                         }
                     }
                     if (editing && tab != null) {
@@ -380,13 +412,21 @@ fun BrowserScreen(
                 val bottomPageBar = tab != null && showPageBar && barBottom && !editing && !finding
                 if (tab != null && bottomPageBar) {
                     // Address bar at the bottom: it and the bottom bar read as one block under one line.
-                    HorizontalDivider(thickness = 1.dp, color = cs.outlineVariant)
-                    ProgressLine(tab.loading, tab.progress, Modifier.background(cs.chrome))
-                    PageBar(tab, db, atBottom = true, onTap = { startEditing(tab.url) }, onReload = { tabs.reload(tab) }, onStop = { tabs.stop(tab) })
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = !barHidden,
+                        enter = expandVertically(tween(160)),
+                        exit = shrinkVertically(tween(160)),
+                    ) {
+                        Column {
+                            HorizontalDivider(thickness = 1.dp, color = cs.outlineVariant)
+                            ProgressLine(tab.loading, tab.progress, Modifier.background(cs.chrome))
+                            PageBar(tab, db, atBottom = true, onTap = { startEditing(tab.url) }, onReload = { tabs.reload(tab) }, onStop = { tabs.stop(tab) })
+                        }
+                    }
                 }
                 if (tab != null && !editing) {
                     BottomBar(
-                        divider = !bottomPageBar,
+                        divider = !bottomPageBar || barHidden,
                         tab = tab,
                         section = section,
                         tabCount = tabs.cardsIn(section).size,
@@ -430,6 +470,11 @@ fun BrowserScreen(
                 )
             }
 
+            // A site asks for the camera, microphone, location or notifications.
+            SitePermissions.prompt?.let { p ->
+                SitePermissionCard(p, Modifier.align(Alignment.BottomCenter).padding(bottom = 76.dp))
+            }
+
             SnackbarHost(
                 snackbar,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(start = 12.dp, end = 12.dp, bottom = 80.dp),
@@ -440,9 +485,82 @@ fun BrowserScreen(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                     contentColor = MaterialTheme.colorScheme.onSurface,
                     actionColor = MaterialTheme.colorScheme.primary,
+                    dismissActionContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
+        }
+
+        // A page started a download and "Ask before each download" is on.
+        com.agani.syncup.downloads.Downloads.prompt?.let { req ->
+            com.agani.syncup.downloads.DownloadPromptSheet(req) { com.agani.syncup.downloads.Downloads.prompt = null }
+        }
+
+        // Long-press on a link or an image.
+        tabs.pressed?.let { p ->
+            val from = tabs.tabs.firstOrNull { it.id == p.tabId }
+            if (from == null) {
+                tabs.dismissPressed()
+            } else {
+                PressMenuSheet(p.target, from, onDismiss = { tabs.dismissPressed() }, onAction = { action ->
+                    tabs.dismissPressed()
+                    val link = p.target.link.orEmpty()
+                    val image = p.target.image.orEmpty()
+                    val wv = tabs.viewOf(from)
+                    when (action) {
+                        PressAction.OPEN_NEW, PressAction.OPEN_IMAGE -> {
+                            val opened = tabs.openInBackground(from, if (action == PressAction.OPEN_NEW) link else image)
+                            scope.launch {
+                                snackbar.currentSnackbarData?.dismiss()
+                                val r = snackbar.showSnackbar("Opened in a new tab", actionLabel = "Switch", duration = SnackbarDuration.Short)
+                                if (r == SnackbarResult.ActionPerformed && tabs.tabs.contains(opened)) tabs.select(opened)
+                            }
+                        }
+                        PressAction.OPEN_INCOGNITO -> tabs.newTab(Section.INCOGNITO, link)
+                        PressAction.COPY_LINK, PressAction.COPY_IMAGE_LINK -> {
+                            val text = if (action == PressAction.COPY_LINK) link else image
+                            (context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                                .setPrimaryClip(android.content.ClipData.newPlainText("Link", text))
+                            Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+                        }
+                        PressAction.SHARE_LINK -> runCatching {
+                            context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, link), "Share link"))
+                        }
+                        PressAction.DOWNLOAD_LINK -> wv?.let { web.downloadUrl(it, from, link, suggestedName = null) }
+                        PressAction.DOWNLOAD_IMAGE -> wv?.let { web.downloadUrl(it, from, image) }
+                        PressAction.SHARE_IMAGE -> wv?.let { web.shareImage(it, from, image) }
+                    }
+                })
+            }
+        }
+
+        // The detector's list: videos, music and files on this page.
+        if (showDetected && tab != null && tab.detected.isNotEmpty()) {
+            val wv = tabs.viewOf(tab)
+            DetectedSheet(
+                files = tab.detected.toList(),
+                requestFor = { url -> if (wv != null) web.downloadRequest(wv, tab, url) else com.agani.syncup.downloads.DownloadRequest(url) },
+                onSave = { f ->
+                    wv?.let { web.downloadUrl(it, tab, f.url, f.name, ask = false) }
+                    Toast.makeText(context, "Downloading ${f.name}", Toast.LENGTH_SHORT).show()
+                },
+                onPlay = { f ->
+                    // A video found on the page plays in SyncUp's video player (same cookies and referer as the page).
+                    val r = if (wv != null) web.downloadRequest(wv, tab, f.url) else com.agani.syncup.downloads.DownloadRequest(f.url)
+                    showDetected = false
+                    context.startActivity(
+                        com.agani.syncup.video.VideoPlayerActivity.intent(context, r.url, f.name, "Video link", r.userAgent, r.referer, r.cookies),
+                    )
+                },
+                onSaveAll = {
+                    showDetected = false
+                    tab.detected.toList().forEach { f -> wv?.let { web.downloadUrl(it, tab, f.url, f.name, ask = false) } }
+                    Toast.makeText(context, "Downloading ${tab.detected.size} files", Toast.LENGTH_SHORT).show()
+                },
+                onDismiss = { showDetected = false },
+            )
+        } else if (showDetected) {
+            showDetected = false
         }
 
         if (showSections) {
@@ -490,8 +608,15 @@ fun BrowserScreen(
                                 )
                             }
                             MenuAction.FIND -> finding = true
+                            MenuAction.DESKTOP -> tabs.setDesktop(tab, !tab.desktop)
+                            MenuAction.ADS -> {
+                                AdBlocker.setAllowed(tab.pageHost, !AdBlocker.isAllowed(tab.pageHost))
+                                tabs.reload(tab)
+                            }
+                            MenuAction.OPEN_IN_CHROME -> openInBrowserApp(context, tab.url)
                             MenuAction.CHAT -> actions.onOpenChat()
                             MenuAction.MUSIC -> actions.onOpenMusic()
+                            MenuAction.TOOLS -> actions.onOpenTools()
                             MenuAction.WORK -> switchSection(Section.WORK)
                             MenuAction.WORK_INFO -> showWorkInfo = true
                             MenuAction.BOOKMARKS -> actions.onOpenLibrary(LibraryPage.BOOKMARKS)
@@ -584,4 +709,15 @@ fun BrowserScreen(
             )
         }
     }
+}
+
+/** Chrome's package: "Open in Chrome" hands it the page (e.g. Google sign-in, which apps can't host). */
+internal const val CHROME_PACKAGE = "com.android.chrome"
+
+/** Hand [url] to Chrome, or to another browser app when the phone has no Chrome. */
+private fun openInBrowserApp(context: Context, url: String) {
+    val view = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
+    val opened = runCatching { context.startActivity(Intent(view).setPackage(CHROME_PACKAGE)) }.isSuccess ||
+        runCatching { context.startActivity(Intent.createChooser(view, "Open with")) }.isSuccess
+    if (!opened) Toast.makeText(context, "No browser app found", Toast.LENGTH_SHORT).show()
 }

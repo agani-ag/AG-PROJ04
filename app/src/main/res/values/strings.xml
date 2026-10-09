@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">SyncUp</string>
+    <string name="share_to_download">Download with SyncUp</string>
 </resources>

@@ -2,6 +2,7 @@ package com.agani.syncup.browser
 
 import android.net.Uri
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -19,6 +20,9 @@ import androidx.compose.ui.graphics.ImageBitmap
  */
 enum class Section { NORMAL, WORK, INCOGNITO }
 
+/** What a long-press landed on: a link (with its text), an image, or an image that is also a link. */
+data class PressTarget(val link: String?, val linkText: String?, val image: String?)
+
 /** One browser tab. Compose-observable so the chrome (address bar, progress, back/forward) updates live. */
 class BrowserTab(
     val id: Long,
@@ -30,8 +34,6 @@ class BrowserTab(
     val workLinkId: String? = null,
     /** Work tabs: registrable domain(s) of the set URL — pages on them are masked. */
     workRoots: List<String> = emptyList(),
-    /** Work tabs: per-link partner token exposed as window.SyncUp.token (empty = none). */
-    val notifyToken: String = "",
 ) {
     /**
      * Work tabs: every site the set link resolved to on its first load (its own domain plus any
@@ -44,6 +46,30 @@ class BrowserTab(
 
     /** The tab whose page opened this one (a new window); Back returns there when history runs out. */
     var openerId: Long? = null
+
+    /** A pop-up window that hasn't started its first page yet. */
+    var freshPopup = false
+
+    /** "Desktop site": pages get a desktop browser's user agent. */
+    var desktop by mutableStateOf(false)
+
+    /** The page's host, for the WebView's own threads (ad blocking, the detector). */
+    @Volatile var pageHost: String = ""
+
+    /** The address bar slid away while the page scrolled down. */
+    var barHidden by mutableStateOf(false)
+
+    /** Pull to refresh: how far the page is pulled down (px), and whether a pull is reloading it. */
+    var pull by mutableFloatStateOf(0f)
+    var pullRefreshing by mutableStateOf(false)
+
+    /** Videos, music and files on this page that can be downloaded (the detector's ⬇ button). */
+    val detected = mutableStateListOf<DetectedFile>()
+
+    /** Ads and trackers blocked on this page. */
+    var adsBlocked by mutableIntStateOf(0)
+    internal val adsCounter = java.util.concurrent.atomic.AtomicInteger(0)
+    internal val adsPosted = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /**
      * SyncUp tabs: the link this page belongs to — the id of the link's first page. Pages its site
@@ -77,6 +103,10 @@ class BrowserTab(
     var thumbnail by mutableStateOf<ImageBitmap?>(null)
 
     val isHome: Boolean get() = url.isBlank()
+
+    /** Shown with this tab's downloads: the site, or the SyncUp link's name (never its address). */
+    val downloadSource: String
+        get() = if (isWork) workName ?: "SyncUp" else UrlInput.display(url).substringBefore('/')
     val isWork: Boolean get() = section == Section.WORK
 
     /** True while a work tab is on the set link's own site — its address must not be shown. */

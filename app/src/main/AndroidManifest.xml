@@ -6,6 +6,8 @@
          screen off / app backgrounded, and shows lock-screen controls). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Download Manager: downloads keep going with the app closed (user-started downloads only). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Music: list and play the songs on the phone. Asked for only when Music is opened; the
          songs never leave the device. Android 13+ has a music-only permission; older versions
          only have the storage one. -->
@@ -46,6 +48,8 @@
             <action android:name="android.intent.action.GET_CONTENT" />
             <data android:mimeType="*/*" />
         </intent>
+        <!-- Browser menu: "Open in Chrome" -->
+        <package android:name="com.android.chrome" />
     </queries>
 
     <application
@@ -119,6 +123,39 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!-- Tools → Video player: full screen, rotates, plays on in a small window (picture-in-picture) -->
+        <activity
+            android:name=".video.VideoPlayerActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.agani.syncup.video"
+            android:autoRemoveFromRecents="true"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden"
+            android:theme="@style/Theme.Player" />
+
+        <!-- Download Manager: keeps user-started downloads running in the background -->
+        <service
+            android:name=".downloads.DownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- "Share → Download with SyncUp": takes a shared link to the Download Manager -->
+        <activity
+            android:name=".downloads.ShareToDownloadActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:label="@string/share_to_download"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
 
         <!-- Reminders: local alarm fire + reschedule after reboot -->
         <receiver

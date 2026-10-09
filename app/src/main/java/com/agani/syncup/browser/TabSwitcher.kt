@@ -41,6 +41,11 @@ import com.agani.syncup.browser.ui.IconTile
 import com.agani.syncup.browser.ui.SheetDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -102,6 +107,8 @@ private fun sketchColor(tab: BrowserTab): Color = when {
 /**
  * Full-screen tab switcher: section segments, a 2-column grid of cards with page previews (the
  * current tab gets a tinted header and a ring), a dashed "new" card, and Close all · + · Done.
+ * Swipe left / right to move between Normal · SyncUp · Incognito; each page keeps its own colours
+ * while it slides, and the bars follow the section it's moving to.
  */
 @Composable
 internal fun TabSwitcher(
@@ -123,6 +130,23 @@ internal fun TabSwitcher(
         if (!signedIn || hasWork) add(Section.WORK)
         add(Section.INCOGNITO)
     }
+    val pager = rememberPagerState(initialPage = sections.indexOf(shown).coerceAtLeast(0)) { sections.size }
+    // A swipe picks the section it's heading to (the bars and segments follow at once) …
+    val showNow by rememberUpdatedState(shown)
+    val onShowNow by rememberUpdatedState(onShow)
+    val sectionsNow by rememberUpdatedState(sections)
+    LaunchedEffect(pager) {
+        snapshotFlow { pager.targetPage }.collect { i ->
+            sectionsNow.getOrNull(i)?.let { if (it != showNow) onShowNow(it) }
+        }
+    }
+    // … and tapping a segment slides the pages there (after any swipe still settling, never fighting it).
+    LaunchedEffect(shown, sections.size) {
+        snapshotFlow { pager.isScrollInProgress }.first { !it }
+        val i = sections.indexOf(shown)
+        if (i >= 0 && i != pager.targetPage) pager.animateScrollToPage(i)
+    }
+    val lockedWork = shown == Section.WORK && !signedIn
     SectionTheme(shown) {
         val cs = MaterialTheme.colorScheme
         Surface(color = cs.surface, modifier = Modifier.fillMaxSize()) {
@@ -134,107 +158,39 @@ internal fun TabSwitcher(
                     SectionSwitch(
                         sections = sections,
                         shown = shown,
-                        count = { s -> tabs.cardsIn(s).count { !it.isHome || s == shown } },
+                        count = { s -> tabCount(tabs, s) },
                         locked = { s -> s == Section.WORK && !signedIn },
-                        onPick = { s -> if (s == Section.WORK && !signedIn) onSignIn() else onShow(s) },
+                        onPick = onShow,
                         modifier = Modifier.weight(1f),
                     )
                     BarIcon(Icons.Rounded.Close, "Close tab switcher", tint = cs.onSurface, onClick = onClose)
                 }
 
-                // SyncUp: one card per link (its latest page); elsewhere one per tab.
-                val list = tabs.cardsIn(shown)
-                // One SyncUp link: one tab is all there can be, so nothing new to open on that side.
-                val direct = tabs.directLink.takeIf { shown == Section.WORK }
-                val onlyHome = list.all { it.isHome } && list.size <= 1
-                val others = if (shown == Section.NORMAL) otherDevices.filter { !it.tabs.isNullOrEmpty() } else emptyList()
-                Box(Modifier.weight(1f)) {
-                    if (onlyHome && others.isEmpty()) {
-                        // New Normal / Incognito tabs come from the + below; only SyncUp has its own
-                        // way in (its link list).
-                        val work = shown == Section.WORK
-                        EmptyState(
-                            if (shown == Section.NORMAL) Icons.Rounded.Tab else sectionIcon(shown),
-                            if (shown == Section.INCOGNITO) "No incognito tabs" else "No open tabs",
-                            when {
-                                direct != null -> "Your SyncUp link isn't open"
-                                shown == Section.WORK -> "Open a link from your SyncUp home"
-                                shown == Section.INCOGNITO -> "Incognito tabs aren't saved. Tap + to open one."
-                                else -> "Tap + to open a new tab"
-                            },
-                            action = if (direct != null) "Open ${direct.name}" else if (work) "SyncUp links" else null,
-                            actionIcon = if (work) SyncUpMark else null,
-                            onAction = if (work) {
-                                {
-                                    if (direct != null) tabs.switchTo(Section.WORK)
-                                    else list.firstOrNull()?.let { tabs.select(it) } ?: tabs.newTab(shown)
-                                    onClose()
-                                }
-                            } else null,
-                        )
-                    } else {
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(2),
-                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.fillMaxSize(),
-                        ) {
-                            items(list, key = { if (shown == Section.WORK) "g${it.groupId}" else "t${it.id}" }) { t ->
-                                val onScreen = tabs.activeTab(shown)
-                                val link = shown == Section.WORK && !t.isHome
-                                val pages = if (link) tabs.groupPages(t.groupId).size else 1
-                                val current = shown == tabs.section && onScreen != null &&
-                                    (onScreen.id == t.id || (link && onScreen.groupId == t.groupId))
-                                TabCard(
-                                    t, current, pages,
-                                    onSelect = {
-                                        tabs.select(t)
-                                        onClose()
-                                    },
-                                    onCloseTab = {
-                                        if (pages > 1) {
-                                            // A link and all its pages, with Undo.
-                                            val closed = tabs.closeGroup(t.groupId)
-                                            onUndo("${t.workName ?: "SyncUp link"} closed (${closed.size} pages)") { tabs.reopen(closed) }
-                                        } else {
-                                            tabs.close(t)
-                                        }
-                                    },
-                                    onPages = { pagesOf = t.groupId },
-                                )
-                            }
-                            if (direct == null) item(key = "new") {
-                                NewTabCard(if (shown == Section.WORK) "Open a SyncUp link" else "New tab") {
-                                    val home = tabs.tabsIn(shown).firstOrNull { it.isHome }
-                                    if (home != null) tabs.select(home) else tabs.newTab(shown)
-                                    onClose()
-                                }
-                            }
-                            if (others.isNotEmpty()) {
-                                item(key = "others", span = { GridItemSpan(2) }) {
-                                    OtherDevicesCard(others, onOpenOther)
-                                }
-                            }
-                            if (shown == Section.WORK || shown == Section.INCOGNITO) {
-                                item(key = "note", span = { GridItemSpan(2) }) {
-                                    Text(
-                                        if (shown == Section.WORK) "SyncUp tabs stay on this device and show link names, never addresses."
-                                        else "Incognito tabs aren't kept and close with the app.",
-                                        fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center,
-                                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                                    )
-                                }
-                            }
-                        }
-                    }
+                HorizontalPager(
+                    state = pager,
+                    key = { sections[it] },
+                    modifier = Modifier.weight(1f),
+                ) { page ->
+                    SectionPage(
+                        section = sections[page],
+                        tabs = tabs,
+                        signedIn = signedIn,
+                        otherDevices = otherDevices,
+                        onOpenOther = onOpenOther,
+                        onSignIn = onSignIn,
+                        onUndo = onUndo,
+                        onClose = onClose,
+                        onPages = { pagesOf = it },
+                    )
                 }
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth().height(72.dp).background(cs.surfaceContainer).padding(horizontal = 12.dp),
                 ) {
-                    val closable = list.any { !it.isHome }
+                    val closable = !lockedWork && tabs.cardsIn(shown).any { !it.isHome }
+                    // One SyncUp link: one tab is all there can be, so nothing new to open on that side.
+                    val direct = tabs.directLink.takeIf { shown == Section.WORK }
                     // Nothing to close → no button (the + stays centred either way).
                     Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                         if (closable) {
@@ -245,7 +201,7 @@ internal fun TabSwitcher(
                             }) { Text("Close all", color = if (shown == Section.INCOGNITO) cs.error else cs.primary) }
                         }
                     }
-                    if (direct == null) {
+                    if (direct == null && !lockedWork) {
                         Box(
                             Modifier.size(56.dp).clip(RoundedCornerShape(20.dp)).background(cs.primary).clickable {
                                 tabs.newTab(shown)
@@ -256,7 +212,7 @@ internal fun TabSwitcher(
                     }
                     Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
                         TextButton(onClick = {
-                            if (shown != tabs.section) tabs.switchTo(shown)
+                            if (shown != tabs.section && !lockedWork) tabs.switchTo(shown)
                             onClose()
                         }) { Text("Done", fontWeight = FontWeight.Medium) }
                     }
@@ -279,6 +235,128 @@ internal fun TabSwitcher(
                 },
                 onDismiss = { pagesOf = null },
             )
+        }
+    }
+}
+
+/**
+ * The tabs a section's segment counts — exactly the cards its page shows: none when all it has is its
+ * empty home page (the page says "No open tabs"), otherwise every card.
+ */
+private fun tabCount(tabs: TabManager, s: Section): Int {
+    val cards = tabs.cardsIn(s)
+    return if (cards.all { it.isHome } && cards.size <= 1) 0 else cards.size
+}
+
+/** One section's page of the switcher, in that section's own colours. */
+@Composable
+private fun SectionPage(
+    section: Section,
+    tabs: TabManager,
+    signedIn: Boolean,
+    otherDevices: List<OtherDevice>,
+    onOpenOther: (url: String) -> Unit,
+    onSignIn: () -> Unit,
+    onUndo: (message: String, undo: () -> Unit) -> Unit,
+    onClose: () -> Unit,
+    onPages: (groupId: Long) -> Unit,
+) {
+    SectionTheme(section) {
+        val cs = MaterialTheme.colorScheme
+        Box(Modifier.fillMaxSize().background(cs.surface)) {
+            if (section == Section.WORK && !signedIn) {
+                EmptyState(
+                    SyncUpMark, "SyncUp links",
+                    "Sign in to open the links your admin and partners give you.",
+                    action = "Sign in", onAction = onSignIn,
+                )
+                return@Box
+            }
+            // SyncUp: one card per link (its latest page); elsewhere one per tab.
+            val list = tabs.cardsIn(section)
+            // One SyncUp link: one tab is all there can be, so nothing new to open on that side.
+            val direct = tabs.directLink.takeIf { section == Section.WORK }
+            val onlyHome = list.all { it.isHome } && list.size <= 1
+            val others = if (section == Section.NORMAL) otherDevices.filter { !it.tabs.isNullOrEmpty() } else emptyList()
+            if (onlyHome && others.isEmpty()) {
+                // New Normal / Incognito tabs come from the + below; only SyncUp has its own
+                // way in (its link list).
+                val work = section == Section.WORK
+                EmptyState(
+                    if (section == Section.NORMAL) Icons.Rounded.Tab else sectionIcon(section),
+                    if (section == Section.INCOGNITO) "No incognito tabs" else "No open tabs",
+                    when {
+                        direct != null -> "Your SyncUp link isn't open"
+                        work -> "Open a link from your SyncUp home"
+                        section == Section.INCOGNITO -> "Incognito tabs aren't saved. Tap + to open one."
+                        else -> "Tap + to open a new tab"
+                    },
+                    action = if (direct != null) "Open ${direct.name}" else if (work) "SyncUp links" else null,
+                    actionIcon = if (work) SyncUpMark else null,
+                    onAction = if (work) {
+                        {
+                            if (direct != null) tabs.switchTo(Section.WORK)
+                            else list.firstOrNull()?.let { tabs.select(it) } ?: tabs.newTab(section)
+                            onClose()
+                        }
+                    } else null,
+                )
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    items(list, key = { if (section == Section.WORK) "g${it.groupId}" else "t${it.id}" }) { t ->
+                        val onScreen = tabs.activeTab(section)
+                        val link = section == Section.WORK && !t.isHome
+                        val pages = if (link) tabs.groupPages(t.groupId).size else 1
+                        val current = section == tabs.section && onScreen != null &&
+                            (onScreen.id == t.id || (link && onScreen.groupId == t.groupId))
+                        TabCard(
+                            t, current, pages,
+                            onSelect = {
+                                tabs.select(t)
+                                onClose()
+                            },
+                            onCloseTab = {
+                                if (pages > 1) {
+                                    // A link and all its pages, with Undo.
+                                    val closed = tabs.closeGroup(t.groupId)
+                                    onUndo("${t.workName ?: "SyncUp link"} closed (${closed.size} pages)") { tabs.reopen(closed) }
+                                } else {
+                                    tabs.close(t)
+                                }
+                            },
+                            onPages = { onPages(t.groupId) },
+                        )
+                    }
+                    if (direct == null) item(key = "new") {
+                        NewTabCard(if (section == Section.WORK) "Open a SyncUp link" else "New tab") {
+                            val home = tabs.tabsIn(section).firstOrNull { it.isHome }
+                            if (home != null) tabs.select(home) else tabs.newTab(section)
+                            onClose()
+                        }
+                    }
+                    if (others.isNotEmpty()) {
+                        item(key = "others", span = { GridItemSpan(2) }) {
+                            OtherDevicesCard(others, onOpenOther)
+                        }
+                    }
+                    if (section == Section.WORK || section == Section.INCOGNITO) {
+                        item(key = "note", span = { GridItemSpan(2) }) {
+                            Text(
+                                if (section == Section.WORK) "SyncUp tabs stay on this device and show link names, never addresses."
+                                else "Incognito tabs aren't kept and close with the app.",
+                                fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

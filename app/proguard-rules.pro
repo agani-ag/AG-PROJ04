@@ -31,3 +31,16 @@
 # Compile-only annotations not present at runtime — safe to ignore.
 -dontwarn com.google.errorprone.annotations.**
 -dontwarn javax.annotation.**
+
+# ---- smbj (SMB client) + BouncyCastle (SMB2/3 crypto) + SLF4J ----
+# BouncyCastle looks up algorithm providers via reflection; keep it whole to avoid
+# NoSuchAlgorithmException/ClassNotFoundException at runtime under R8.
+-keep class org.bouncycastle.** { *; }
+-keepclassmembers class org.bouncycastle.** { *; }
+-dontwarn org.bouncycastle.**
+-dontwarn org.slf4j.**
+-keep class com.hierynomus.** { *; }
+-dontwarn com.hierynomus.**
+# smbj's event bus (mbassador) optionally supports EL-filtered listeners (javax.el.*, a desktop/
+# Java EE API not present on Android and never exercised by smbj's actual usage) — dead code, safe to ignore.
+-dontwarn javax.el.**

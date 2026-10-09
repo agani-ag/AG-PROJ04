@@ -23,8 +23,8 @@ android {
         applicationId = "com.agani.syncup"
         minSdk = 24
         targetSdk = 36
-        versionCode = 6
-        versionName = "6"
+        versionCode = 7
+        versionName = "7"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -114,6 +114,15 @@ dependencies {
     // Media3 (ExoPlayer + MediaSession) — the native Live Radio player (background + lock-screen).
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1")
+    // Video player (Tools → Video player): the player view and HLS (m3u8) streams.
+    implementation("androidx.media3:media3-ui:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
+
+    // Tools → Files: browse a folder the user opened via Android's own folder picker (SAF) — no
+    // broad storage permission needed.
+    implementation("androidx.documentfile:documentfile:1.0.1")
+    // Tools → Network folders: SMB2/SMB3 client (Apache 2.0), so Windows/Samba/NAS shares work.
+    implementation("com.hierynomus:smbj:0.15.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

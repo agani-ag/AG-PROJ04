@@ -3,4 +3,6 @@
     <cache-path name="uploads" path="." />
     <external-cache-path name="ext_uploads" path="." />
     <files-path name="app_files" path="." />
+    <!-- Download Manager files on Android 9 and older (shared from the Downloads list) -->
+    <external-path name="syncup_downloads" path="Download/SyncUp/" />
 </paths>

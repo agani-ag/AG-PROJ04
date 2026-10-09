@@ -1,7 +1,6 @@
 package com.agani.syncup.browser
 
 import com.agani.syncup.browser.ui.SyncUpMark
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -22,6 +21,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,7 +32,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Cookie
@@ -49,6 +50,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,17 +59,12 @@ import androidx.compose.ui.Alignment
 import com.agani.syncup.music.LocalPlayer
 import com.agani.syncup.music.MiniPlayer
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -83,17 +80,6 @@ import com.agani.syncup.browser.ui.SectionTheme
 import com.agani.syncup.browser.ui.SyncPill
 import com.agani.syncup.ui.theme.dialogSurface
 import java.util.Calendar
-
-/** Built-in new-tab shortcuts; users can hide these and add their own after them. */
-private enum class Builtin(val label: String, val url: String) {
-    GOOGLE("Google", "https://www.google.com"),
-    YOUTUBE("YouTube", "https://m.youtube.com"),
-    WHATSAPP("WhatsApp", "https://web.whatsapp.com"),
-    LINKEDIN("LinkedIn", "https://www.linkedin.com"),
-    X("X", "https://x.com"),
-    INSTAGRAM("Instagram", "https://www.instagram.com"),
-    WIKIPEDIA("Wikipedia", "https://en.m.wikipedia.org"),
-}
 
 private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
     in 0..11 -> "Good morning,"
@@ -228,28 +214,48 @@ internal fun NormalHome(
                 }
             }
 
+            // The user's own shortcuts first (Add / Edit, synced to their account) …
             Spacer(Modifier.height(20.dp))
             if (editing) {
-                SectionHeader("Edit shortcuts", action = "Done", onAction = { editing = false })
-                Text("Tap × to remove a shortcut", fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(bottom = 4.dp))
+                SectionHeader("Edit my shortcuts", action = "Done", onAction = { editing = false })
             } else {
-                SectionHeader("Shortcuts", action = "Edit", onAction = { editing = true })
+                SectionHeader("My shortcuts", action = if (BrowserSettings.shortcuts.isNotEmpty()) "Edit" else null, onAction = { editing = true })
             }
             Spacer(Modifier.height(8.dp))
-            ShortcutGrid(
+            MyShortcuts(
                 editing = editing,
                 onOpen = onOpenUrl,
                 onAdd = { showAdd = true },
-                onRemoveBuiltin = { b ->
-                    BrowserSettings.hideBuiltin(b.url)
-                    onUndo("${b.label} removed") { BrowserSettings.unhideBuiltin(b.url) }
-                },
-                onRemoveUser = { s ->
+                onRemove = { s ->
                     val index = BrowserSettings.shortcuts.indexOf(s)
                     BrowserSettings.removeShortcut(s)
                     onUndo("${s.name} removed") { BrowserSettings.restoreShortcut(s, index) }
                 },
                 onLongPress = { editing = true },
+            )
+            if (editing) {
+                Text(
+                    "Remove your own shortcuts with ×. The categories below come from SyncUp; long-press one to add it to My shortcuts.",
+                    fontSize = 12.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(cs.surfaceContainerHigh).padding(12.dp),
+                )
+            }
+            // … then SyncUp's catalogue, by category.
+            LaunchedEffect(Unit) { ShortcutCatalog.refresh() }
+            Spacer(Modifier.height(18.dp))
+            CatalogShortcuts(
+                dimmed = editing,
+                onOpen = onOpenUrl,
+                onKeep = { item ->
+                    if (BrowserSettings.shortcuts.none { it.url == item.url }) {
+                        BrowserSettings.addShortcut(item.title, item.url)
+                        onUndo("${item.title} added to My shortcuts") {
+                            BrowserSettings.shortcuts.firstOrNull { it.url == item.url }?.let { BrowserSettings.removeShortcut(it) }
+                        }
+                    } else {
+                        onUndo("${item.title} is already in My shortcuts") {}
+                    }
+                },
             )
         }
         if (playerShown) {
@@ -261,32 +267,124 @@ internal fun NormalHome(
 }
 
 @Composable
-private fun ShortcutGrid(
+private fun MyShortcuts(
     editing: Boolean,
     onOpen: (String) -> Unit,
     onAdd: () -> Unit,
-    onRemoveBuiltin: (Builtin) -> Unit,
-    onRemoveUser: (UserShortcut) -> Unit,
+    onRemove: (UserShortcut) -> Unit,
     onLongPress: () -> Unit,
 ) {
-    val builtins = Builtin.entries.filter { it.url !in BrowserSettings.hiddenBuiltins }
     val cells = buildList<@Composable RowScope.() -> Unit> {
-        builtins.forEach { b ->
+        BrowserSettings.shortcuts.toList().forEach { sc ->
             add {
-                ShortcutTile(b.label, editing, onClick = { if (!editing) onOpen(b.url) }, onRemove = { onRemoveBuiltin(b) }, onLongPress = onLongPress) {
-                    BrandMark(b)
-                }
-            }
-        }
-        BrowserSettings.shortcuts.toList().forEach { s ->
-            add {
-                ShortcutTile(s.name, editing, onClick = { if (!editing) onOpen(s.url) }, onRemove = { onRemoveUser(s) }, onLongPress = onLongPress) {
-                    Text(s.name.take(1).uppercase(), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                ShortcutTile(sc.name, editing, onClick = { if (!editing) onOpen(sc.url) }, onRemove = { onRemove(sc) }, onLongPress = onLongPress) {
+                    SiteMark(sc.url, sc.name)
                 }
             }
         }
         if (!editing) add { AddTile(onAdd) }
     }
+    TileRows(cells)
+}
+
+/** How many of each category "All" shows before "Show all". */
+private const val PER_CATEGORY = 8
+
+/**
+ * SyncUp's shortcut catalogue: category chips (All + each category), then on All up to
+ * [PER_CATEGORY] of each category with "Show all", or a chosen category's whole grid.
+ */
+@Composable
+private fun CatalogShortcuts(dimmed: Boolean, onOpen: (String) -> Unit, onKeep: (CatalogShortcut) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val cats = ShortcutCatalog.categories
+    val chosen = ShortcutCatalog.chosen?.let { id -> cats.firstOrNull { it.id == id } }
+    // Faded while My shortcuts is being edited — per part, since a fade over the whole column
+    // would cut the chips off at the page's margins.
+    val fade = if (dimmed) .5f else 1f
+    Column {
+        if (cats.size > 1) {
+            // The chips run to the screen's edges (past the page's side margins) and keep the
+            // chosen one in view.
+            val chips = rememberLazyListState()
+            LaunchedEffect(chosen?.id) {
+                val index = chosen?.let { ch -> cats.indexOfFirst { it.id == ch.id } + 1 } ?: 0
+                chips.animateScrollToItem((index - 1).coerceAtLeast(0))
+            }
+            LazyRow(
+                state = chips,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(horizontal = 20.dp),
+                modifier = Modifier
+                    .layout { measurable, constraints ->
+                        val bleed = 20.dp.roundToPx()
+                        val placeable = measurable.measure(constraints.copy(maxWidth = constraints.maxWidth + bleed * 2))
+                        layout(constraints.maxWidth, placeable.height) { placeable.place(-bleed, 0) }
+                    }
+                    .alpha(fade)
+                    .padding(bottom = 4.dp),
+            ) {
+                item { CategoryChip("All", chosen == null) { ShortcutCatalog.chosen = null } }
+                items(cats, key = { it.id }) { cat -> CategoryChip(cat.name, chosen?.id == cat.id) { ShortcutCatalog.chosen = cat.id } }
+            }
+        }
+        val shown = if (chosen != null) listOf(chosen) else cats
+        Column(Modifier.alpha(fade)) { shown.forEach { cat ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp)) {
+                Text(cat.name, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (chosen != null) "${cat.items.size} link${if (cat.items.size == 1) "" else "s"}" else "${cat.items.size}",
+                    fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f),
+                )
+                if (chosen == null && cat.items.size > PER_CATEGORY) {
+                    Text(
+                        "Show all ›", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = cs.primary,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { ShortcutCatalog.chosen = cat.id }.padding(horizontal = 6.dp, vertical = 4.dp),
+                    )
+                }
+            }
+            val items = if (chosen != null) cat.items else cat.items.take(PER_CATEGORY)
+            TileRows(items.map { item -> { CatalogTile(item, onOpen, onKeep) } })
+        } }
+    }
+}
+
+@Composable
+private fun CategoryChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Box(
+        Modifier.height(34.dp).clip(RoundedCornerShape(17.dp)).background(if (selected) cs.primaryContainer else cs.surfaceContainerHigh)
+            .clickable(onClick = onClick).padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (selected) cs.onPrimaryContainer else cs.onSurface, maxLines = 1)
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun RowScope.CatalogTile(item: CatalogShortcut, onOpen: (String) -> Unit, onKeep: (CatalogShortcut) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .weight(1f)
+            .clip(RoundedCornerShape(12.dp))
+            .combinedClickable(onClick = { onOpen(item.url) }, onLongClick = { onKeep(item) })
+            .padding(vertical = 4.dp),
+    ) {
+        Box(Modifier.size(56.dp).clip(CircleShape).background(cs.surfaceContainerHigh), contentAlignment = Alignment.Center) {
+            SiteMark(item.url, item.title)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(item.title, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = .3.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** Tiles four to a row. */
+@Composable
+private fun TileRows(cells: List<@Composable RowScope.() -> Unit>) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         cells.chunked(4).forEach { row ->
             Row(Modifier.fillMaxWidth()) {
@@ -350,39 +448,6 @@ private fun RowScope.AddTile(onAdd: () -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
         Text("Add", fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = .3.sp, color = cs.onSurfaceVariant)
-    }
-}
-
-/** Simplified brand marks for the built-in shortcuts (28 dp, drawn on the tile's tonal circle). */
-@Composable
-private fun BrandMark(b: Builtin) {
-    when (b) {
-        Builtin.GOOGLE -> Image(painterResource(R.drawable.ic_brand_google), null, modifier = Modifier.size(28.dp))
-        Builtin.YOUTUBE -> Image(painterResource(R.drawable.ic_brand_youtube), null, modifier = Modifier.size(28.dp))
-        Builtin.WHATSAPP -> Box(Modifier.size(28.dp).clip(CircleShape).background(Color(0xFF25D366)), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.Call, null, tint = Color.White, modifier = Modifier.size(17.dp))
-        }
-        Builtin.LINKEDIN -> LetterSquare("in", Color(0xFF0A66C2), 14)
-        Builtin.X -> LetterSquare("X", Color(0xFF111111), 15)
-        Builtin.INSTAGRAM -> Canvas(Modifier.size(28.dp)) {
-            val s = size.minDimension
-            drawRoundRect(
-                brush = Brush.linearGradient(listOf(Color(0xFFF58529), Color(0xFFDD2A7B), Color(0xFF8134AF)), start = Offset(0f, s), end = Offset(s, 0f)),
-                cornerRadius = CornerRadius(s * .28f),
-            )
-            val stroke = Stroke(width = s * .075f)
-            drawRoundRect(Color.White, topLeft = Offset(s * .2f, s * .2f), size = Size(s * .6f, s * .6f), cornerRadius = CornerRadius(s * .18f), style = stroke)
-            drawCircle(Color.White, radius = s * .14f, center = Offset(s / 2, s / 2), style = stroke)
-            drawCircle(Color.White, radius = s * .035f, center = Offset(s * .66f, s * .34f))
-        }
-        Builtin.WIKIPEDIA -> Text("W", fontSize = 26.sp, lineHeight = 26.sp, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-    }
-}
-
-@Composable
-private fun LetterSquare(text: String, color: Color, fontSize: Int) {
-    Box(Modifier.size(28.dp).clip(RoundedCornerShape(8.dp)).background(color), contentAlignment = Alignment.Center) {
-        Text(text, fontSize = fontSize.sp, lineHeight = fontSize.sp, fontWeight = FontWeight.Bold, color = Color.White)
     }
 }
 

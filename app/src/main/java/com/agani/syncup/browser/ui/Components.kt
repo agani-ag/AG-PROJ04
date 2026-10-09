@@ -69,7 +69,9 @@ import androidx.core.view.WindowCompat
 import com.agani.syncup.browser.Section
 import com.agani.syncup.data.User
 import com.agani.syncup.ui.theme.IncognitoScheme
+import com.agani.syncup.ui.theme.incognitoAccentOn
 import com.agani.syncup.ui.theme.isLight
+import com.agani.syncup.ui.theme.normalAccentOn
 import com.agani.syncup.ui.theme.workScheme
 import kotlinx.coroutines.delay
 
@@ -88,6 +90,17 @@ fun SectionTheme(section: Section, content: @Composable () -> Unit) {
     CompositionLocalProvider(LocalAppScheme provides base) {
         MaterialTheme(colorScheme = sectionScheme(section), typography = MaterialTheme.typography, shapes = MaterialTheme.shapes, content = content)
     }
+}
+
+/**
+ * [on]'s colours with [section]'s accent (Normal blue, SyncUp teal, Incognito violet) in [on]'s
+ * lightness — for a section's row drawn on another section's sheet, e.g. the Normal row on the dark
+ * Incognito sheet keeps that sheet's text and surfaces, so it stays readable.
+ */
+fun accentOn(on: ColorScheme, section: Section): ColorScheme = when (section) {
+    Section.NORMAL -> normalAccentOn(on)
+    Section.WORK -> workScheme(on)
+    Section.INCOGNITO -> incognitoAccentOn(on)
 }
 
 /** A section's colours, for drawing outside its [SectionTheme] (e.g. the system bars). */

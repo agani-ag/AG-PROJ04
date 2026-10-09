@@ -3,4 +3,10 @@
         <!-- Android 12+ system splash background — adapts to light/dark (see values-night). -->
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
     </style>
+
+    <!-- The video player: black, full screen, no flash of the app's light background. -->
+    <style name="Theme.Player" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
 </resources>

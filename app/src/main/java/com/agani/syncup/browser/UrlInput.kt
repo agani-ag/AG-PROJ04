@@ -50,7 +50,10 @@ object UrlInput {
      * "app.gstsync.co.in" → "gstsync.co.in". Good enough to decide "same site as the work link".
      */
     fun registrableDomain(host: String): String {
-        val labels = host.lowercase().removeSuffix(".").split('.').filter { it.isNotEmpty() }
+        val h = host.lowercase().removeSuffix(".")
+        // An IP address is a site of its own ("192.168.1.20", not "1.20").
+        if (h.contains(':') || h.split('.').all { it.isNotEmpty() && it.all(Char::isDigit) }) return h
+        val labels = h.split('.').filter { it.isNotEmpty() }
         if (labels.size <= 2) return labels.joinToString(".")
         val secondLevel = labels[labels.size - 2]
         val countryTld = labels.last().length == 2

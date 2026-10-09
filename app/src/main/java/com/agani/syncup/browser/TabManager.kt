@@ -1,6 +1,8 @@
 package com.agani.syncup.browser
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.view.ViewGroup
 import android.webkit.WebView
 import androidx.compose.runtime.getValue
@@ -40,12 +42,13 @@ class TabManager(
     private var useClock = 0L
     private val prefs = context.getSharedPreferences("browser_tabs", Context.MODE_PRIVATE)
     private val io = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     /** The open Normal tabs changed (browser sync shows them on the user's other devices). */
     var onNormalTabsChanged: (() -> Unit)? = null
 
     /** A SyncUp link to open directly — the user's only one. */
-    data class DirectLink(val name: String, val url: String, val id: String, val notifyToken: String)
+    data class DirectLink(val name: String, val url: String, val id: String)
 
     /**
      * Set while the user has exactly one SyncUp link: SyncUp then IS that website. Going to SyncUp
@@ -81,7 +84,7 @@ class TabManager(
         // One SyncUp link: going to SyncUp opens that website (its open tab, or a new one).
         val direct = directLink
         if (s == Section.WORK && direct != null) {
-            openWorkLink(direct.name, direct.url, direct.id, direct.notifyToken)
+            openWorkLink(direct.name, direct.url, direct.id)
             return
         }
         section = s
@@ -94,13 +97,14 @@ class TabManager(
         workName: String? = null,
         workLinkId: String? = null,
         workRoots: List<String> = emptyList(),
-        notifyToken: String = "",
         select: Boolean = true,
         openerId: Long? = null,
         groupId: Long? = null,
+        desktop: Boolean = false,
     ): BrowserTab {
-        val tab = BrowserTab(nextId++, s, "", workName, workLinkId, workRoots, notifyToken)
+        val tab = BrowserTab(nextId++, s, "", workName, workLinkId, workRoots)
         tab.openerId = openerId
+        tab.desktop = desktop
         groupId?.let { tab.groupId = it }
         tabs.add(tab)
         if (select) {
@@ -117,13 +121,12 @@ class TabManager(
      * Open a SyncUp link as a Work tab: shown by [name], its site's address hidden. One tab per link —
      * a link that's already open goes back to its page that was last on screen.
      */
-    fun openWorkLink(name: String, url: String, linkId: String? = null, notifyToken: String = ""): BrowserTab {
+    fun openWorkLink(name: String, url: String, linkId: String? = null): BrowserTab {
         val tab = linkId?.let { linkFront(it) }?.also { select(it) } ?: newTab(
             Section.WORK, url,
             workName = name.ifBlank { "SyncUp link" },
             workLinkId = linkId,
             workRoots = listOfNotNull(UrlInput.rootDomainOf(url)),
-            notifyToken = notifyToken,
         )
         // A one-link user never sees the SyncUp links page: drop any leftover one.
         if (directLink != null) tabs.removeAll { it.section == Section.WORK && it.isHome }
@@ -169,6 +172,7 @@ class TabManager(
         }
         if (tab.section == Section.INCOGNITO && tabsIn(Section.INCOGNITO).isEmpty()) {
             web.wipeSection(Section.INCOGNITO) // last private tab closed → forget everything
+            SitePermissions.clearIncognito()
         }
         keepSectionUsable()
         persist()
@@ -180,7 +184,10 @@ class TabManager(
         tabsIn(s).forEach { destroyView(it.id) }
         tabs.removeAll { it.section == s }
         active.remove(s)
-        if (s == Section.INCOGNITO) web.wipeSection(Section.INCOGNITO)
+        if (s == Section.INCOGNITO) {
+            web.wipeSection(Section.INCOGNITO)
+            SitePermissions.clearIncognito()
+        }
         keepSectionUsable()
         persist()
         return closed
@@ -378,10 +385,28 @@ class TabManager(
         tab.loading = false
     }
 
-    // ------------------------------------------------------------------ WebPlatform.Listener
-    override fun onNewWindow(from: BrowserTab, url: String) {
-        // A SyncUp page's new window joins its link (one tab per link); a page the link already has
-        // is shown instead of a copy.
+    // ------------------------------------------------------------------ pop-ups
+    /** A pop-up that was blocked, for the "Pop-up blocked · Allow" notice (null = none). */
+    class BlockedPopup(val fromId: Long, val url: String)
+
+    var blockedPopup by mutableStateOf<BlockedPopup?>(null)
+        private set
+
+    /** "Allow" on the notice: this site may open pop-ups from now on, and the blocked one opens. */
+    fun allowBlockedPopup(blocked: BlockedPopup) {
+        blockedPopup = null
+        val from = tabs.firstOrNull { it.id == blocked.fromId } ?: return
+        UrlInput.rootDomainOf(from.url)?.let { BrowserSettings.allowPopups(it, from.section == Section.INCOGNITO) }
+        openFrom(from, blocked.url)
+    }
+
+    fun dismissBlockedPopup() {
+        blockedPopup = null
+    }
+
+    /** Open [url] as a page [from] opened (a new tab next to it; a SyncUp page's joins its link). */
+    private fun openFrom(from: BrowserTab, url: String) {
+        // A page the link already has is shown instead of a copy.
         if (from.isWork) {
             groupPages(from.groupId).firstOrNull { it.url == url && it.id != from.id }?.let {
                 select(it)
@@ -394,10 +419,94 @@ class TabManager(
             workName = from.workName,
             workLinkId = from.workLinkId,
             workRoots = from.maskedRoots.toList(),
-            notifyToken = from.notifyToken,
             openerId = from.id,
             groupId = if (from.isWork) from.groupId else null,
+            desktop = from.desktop,
         )
+    }
+
+    // ------------------------------------------------------------------ long-press menu
+    /** A long-press on a link or an image: the menu to show (null = none). */
+    class Pressed(val tabId: Long, val target: PressTarget)
+
+    var pressed by mutableStateOf<Pressed?>(null)
+
+    fun dismissPressed() {
+        pressed = null
+    }
+
+    /**
+     * "Open in new tab" from a page: a new tab next to it that stays in the background (a SyncUp
+     * page's joins its link). Returns the new tab so the caller can offer to switch to it.
+     */
+    fun openInBackground(from: BrowserTab, url: String): BrowserTab =
+        newTab(
+            from.section, url,
+            workName = from.workName,
+            workLinkId = from.workLinkId,
+            workRoots = from.maskedRoots.toList(),
+            select = false,
+            openerId = null,
+            groupId = if (from.isWork) from.groupId else null,
+            desktop = from.desktop,
+        )
+
+    /** The WebView behind a tab, if it has one (for the long-press menu's actions). */
+    fun viewOf(tab: BrowserTab): WebView? = views[tab.id]
+
+    // ------------------------------------------------------------------ page settings
+    /** Desktop site on/off for [tab]: its pages get a desktop or a phone user agent, and it reloads. */
+    fun setDesktop(tab: BrowserTab, on: Boolean) {
+        tab.desktop = on
+        views[tab.id]?.let { wv ->
+            wv.settings.userAgentString = web.userAgent(on)
+            wv.reload()
+        }
+    }
+
+    /** The user changed text size / website darkening: apply it to every open page. */
+    fun applySettings() {
+        views.values.forEach { web.applySettings(it) }
+    }
+
+    // ------------------------------------------------------------------ WebPlatform.Listener
+    override fun onCreateWindow(from: BrowserTab): WebView {
+        // The new window is a tab of the same section; a SyncUp page's joins its link (one tab per
+        // link) and stays Work (and masked).
+        val tab = BrowserTab(
+            nextId++, from.section, "about:blank",
+            workName = from.workName,
+            workLinkId = from.workLinkId,
+            workRoots = from.maskedRoots.toList(),
+        )
+        tab.openerId = from.id
+        tab.freshPopup = true
+        tab.desktop = from.desktop
+        if (from.isWork) tab.groupId = from.groupId
+        captureActive()
+        tabs.add(tab)
+        val wv = web.create(tab, this)
+        views[tab.id] = wv
+        active[tab.section] = tab.id
+        section = tab.section
+        touch(tab)
+        persist()
+        return wv
+    }
+
+    override fun onPopupStarting(popup: BrowserTab, url: String): Boolean {
+        // A SyncUp page opening a page its link already has: show that one instead of a copy.
+        if (!popup.isWork) return false
+        val existing = groupPages(popup.groupId).firstOrNull { it.url == url && it.id != popup.id } ?: return false
+        mainHandler.post {
+            close(popup)
+            select(existing)
+        }
+        return true
+    }
+
+    override fun onPopupBlocked(from: BrowserTab, url: String) {
+        blockedPopup = BlockedPopup(from.id, url)
     }
 
     override fun onCloseWindow(tab: BrowserTab) {
@@ -408,17 +517,20 @@ class TabManager(
         opener?.let { select(it) }
     }
 
+    override fun onLongPress(tab: BrowserTab, target: PressTarget) {
+        if (activeTab(tab.section)?.id == tab.id) pressed = Pressed(tab.id, target)
+    }
+
+    override fun onPullRefresh(tab: BrowserTab) {
+        tab.pullRefreshing = true
+        reload(tab)
+    }
+
     override fun onPageLoaded(tab: BrowserTab, url: String, title: String) {
         if (tab.section == Section.NORMAL) {
             io.execute { runCatching { db.addVisit(url, title) } }
             persist()
         }
-    }
-
-    override fun onDownload(tab: BrowserTab, fileName: String, systemId: Long) {
-        val work = tab.isWork
-        val source = if (work) tab.workName ?: "SyncUp" else UrlInput.display(tab.url).substringBefore('/')
-        io.execute { runCatching { db.addDownload(fileName, source, work, systemId) } }
     }
 
     // ------------------------------------------------------------------ lifecycle

@@ -1,11 +1,6 @@
 package com.agani.syncup.browser
 
-import com.agani.syncup.browser.ui.SyncUpMark
-import android.app.DownloadManager
-import android.content.Context
-import android.content.Intent
 import android.text.format.DateUtils
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,14 +22,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DeleteSweep
-import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Info
-import androidx.compose.material.icons.rounded.PictureAsPdf
 import androidx.compose.material.icons.rounded.StarBorder
-import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -42,26 +33,22 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.ui.BarIcon
 import com.agani.syncup.browser.ui.EmptyState
-import com.agani.syncup.browser.ui.IconTile
-import com.agani.syncup.browser.ui.SectionTheme
-import com.agani.syncup.browser.ui.StatusChip
 import com.agani.syncup.browser.ui.TonalRow
 import com.agani.syncup.ui.theme.dialogSurface
 import kotlinx.coroutines.Dispatchers
@@ -111,7 +98,6 @@ fun LibraryScreen(
     var confirmClear by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf<List<HistoryEntry>>(emptyList()) }
     var bookmarks by remember { mutableStateOf<List<Bookmark>>(emptyList()) }
-    var downloads by remember { mutableStateOf<List<DownloadEntry>>(emptyList()) }
 
     // Also reload when browser sync brings changes from the user's other devices.
     LaunchedEffect(page, version, com.agani.syncup.sync.BrowserSync.dataVersion) {
@@ -119,7 +105,7 @@ fun LibraryScreen(
             when (page) {
                 LibraryPage.HISTORY -> history = db.history()
                 LibraryPage.BOOKMARKS -> bookmarks = db.bookmarks()
-                LibraryPage.DOWNLOADS -> downloads = db.downloads()
+                LibraryPage.DOWNLOADS -> Unit // its own screen: the Download Manager
             }
         }
     }
@@ -137,7 +123,7 @@ fun LibraryScreen(
     val empty = when (page) {
         LibraryPage.HISTORY -> history.isEmpty()
         LibraryPage.BOOKMARKS -> bookmarks.isEmpty()
-        LibraryPage.DOWNLOADS -> downloads.isEmpty()
+        LibraryPage.DOWNLOADS -> true
     }
 
     Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
@@ -214,19 +200,7 @@ fun LibraryScreen(
                             onClick = { onOpen(b.url) },
                         )
                     }
-                    LibraryPage.DOWNLOADS -> items(downloads, key = { it.id }) { d ->
-                        TonalRow(
-                            title = d.fileName,
-                            subtitle = d.source,
-                            leading = { IconTile(fileIcon(d.fileName), container = cs.surfaceContainerHigh, content = cs.onSurfaceVariant) },
-                            trailing = {
-                                if (d.work) SectionTheme(Section.WORK) { StatusChip("SyncUp", SyncUpMark) }
-                                BarIcon(Icons.Rounded.Close, "Remove from list", tint = cs.onSurfaceVariant) { io { db.deleteDownload(d.id) } }
-                            },
-                            minHeight = 60.dp,
-                            onClick = { openDownload(context, d) },
-                        )
-                    }
+                    LibraryPage.DOWNLOADS -> Unit
                 }
             }
         }
@@ -246,27 +220,6 @@ fun LibraryScreen(
             },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
         )
-    }
-}
-
-private fun fileIcon(name: String): ImageVector = when (name.substringAfterLast('.', "").lowercase()) {
-    "pdf" -> Icons.Rounded.PictureAsPdf
-    "png", "jpg", "jpeg", "gif", "webp", "heic" -> Icons.Rounded.Image
-    "xls", "xlsx", "csv" -> Icons.Rounded.TableChart
-    else -> Icons.Rounded.Description
-}
-
-private fun openDownload(context: Context, d: DownloadEntry) {
-    val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-    val uri = runCatching { dm.getUriForDownloadedFile(d.systemId) }.getOrNull()
-    if (uri == null) {
-        Toast.makeText(context, "File not found — it may still be downloading or was deleted", Toast.LENGTH_SHORT).show()
-        return
-    }
-    val type = runCatching { dm.getMimeTypeForDownloadedFile(d.systemId) }.getOrNull() ?: "*/*"
-    val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, type).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    if (runCatching { context.startActivity(intent) }.isFailure) {
-        Toast.makeText(context, "No app found to open this file", Toast.LENGTH_SHORT).show()
     }
 }
 

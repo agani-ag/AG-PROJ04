@@ -18,6 +18,7 @@ data class DownloadEntry(
     val fileName: String,
     val source: String,
     val work: Boolean,
+    /** The system download manager's id (lists from before v7; the Download Manager imports them on first start). */
     val systemId: Long,
     val createdAt: Long,
 )
@@ -306,4 +307,7 @@ class BrowserDb private constructor(context: Context) : SQLiteOpenHelper(context
         }
 
     fun deleteDownload(id: Long) { writableDatabase.delete("downloads", "id = ?", arrayOf(id.toString())) }
+
+    /** The pre-v7 list moved into the Download Manager's own list. */
+    fun clearDownloads() { writableDatabase.delete("downloads", null, null) }
 }

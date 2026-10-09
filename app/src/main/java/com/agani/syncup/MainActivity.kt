@@ -74,7 +74,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-private enum class AppScreen { Splash, ForceUpdate, Announcement, Browser, Profile, Music, Library, Partners }
+private enum class AppScreen { Splash, ForceUpdate, Announcement, Browser, Profile, SiteSettings, Music, Library, Partners, Tools }
 
 class MainActivity : FragmentActivity() {
 
@@ -99,6 +99,10 @@ class MainActivity : FragmentActivity() {
     // Set when the media notification is tapped — open the Music player.
     private val openMusicRequest = mutableStateOf(false)
 
+    // Set when a download notification is tapped — open Downloads; or a link shared to SyncUp to download.
+    private val openDownloadsRequest = mutableStateOf(false)
+    private val downloadLink = mutableStateOf<String?>(null)
+
     // Id of a partner verification prompt to open (from an action push tap).
     private val pendingActionId = mutableStateOf<String?>(null)
 
@@ -117,6 +121,12 @@ class MainActivity : FragmentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.isNavigationBarContrastEnforced = false
         lockedState.value = security.hasPin() // lock on cold start if a PIN is set
         com.agani.syncup.browser.BrowserSettings.init(this)
+        com.agani.syncup.downloads.Downloads.init(this) // carries on downloads the app was closed in the middle of
+        com.agani.syncup.browser.SitePermissions.init(this)
+        com.agani.syncup.browser.AdBlocker.init(this) // loads the filter lists; refreshes them weekly
+        // The home page's shortcut catalogue (backend; refreshed once the server address is known) and the sites' icons.
+        com.agani.syncup.browser.ShortcutCatalog.init(this)
+        com.agani.syncup.browser.SiteIcons.init(this)
         tabManager = TabManager(this, webPlatform, browserDb).also { it.restore() }
         // Browser sync: publishes the open Normal tabs and uploads changes shortly after they happen.
         BrowserSync.init(this, browserDb)
@@ -268,6 +278,15 @@ class MainActivity : FragmentActivity() {
             openMusicRequest.value = true
             intent.removeExtra(EXTRA_OPEN_MUSIC)
         }
+        if (intent?.getBooleanExtra(EXTRA_OPEN_DOWNLOADS, false) == true) {
+            openDownloadsRequest.value = true
+            intent.removeExtra(EXTRA_OPEN_DOWNLOADS)
+        }
+        intent?.getStringExtra(EXTRA_DOWNLOAD_LINK)?.let {
+            downloadLink.value = it
+            openDownloadsRequest.value = true
+            intent.removeExtra(EXTRA_DOWNLOAD_LINK)
+        }
         // EXTRA_OPEN_CHAT = our own foreground path (SyncUpMessagingService / bubble).
         // "type" == "chat" = the FCM data payload delivered by the system tray when the app was
         // backgrounded (onMessageReceived isn't called then, so our extra isn't set).
@@ -297,11 +316,16 @@ class MainActivity : FragmentActivity() {
         var booted by remember { mutableStateOf(false) }
         var forceUpdate by remember { mutableStateOf(false) }
         var showProfile by remember { mutableStateOf(false) }
+        var showSiteSettings by remember { mutableStateOf(false) }
         var showMusic by remember { mutableStateOf(false) }
         var showLogin by remember { mutableStateOf(false) }
         var showPartners by remember { mutableStateOf(false) }
         var signupEnabled by remember { mutableStateOf(false) }
         var libraryPage by remember { mutableStateOf<LibraryPage?>(null) }
+        var toolsPage by remember { mutableStateOf<com.agani.syncup.tools.ToolsPage?>(null) }
+        var openFolder by remember { mutableStateOf<Pair<android.net.Uri, String>?>(null) }
+        var openSmbServer by remember { mutableStateOf<com.agani.syncup.smb.SmbServer?>(null) }
+        var networkFolderPrefill by remember { mutableStateOf<String?>(null) }
         var announcement by remember { mutableStateOf<com.agani.syncup.data.AnnouncementDto?>(null) }
         var supportEmail by remember { mutableStateOf("") }
         var supportPhone by remember { mutableStateOf("") }
@@ -343,6 +367,8 @@ class MainActivity : FragmentActivity() {
             // Server config (announcement + force-update + support contacts) — after the splash, non-blocking.
             val cfg = withContext(Dispatchers.IO) { AppBootstrap.fetchConfig() }
             if (cfg != null) applyConfig(cfg)
+            // The home page's shortcuts from the backend (the server address is known now).
+            com.agani.syncup.browser.ShortcutCatalog.refresh(force = true)
         }
 
         val state = vm.state
@@ -371,6 +397,10 @@ class MainActivity : FragmentActivity() {
         // Signed in (fresh sign-in or restored session): start browser sync. A different account than
         // the last one on this phone gets a clean Normal section (never merged with the previous
         // person's data).
+        // Every page in every tab gets the signed-in user's notification token (window.SyncUp.token).
+        LaunchedEffect(state.user?.notifyToken) {
+            com.agani.syncup.browser.WebPlatform.pageToken = state.user?.notifyToken.orEmpty()
+        }
         LaunchedEffect(booted, state.user?.id) {
             val id = state.user?.id
             if (booted && id != null) {
@@ -416,7 +446,7 @@ class MainActivity : FragmentActivity() {
                 showMusic = false
                 libraryPage = null
                 val item = state.urls.firstOrNull { it.url == link.url }
-                tabManager.openWorkLink(item?.title ?: link.title, link.url, item?.id, item?.notifyToken.orEmpty())
+                tabManager.openWorkLink(item?.title ?: link.title, link.url, item?.id)
             }
         }
 
@@ -452,11 +482,27 @@ class MainActivity : FragmentActivity() {
             }
         }
 
+        // A download notification / a link shared to SyncUp: the Download Manager.
+        LaunchedEffect(openDownloadsRequest.value) {
+            if (openDownloadsRequest.value) {
+                openDownloadsRequest.value = false
+                showMusic = false
+                showPartners = false
+                showProfile = false
+                libraryPage = LibraryPage.DOWNLOADS
+            }
+        }
+
         // System back: step Music -> Partners -> Settings instead of exiting the app.
         androidx.activity.compose.BackHandler(enabled = showMusic) { showMusic = false }
         androidx.activity.compose.BackHandler(enabled = showPartners && !showMusic) { showPartners = false }
-        androidx.activity.compose.BackHandler(enabled = showProfile && !showMusic && !showPartners) { showProfile = false }
+        androidx.activity.compose.BackHandler(enabled = showProfile && !showMusic && !showPartners && !showSiteSettings) { showProfile = false }
+        androidx.activity.compose.BackHandler(enabled = showSiteSettings && !showMusic && !showPartners) { showSiteSettings = false }
         androidx.activity.compose.BackHandler(enabled = libraryPage != null && !showProfile) { libraryPage = null }
+        // Tools: a tool goes back to the Tools page, the Tools page back to the browser.
+        androidx.activity.compose.BackHandler(enabled = toolsPage != null && !showMusic && libraryPage == null && !showProfile) {
+            toolsPage = if (toolsPage == com.agani.syncup.tools.ToolsPage.HOME) null else com.agani.syncup.tools.ToolsPage.HOME
+        }
 
         // A chat entry point (button / bubble / push tap) wants the chat screen: fetch the one-time
         // chat URL and open it in the WebView (no Home, no nested Chat action).
@@ -501,8 +547,10 @@ class MainActivity : FragmentActivity() {
             loggedIn && showAnnouncement -> AppScreen.Announcement
             showMusic -> AppScreen.Music
             showPartners && loggedIn -> AppScreen.Partners
+            showSiteSettings -> AppScreen.SiteSettings
             showProfile -> AppScreen.Profile
             libraryPage != null -> AppScreen.Library
+            toolsPage != null -> AppScreen.Tools
             else -> AppScreen.Browser
         }
 
@@ -549,6 +597,7 @@ class MainActivity : FragmentActivity() {
                             onUpdateProfile = { vm.updateProfile(it) },
                             onCheckUsername = { vm.checkUsername(it) },
                             onClearBrowsingData = { history, cookies, cache -> tabManager.clearBrowsingData(history, cookies, cache) },
+                            onOpenSiteSettings = { showSiteSettings = true },
                             onDeleteAccount = {
                                 val result = vm.deleteAccount()
                                 if (result.isSuccess) {
@@ -559,6 +608,7 @@ class MainActivity : FragmentActivity() {
                             },
                         )
                     }
+                    AppScreen.SiteSettings -> com.agani.syncup.browser.SiteSettingsScreen(onBack = { showSiteSettings = false })
                     AppScreen.Partners -> com.agani.syncup.ui.PartnersScreen(
                         load = { vm.partners() },
                         enable = { id, password -> vm.enablePartner(id, password) },
@@ -614,12 +664,62 @@ class MainActivity : FragmentActivity() {
                                 onOpenSettings = { showProfile = true },
                                 onOpenChat = { openChatRequest.value = true },
                                 onOpenMusic = { showMusic = true },
+                                onOpenTools = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
                                 onOpenLibrary = { libraryPage = it },
                                 onRefreshLinks = { runFullRefresh(silent = false) },
                             ),
                         )
                     }
-                    AppScreen.Library -> LibraryScreen(
+                    AppScreen.Tools -> when (toolsPage) {
+                        com.agani.syncup.tools.ToolsPage.VIDEOS -> com.agani.syncup.video.VideoLibraryScreen(
+                            onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
+                        )
+                        com.agani.syncup.tools.ToolsPage.FILES -> com.agani.syncup.files.FilesScreen(
+                            onOpenFolder = { uri, name -> openFolder = uri to name; toolsPage = com.agani.syncup.tools.ToolsPage.FOLDER },
+                            onOpenDownloads = { libraryPage = LibraryPage.DOWNLOADS },
+                            onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
+                        )
+                        com.agani.syncup.tools.ToolsPage.FOLDER -> openFolder?.let { (uri, name) ->
+                            com.agani.syncup.files.FolderBrowserScreen(
+                                rootUri = uri, rootName = name,
+                                onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.FILES },
+                            )
+                        }
+                        com.agani.syncup.tools.ToolsPage.NETWORK_FOLDERS -> com.agani.syncup.smb.NetworkFoldersScreen(
+                            onOpenServer = { s -> openSmbServer = s; toolsPage = com.agani.syncup.tools.ToolsPage.NETWORK_SERVER },
+                            onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
+                            prefillHost = networkFolderPrefill,
+                        )
+                        com.agani.syncup.tools.ToolsPage.NETWORK_SERVER -> openSmbServer?.let { server ->
+                            com.agani.syncup.smb.SmbBrowserScreen(
+                                server = server,
+                                onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.NETWORK_FOLDERS },
+                            )
+                        }
+                        com.agani.syncup.tools.ToolsPage.NETWORK_SCANNER -> com.agani.syncup.netscan.NetworkScannerScreen(
+                            onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
+                            onAddNetworkFolder = { host ->
+                                networkFolderPrefill = host
+                                toolsPage = com.agani.syncup.tools.ToolsPage.NETWORK_FOLDERS
+                            },
+                        )
+                        else -> com.agani.syncup.tools.ToolsScreen(
+                            onMusic = { showMusic = true },
+                            onVideos = { toolsPage = com.agani.syncup.tools.ToolsPage.VIDEOS },
+                            onDownloads = { libraryPage = LibraryPage.DOWNLOADS },
+                            onFiles = { toolsPage = com.agani.syncup.tools.ToolsPage.FILES },
+                            onNetworkFolders = { networkFolderPrefill = null; toolsPage = com.agani.syncup.tools.ToolsPage.NETWORK_FOLDERS },
+                            onNetworkScanner = { toolsPage = com.agani.syncup.tools.ToolsPage.NETWORK_SCANNER },
+                            onBack = { toolsPage = null },
+                        )
+                    }
+                    AppScreen.Library -> if (libraryPage == LibraryPage.DOWNLOADS) {
+                        com.agani.syncup.downloads.DownloadsScreen(
+                            link = downloadLink.value,
+                            onLinkUsed = { downloadLink.value = null },
+                            onBack = { libraryPage = null },
+                        )
+                    } else LibraryScreen(
                         page = libraryPage ?: LibraryPage.HISTORY,
                         db = browserDb,
                         onOpen = { url ->
@@ -683,6 +783,12 @@ class MainActivity : FragmentActivity() {
 
         /** Intent extra: when true, MainActivity opens the Music player (media-notification tap). */
         const val EXTRA_OPEN_MUSIC = "extra_open_music"
+
+        /** Intent extra: when true, MainActivity opens the Download Manager (download notification tap). */
+        const val EXTRA_OPEN_DOWNLOADS = "extra_open_downloads"
+
+        /** Intent extra: a link shared to SyncUp to download (opens Downloads → Add link with it). */
+        const val EXTRA_DOWNLOAD_LINK = "extra_download_link"
 
         /** Intent extra: id of a partner verification prompt to open (used by action push taps). */
         const val EXTRA_ACTION_ID = "extra_action_id"

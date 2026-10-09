@@ -19,10 +19,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bookmarks
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FindInPage
@@ -32,11 +34,12 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -56,10 +59,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.ui.EmptyState
+import com.agani.syncup.browser.ui.accentOn
 import com.agani.syncup.browser.ui.IconTile
 import com.agani.syncup.browser.ui.MenuRow
 import com.agani.syncup.browser.ui.SectionTheme
@@ -120,21 +125,17 @@ internal fun SectionSheet(
 
 @Composable
 private fun SectionChoice(section: Section, subtitle: String, count: Int, selected: Boolean, locked: Boolean, onClick: () -> Unit) {
-    // Work takes its teal accent; Incognito keeps the sheet's own colours and only tints its tile
-    // (its full palette is dark and would be unreadable on a light sheet).
-    SectionTheme(if (section == Section.WORK) Section.WORK else Section.NORMAL) {
+    // Every row keeps the sheet's own text and surfaces (light, dark or Incognito) and takes only its
+    // section's accent — Normal blue, SyncUp teal, Incognito violet — in the sheet's lightness.
+    MaterialTheme(colorScheme = accentOn(MaterialTheme.colorScheme, section)) {
         val cs = MaterialTheme.colorScheme
-        val incog = section == Section.INCOGNITO
         TonalRow(
             title = sectionName(section),
             subtitle = subtitle,
             selected = selected,
             leading = {
-                when {
-                    incog -> IconTile(sectionIcon(section), container = Color(0xFF3B2A63), content = Color(0xFFEDE9FE))
-                    selected -> IconTile(sectionIcon(section), container = cs.primary, content = cs.onPrimary)
-                    else -> IconTile(sectionIcon(section))
-                }
+                if (selected) IconTile(sectionIcon(section), container = cs.primary, content = cs.onPrimary)
+                else IconTile(sectionIcon(section))
             },
             trailing = {
                 if (count > 0 && !locked) {
@@ -165,8 +166,8 @@ private fun SectionChoice(section: Section, subtitle: String, count: Int, select
 
 // ============================================================================ page menu
 internal enum class MenuAction {
-    NEW_TAB, NEW_INCOGNITO, FORWARD, RELOAD, BOOKMARK, SHARE, FIND,
-    CHAT, MUSIC, WORK, WORK_INFO, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, SIGN_IN, PARTNERS,
+    NEW_TAB, NEW_INCOGNITO, FORWARD, RELOAD, BOOKMARK, SHARE, FIND, DESKTOP, OPEN_IN_CHROME, ADS,
+    CHAT, MUSIC, TOOLS, WORK, WORK_INFO, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, SIGN_IN, PARTNERS,
 }
 
 @Composable
@@ -179,6 +180,8 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
     val signedIn = account.user != null
     val incognito = tab.section == Section.INCOGNITO
     val workPage = page && tab.isWork
+    val context = LocalContext.current
+    val chromeInstalled = remember { runCatching { context.packageManager.getPackageInfo(CHROME_PACKAGE, 0) }.isSuccess }
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 12.dp)) {
         // Quick actions that apply to what's on screen — none on a home page, so no row at all.
@@ -193,9 +196,22 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
                 if (page) {
                     QuickAction(Icons.Rounded.FindInPage, "Find", true) { onAction(MenuAction.FIND) }
                     QuickAction(Icons.Rounded.Refresh, "Reload", true) { onAction(MenuAction.RELOAD) }
+                    QuickAction(Icons.Rounded.Computer, "Desktop", true, on = tab.desktop) { onAction(MenuAction.DESKTOP) }
                 }
                 if (workPage) QuickAction(Icons.Rounded.Info, "About", true) { onAction(MenuAction.WORK_INFO) }
             }
+        }
+        // The ad blocker on this page: how much it blocked, and a way out for a site that breaks.
+        if (page && BrowserSettings.blockAds) {
+            val allowed = AdBlocker.isAllowed(tab.pageHost)
+            AdsRow(
+                text = when {
+                    allowed -> "Ads allowed on this site"
+                    tab.adsBlocked == 1 -> "1 ad blocked on this page"
+                    else -> "${tab.adsBlocked} ads blocked on this page"
+                },
+                action = if (allowed) "Block again" else "Allow on site",
+            ) { onAction(MenuAction.ADS) }
         }
         if (workPage) MenuRow(Icons.Rounded.Info, "About this SyncUp link", tint = cs.primary, textColor = cs.primary) { onAction(MenuAction.WORK_INFO) }
         MenuRow(Icons.Rounded.Add, if (tab.isWork) "New Normal tab" else "New tab") { onAction(MenuAction.NEW_TAB) }
@@ -226,12 +242,35 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
         SheetDivider()
         MenuRow(Icons.Rounded.Bookmarks, "Bookmarks") { onAction(MenuAction.BOOKMARKS) }
         MenuRow(Icons.Rounded.History, "History") { onAction(MenuAction.HISTORY) }
-        MenuRow(Icons.Rounded.Download, "Downloads") { onAction(MenuAction.DOWNLOADS) }
-        MenuRow(Icons.Rounded.LibraryMusic, "Music") { onAction(MenuAction.MUSIC) }
+        val running = com.agani.syncup.downloads.Downloads.tasks.count { it.state == com.agani.syncup.downloads.DlState.RUNNING }
+        MenuRow(Icons.Rounded.Download, "Downloads", trailing = if (running > 0) "$running running" else null) { onAction(MenuAction.DOWNLOADS) }
+        // Tools: Music, Video player, Downloads … — the row says what's going on inside.
+        MenuRow(Icons.Rounded.GridView, "Tools", trailing = com.agani.syncup.tools.toolsStatus()) { onAction(MenuAction.TOOLS) }
         // SyncUp pages can't be shared, so the row simply isn't there.
         if (page && !tab.isWork) MenuRow(Icons.Rounded.Share, "Share page") { onAction(MenuAction.SHARE) }
+        // For the rare page that won't work inside an app (Google sign-in). Never a SyncUp page (its
+        // address stays here) or an Incognito one (it would leave Incognito).
+        if (normalPage) {
+            MenuRow(Icons.AutoMirrored.Rounded.OpenInNew, if (chromeInstalled) "Open in Chrome" else "Open in browser app") {
+                onAction(MenuAction.OPEN_IN_CHROME)
+            }
+        }
         MenuRow(Icons.Rounded.Settings, "Settings") { onAction(MenuAction.SETTINGS) }
         if (!signedIn) MenuRow(Icons.Rounded.Person, "Sign in to SyncUp", tint = cs.primary, textColor = cs.primary) { onAction(MenuAction.SIGN_IN) }
+    }
+}
+
+@Composable
+private fun AdsRow(text: String, action: String, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).height(52.dp).padding(horizontal = 24.dp),
+    ) {
+        Icon(Icons.Rounded.Shield, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(18.dp))
+        Text(text, fontSize = 15.sp, letterSpacing = .1.sp, color = cs.onSurface, modifier = Modifier.weight(1f), maxLines = 1)
+        Text(action, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.primary)
     }
 }
 
