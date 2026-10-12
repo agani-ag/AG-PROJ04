@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bookmarks
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.CloudOff
@@ -166,7 +167,7 @@ private fun SectionChoice(section: Section, subtitle: String, count: Int, select
 // ============================================================================ page menu
 internal enum class MenuAction {
     NEW_TAB, NEW_INCOGNITO, FORWARD, RELOAD, BOOKMARK, SHARE, FIND, DESKTOP, OPEN_IN_CHROME, ADS,
-    MUSIC, TOOLS, WORK, WORK_INFO, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, SIGN_IN, PARTNERS,
+    MUSIC, TOOLS, WORK, WORK_INFO, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, SIGN_IN, PARTNERS, NOTIFICATIONS,
 }
 
 @Composable
@@ -234,6 +235,11 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
             }
         }
         SheetDivider()
+        // Everyone (signed in or not) has a Notifications page — not offered from Incognito.
+        if (!incognito) {
+            val new = com.agani.syncup.notifications.Inbox.newCount
+            MenuRow(Icons.Rounded.Notifications, "Notifications", badge = if (new > 0) "$new new" else null) { onAction(MenuAction.NOTIFICATIONS) }
+        }
         MenuRow(Icons.Rounded.Bookmarks, "Bookmarks") { onAction(MenuAction.BOOKMARKS) }
         MenuRow(Icons.Rounded.History, "History") { onAction(MenuAction.HISTORY) }
         val running = com.agani.syncup.downloads.Downloads.tasks.count { it.state == com.agani.syncup.downloads.DlState.RUNNING }

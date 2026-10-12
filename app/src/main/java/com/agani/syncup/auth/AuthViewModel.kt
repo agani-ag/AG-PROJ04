@@ -147,6 +147,10 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                         partnerCount = s.partnerCount,
                         refreshing = false, urlsLoaded = true,
                     )
+                    // The websites that get this user's page token, and the Notifications bell.
+                    val app = getApplication<Application>()
+                    com.agani.syncup.browser.PageTokens.update(app, s.tokenSites)
+                    com.agani.syncup.notifications.Inbox.setCount(s.notificationsNew)
                     onConfig(s.config)
                 },
                 onFailure = {
@@ -206,12 +210,23 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         state = AuthState()
         val app = getApplication<Application>()
         com.agani.syncup.push.DeviceRegistrar.applyTopics(app, signedIn = false)
+        signedOutTokensAndBell(app)
         if (tellServer && token != null) {
             ioScope.launch {
                 BrowserSync.finalFlush(token)
                 repository.serverLogout(token)
+                // Signed out on the server too: check in as this phone (its own page tokens + bell).
+                com.agani.syncup.push.DeviceRegistrar.hello(app)
             }
+        } else {
+            com.agani.syncup.push.DeviceRegistrar.hello(app)
         }
+    }
+
+    /** Signed out: no page tokens or count of the user's any more — the phone's own come with its next check-in. */
+    private fun signedOutTokensAndBell(app: Application) {
+        com.agani.syncup.browser.PageTokens.clear(app)
+        com.agani.syncup.notifications.Inbox.setCount(0)
     }
 
     /** Deletes the account server-side, then wipes local session, PIN, and reminders. */
@@ -225,6 +240,8 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             ReminderScheduler.rescheduleAll(ctx, emptyList())
             BrowserSync.onSignedOut()
             com.agani.syncup.push.DeviceRegistrar.applyTopics(ctx, signedIn = false)
+            signedOutTokensAndBell(ctx)
+            com.agani.syncup.push.DeviceRegistrar.hello(ctx)
             state = AuthState()
         }
         return result

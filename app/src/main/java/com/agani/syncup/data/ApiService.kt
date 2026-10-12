@@ -131,4 +131,31 @@ interface ApiService {
     /** Unread admin-message count for the chat button badge. */
     @GET("chat/unread")
     suspend fun chatUnread(@Header("Authorization") auth: String): ChatUnreadResponse
+
+    // Notifications page. Signed in: the Bearer token. Signed out: this phone's id + secret (from
+    // device/hello) instead — a null header is left out.
+    @GET("notifications")
+    suspend fun notifications(
+        @Header("Authorization") auth: String?,
+        @Header("X-Device-Id") deviceId: String?,
+        @Header("X-Device-Secret") deviceSecret: String?,
+        @Query("tab") tab: String,
+        @Query("before") before: String?,
+        @Query("limit") limit: Int = 30,
+    ): NotificationsResponse
+
+    @POST("notifications/read")
+    suspend fun readNotifications(
+        @Header("Authorization") auth: String?,
+        @Header("X-Device-Id") deviceId: String?,
+        @Header("X-Device-Secret") deviceSecret: String?,
+        @Body body: NotificationsReadRequest,
+    ): NotificationsCountResponse
+
+    @GET("notifications/count")
+    suspend fun notificationsCount(
+        @Header("Authorization") auth: String?,
+        @Header("X-Device-Id") deviceId: String?,
+        @Header("X-Device-Secret") deviceSecret: String?,
+    ): NotificationsCountResponse
 }

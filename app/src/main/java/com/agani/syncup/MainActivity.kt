@@ -74,7 +74,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-private enum class AppScreen { Splash, ForceUpdate, Announcement, Browser, Profile, SiteSettings, Music, Radio, Library, Partners, Tools }
+private enum class AppScreen { Splash, ForceUpdate, Announcement, Browser, Profile, SiteSettings, Music, Radio, Library, Partners, Notifications, Tools }
 
 class MainActivity : FragmentActivity() {
 
@@ -112,8 +112,13 @@ class MainActivity : FragmentActivity() {
     // Set by "Share → SyncUp Share" from another app or a SyncUp Share notification tap — open SyncUp Share.
     private val openQuickShareRequest = mutableStateOf(false)
 
+    // A tapped push's Push Log id: marked read on the Notifications page once the server address is set.
+    private val pushReadId = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The websites that get a SyncUp page token, saved from the last sync — before any tab loads.
+        com.agani.syncup.browser.PageTokens.init(applicationContext)
         // Draw behind the status and navigation bars on every Android version (15+ already does),
         // so each screen paints its own bars — Incognito dark, a page's theme colour, and so on —
         // instead of the window's fixed colour. No grey contrast scrim over the button nav bar.
@@ -262,6 +267,12 @@ class MainActivity : FragmentActivity() {
 
     /** Pull a link (from a reminder/push tap) off the launch intent so we can open it after unlock. */
     private fun readDeepLink(intent: Intent?) {
+        // A push was tapped: it's read on the Notifications page now ("log_id" — our extra when the app
+        // was open, or the push's own data when the system tray showed it).
+        intent?.getStringExtra(EXTRA_LOG_ID)?.takeIf { it.isNotBlank() }?.let {
+            pushReadId.value = it
+            intent.removeExtra(EXTRA_LOG_ID)
+        }
         val url = intent?.getStringExtra(ReminderContract.EXTRA_LINK_URL)
         if (!url.isNullOrBlank()) {
             // "open_in" = our own extra, or the FCM data key when the system tray showed the push.
@@ -338,6 +349,7 @@ class MainActivity : FragmentActivity() {
         var showRadio by remember { mutableStateOf(false) }
         var showLogin by remember { mutableStateOf(false) }
         var showPartners by remember { mutableStateOf(false) }
+        var showNotifications by remember { mutableStateOf(false) }
         var signupEnabled by remember { mutableStateOf(false) }
         var libraryPage by remember { mutableStateOf<LibraryPage?>(null) }
         var toolsPage by remember { mutableStateOf<com.agani.syncup.tools.ToolsPage?>(null) }
@@ -412,11 +424,6 @@ class MainActivity : FragmentActivity() {
         // Signed in (fresh sign-in or restored session): start browser sync. A different account than
         // the last one on this phone gets a clean Normal section (never merged with the previous
         // person's data).
-        // Every Normal/Work page gets the signed-in user's notification token (window.SyncUp.token) —
-        // never Incognito; WebPlatform itself withholds the token there regardless of this value.
-        LaunchedEffect(state.user?.notifyToken) {
-            com.agani.syncup.browser.WebPlatform.pageToken = state.user?.notifyToken.orEmpty()
-        }
         LaunchedEffect(booted, state.user?.id) {
             val id = state.user?.id
             if (booted && id != null) {
@@ -435,6 +442,10 @@ class MainActivity : FragmentActivity() {
                 if (event == Lifecycle.Event.ON_START && bootedNow && loggedInNow) {
                     runFullRefresh(silent = true)
                 }
+                // Signed out: the Notifications bell (signed in, the /sync above brings it).
+                if (event == Lifecycle.Event.ON_START && bootedNow && !loggedInNow) {
+                    com.agani.syncup.notifications.Inbox.refreshCount(this@MainActivity)
+                }
                 // Leaving the app: publish the open tabs to the user's other devices now.
                 if (event == Lifecycle.Event.ON_STOP && loggedInNow) BrowserSync.requestSync(0)
             }
@@ -446,13 +457,15 @@ class MainActivity : FragmentActivity() {
         // composes when unlocked) and logged in.
         LaunchedEffect(pendingLink.value, state.isLoggedIn, state.user) {
             val link = pendingLink.value
-            if (link != null && link.normal) {
-                // A broadcast link: a Normal tab, for everyone.
+            if (link != null && (link.normal || !state.isLoggedIn)) {
+                // A broadcast link: a Normal tab, for everyone. Signed out, any link does (a website's
+                // push to this phone) — SyncUp tabs need sign-in. (The session is restored before this runs.)
                 pendingLink.value = null
                 showProfile = false
                 showMusic = false
                 showRadio = false
                 showPartners = false
+                showNotifications = false
                 libraryPage = null
                 tabManager.newTab(Section.NORMAL, link.url)
             } else if (link != null && state.isLoggedIn && state.user != null) {
@@ -462,9 +475,19 @@ class MainActivity : FragmentActivity() {
                 showProfile = false
                 showMusic = false
                 showRadio = false
+                showNotifications = false
                 libraryPage = null
                 val item = state.urls.firstOrNull { it.url == link.url }
                 tabManager.openWorkLink(item?.title ?: link.title, link.url, item?.id)
+            }
+        }
+
+        // A tapped push is read now — after boot, so it goes to the server Remote Config chose.
+        LaunchedEffect(booted, pushReadId.value) {
+            val id = pushReadId.value
+            if (booted && id != null) {
+                pushReadId.value = null
+                com.agani.syncup.notifications.Inbox.markReadFromPush(this@MainActivity, id)
             }
         }
 
@@ -508,6 +531,7 @@ class MainActivity : FragmentActivity() {
                 showMusic = false
                 showRadio = false
                 showPartners = false
+                showNotifications = false
                 showProfile = false
                 libraryPage = LibraryPage.DOWNLOADS
             }
@@ -520,6 +544,7 @@ class MainActivity : FragmentActivity() {
                 showMusic = false
                 showRadio = false
                 showPartners = false
+                showNotifications = false
                 showProfile = false
                 libraryPage = null
                 toolsPage = com.agani.syncup.tools.ToolsPage.QUICK_SHARE
@@ -530,6 +555,7 @@ class MainActivity : FragmentActivity() {
         androidx.activity.compose.BackHandler(enabled = showMusic) { showMusic = false }
         androidx.activity.compose.BackHandler(enabled = showRadio) { showRadio = false }
         androidx.activity.compose.BackHandler(enabled = showPartners && !showMusic && !showRadio) { showPartners = false }
+        androidx.activity.compose.BackHandler(enabled = showNotifications && !showMusic && !showRadio && !showPartners) { showNotifications = false }
         androidx.activity.compose.BackHandler(enabled = showProfile && !showMusic && !showRadio && !showPartners && !showSiteSettings) { showProfile = false }
         androidx.activity.compose.BackHandler(enabled = showSiteSettings && !showMusic && !showRadio && !showPartners) { showSiteSettings = false }
         androidx.activity.compose.BackHandler(enabled = libraryPage != null && !showProfile) { libraryPage = null }
@@ -582,6 +608,7 @@ class MainActivity : FragmentActivity() {
             showMusic -> AppScreen.Music
             showRadio && radioAvailable -> AppScreen.Radio
             showPartners && loggedIn -> AppScreen.Partners
+            showNotifications -> AppScreen.Notifications
             showSiteSettings -> AppScreen.SiteSettings
             showProfile -> AppScreen.Profile
             libraryPage != null -> AppScreen.Library
@@ -644,6 +671,20 @@ class MainActivity : FragmentActivity() {
                         )
                     }
                     AppScreen.SiteSettings -> com.agani.syncup.browser.SiteSettingsScreen(onBack = { showSiteSettings = false })
+                    AppScreen.Notifications -> com.agani.syncup.notifications.NotificationsScreen(
+                        onBack = { showNotifications = false },
+                        onOpen = { item ->
+                            val url = item.linkUrl
+                            when {
+                                // "A partner added you": the Partners page (Back returns here).
+                                item.type == "partners" && loggedIn -> showPartners = true
+                                // What the push opens: a broadcast link in a Normal tab; a link pushed to
+                                // this user in a SyncUp tab, as when the push itself is tapped.
+                                !url.isNullOrBlank() -> pendingLink.value =
+                                    PendingLink(url, item.linkTitle.orEmpty(), normal = item.openIn == "normal" || !loggedIn)
+                            }
+                        },
+                    )
                     AppScreen.Partners -> com.agani.syncup.ui.PartnersScreen(
                         load = { vm.partners() },
                         enable = { id, password -> vm.enablePartner(id, password) },
@@ -698,6 +739,7 @@ class MainActivity : FragmentActivity() {
                                     vm.logout()
                                 },
                                 onOpenPartners = { showPartners = true },
+                                onOpenNotifications = { showNotifications = true },
                                 onOpenSettings = { showProfile = true },
                                 onOpenMusic = { if (player.isRadio) showRadio = true else showMusic = true },
                                 onOpenTools = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
@@ -838,6 +880,9 @@ class MainActivity : FragmentActivity() {
 
         /** Intent extra: open Tools → SyncUp Share (files to send, if any, ride in the ClipData). */
         const val EXTRA_QUICK_SHARE = "extra_quick_share"
+
+        /** A tapped push's Push Log id — the same key as the push's own data, so both paths match. */
+        const val EXTRA_LOG_ID = "log_id"
 
         /** With [EXTRA_QUICK_SHARE], from the Quick Settings tile: start Receive right away. */
         const val EXTRA_QUICK_SHARE_RECEIVE = "extra_quick_share_receive"

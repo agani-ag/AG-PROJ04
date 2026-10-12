@@ -6,6 +6,11 @@ import com.agani.syncup.data.ConfigResponse
 object AppBootstrap {
     /** Apply the dynamic base URL from Remote Config (caller bounds this for a snappy splash). */
     suspend fun applyBaseUrl() {
+        // A debug build made with -PsyncupApi=… talks to that server instead (local testing).
+        if (com.agani.syncup.BuildConfig.DEBUG_API_BASE_URL.isNotBlank()) {
+            ApiClient.setBaseUrl(com.agani.syncup.BuildConfig.DEBUG_API_BASE_URL)
+            return
+        }
         runCatching { RemoteConfigManager.fetchBaseUrl() }.getOrNull()?.let { ApiClient.setBaseUrl(it) }
     }
 

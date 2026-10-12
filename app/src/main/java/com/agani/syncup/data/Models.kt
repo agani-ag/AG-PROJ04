@@ -38,9 +38,6 @@ data class User(
     val phone: String? = null,
     val username: String? = null,
     val source: String? = null, // admin | partner | self
-    // Put on every Normal/Work page as window.SyncUp.token (never in Incognito); a site that also has
-    // the SyncUp notify key can push to this user with it. Blank until the backend sends it.
-    @SerializedName("notify_token") val notifyToken: String? = null,
 ) {
     /** What the user signs in with, for display: email, else phone, else @username. */
     val loginLabel: String
@@ -101,7 +98,44 @@ data class DeviceHelloRequest(
 data class DeviceHelloResponse(
     val success: Boolean = false,
     @SerializedName("device_secret") val deviceSecret: String? = null,
+    // The websites switched on for this install and their page tokens (the user's when signed in,
+    // this phone's own when not), and the Notifications badge.
+    @SerializedName("token_sites") val tokenSites: List<TokenSite>? = null,
+    @SerializedName("notifications_new") val notificationsNew: Int? = null,
 )
+
+/**
+ * A website the admin switched "Give SyncUp token" on for, and the token it gets as
+ * window.SyncUp.token — a different one per website. [host] is lower-case, without "www.".
+ */
+data class TokenSite(val host: String? = null, val token: String? = null)
+
+// ---------------------------------------------------------------- notifications page
+/** One push on the Notifications page (GET /notifications). */
+data class NotificationItem(
+    val id: String = "",
+    val title: String = "",
+    val body: String = "",
+    val image: String? = null,
+    @SerializedName("sent_at") val sentAt: String = "",
+    val kind: String = "",      // syncup | partner | site | reminder | partners
+    val sender: String = "",    // "SyncUp", a partner's name, a website…
+    @SerializedName("link_url") val linkUrl: String? = null,
+    @SerializedName("link_title") val linkTitle: String? = null,
+    @SerializedName("open_in") val openIn: String? = null,
+    val type: String? = null,
+    val read: Boolean = false,
+)
+
+data class NotificationsResponse(
+    val items: List<NotificationItem>? = null,
+    @SerializedName("has_more") val hasMore: Boolean = false,
+    @SerializedName("new_count") val newCount: Int = 0,
+)
+
+data class NotificationsReadRequest(val ids: List<String>? = null, val all: Boolean? = null)
+
+data class NotificationsCountResponse(@SerializedName("new_count") val newCount: Int = 0)
 
 data class DeviceUnregisterRequest(@SerializedName("device_id") val deviceId: String)
 
@@ -233,6 +267,10 @@ data class SyncResponse(
     @SerializedName("partners_waiting") val partnersWaiting: Int = 0,
     // Partner connections of any status — the Partners page is shown only when there's one.
     @SerializedName("partner_count") val partnerCount: Int = 0,
+    // Websites switched on for this user and their page tokens (window.SyncUp.token).
+    @SerializedName("token_sites") val tokenSites: List<TokenSite>? = null,
+    // Pushes not opened yet — the Notifications bell.
+    @SerializedName("notifications_new") val notificationsNew: Int = 0,
 )
 
 /** A partner verification prompt shown on the phone (GET /action/{id}). */

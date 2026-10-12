@@ -92,6 +92,7 @@ internal fun NormalHome(
     onAvatar: () -> Unit,
     onOpenWork: () -> Unit,
     onOpenMusic: () -> Unit,
+    onNotifications: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     val user = account.user
@@ -106,6 +107,7 @@ internal fun NormalHome(
         ) {
             if (user == null) {
                 Row(Modifier.fillMaxWidth().padding(end = 0.dp), horizontalArrangement = Arrangement.End) {
+                    Box(Modifier.offset(x = 8.dp)) { com.agani.syncup.notifications.NotificationBell(onNotifications) }
                     Box(Modifier.offset(x = 8.dp)) {
                         BarIcon(Icons.Rounded.AccountCircle, "Sign in to SyncUp", tint = cs.onSurfaceVariant, onClick = onAvatar)
                     }
@@ -129,6 +131,7 @@ internal fun NormalHome(
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    Box(Modifier.offset(x = 4.dp)) { com.agani.syncup.notifications.NotificationBell(onNotifications) }
                     Box(Modifier.offset(x = 4.dp)) { Avatar(user, unread = account.partnersWaiting > 0, onClick = onAvatar) }
                 }
                 Spacer(Modifier.height(12.dp))

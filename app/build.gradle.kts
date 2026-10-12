@@ -40,7 +40,14 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Local testing only: `gradlew assembleDebug -PsyncupApi=http://127.0.0.1:8000/app/v1/`
+            // (plus `adb reverse tcp:8000 tcp:8000`) points a debug build at a backend on this PC.
+            // Not set = the normal server, from Remote Config.
+            buildConfigField("String", "DEBUG_API_BASE_URL", "\"${project.findProperty("syncupApi") ?: ""}\"")
+        }
         release {
+            buildConfigField("String", "DEBUG_API_BASE_URL", "\"\"")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

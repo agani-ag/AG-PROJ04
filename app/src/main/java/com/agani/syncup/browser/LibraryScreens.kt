@@ -71,7 +71,7 @@ private fun Favicon(url: String) {
     }
 }
 
-private fun dayLabel(millis: Long): String {
+internal fun dayLabel(millis: Long): String {
     val now = Calendar.getInstance()
     val then = Calendar.getInstance().apply { timeInMillis = millis }
     val sameYear = now.get(Calendar.YEAR) == then.get(Calendar.YEAR)

@@ -46,12 +46,18 @@ class SyncUpMessagingService : FirebaseMessagingService() {
                 )
             }
         }
+        val logId = message.data["log_id"]
         showNotification(
             title, body, imageUrl, message.data["link_url"], message.data["link_title"], isChat, actionId,
             openInNormal = message.data["open_in"] == "normal",
             openPartners = message.data["type"] == "partners",
             broadcast = !message.data["audience"].isNullOrBlank(),
+            logId = logId,
         )
+        // It's on the Notifications page now: the bell goes up (chat and codes aren't listed there).
+        if (!logId.isNullOrBlank() && !isChat && actionId.isNullOrBlank()) {
+            com.agani.syncup.notifications.Inbox.onPushArrived(applicationContext)
+        }
     }
 
     private fun showNotification(
@@ -65,10 +71,13 @@ class SyncUpMessagingService : FirebaseMessagingService() {
         openInNormal: Boolean = false,
         openPartners: Boolean = false,
         broadcast: Boolean = false,
+        logId: String? = null,
     ) {
         ensureChannel()
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            // Tapping it marks it read on the Notifications page.
+            if (!logId.isNullOrBlank()) putExtra(MainActivity.EXTRA_LOG_ID, logId)
             when {
                 // A verification prompt — tap opens the Action screen.
                 !actionId.isNullOrBlank() -> putExtra(MainActivity.EXTRA_ACTION_ID, actionId)

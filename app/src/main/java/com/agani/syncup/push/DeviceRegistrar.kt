@@ -5,9 +5,11 @@ import android.os.Build
 import android.webkit.WebView
 import androidx.core.app.NotificationManagerCompat
 import com.agani.syncup.BuildConfig
+import com.agani.syncup.browser.PageTokens
 import com.agani.syncup.data.ApiClient
 import com.agani.syncup.data.DeviceHelloRequest
 import com.agani.syncup.data.TokenStore
+import com.agani.syncup.notifications.Inbox
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -59,6 +61,10 @@ object DeviceRegistrar {
     /** Kept for existing callers: signing in / a token change is just another hello. */
     fun register(context: Context) = hello(context)
 
+    /** The secret the server gave this install (null until the first hello is answered). */
+    fun deviceSecret(context: Context): String? =
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_SECRET, null)
+
     private fun send(app: Context, fcm: String?) {
         scope.launch {
             runCatching {
@@ -83,6 +89,12 @@ object DeviceRegistrar {
                     ),
                 )
                 resp.deviceSecret?.takeIf { it.isNotBlank() }?.let { prefs.edit().putString(KEY_SECRET, it).apply() }
+                // The websites that get a SyncUp page token, and the Notifications bell — unless the
+                // user signed in or out while this was on its way (the answer would be for the other).
+                if (store.token() == access) {
+                    PageTokens.update(app, resp.tokenSites)
+                    resp.notificationsNew?.let { Inbox.setCount(it) }
+                }
             }
         }
     }

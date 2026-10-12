@@ -43,6 +43,8 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -55,6 +57,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.JavaScriptReplyProxy
 import androidx.webkit.ProfileStore
+import androidx.webkit.ScriptHandler
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
@@ -264,6 +267,36 @@ class WebPlatform(private val activity: ComponentActivity) {
         return catcher
     }
 
+    // ------------------------------------------------------------------ page tokens
+    // Normal and Work WebViews with the token scripts on each (Incognito ones are never in here).
+    private val tokenScripts = java.util.WeakHashMap<WebView, List<ScriptHandler>>()
+    private val onTokensChanged: () -> Unit = { tokenScripts.keys.toList().forEach(::applyPageTokens) }
+
+    init {
+        PageTokens.addListener(onTokensChanged)
+        activity.lifecycle.addObserver(
+            LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_DESTROY) PageTokens.removeListener(onTokensChanged) },
+        )
+    }
+
+    /**
+     * (Re)put the SyncUp page tokens on [webView]: each switched-on website's token as a
+     * document-start script limited to that website's own origins, so other sites — and ads or
+     * frames from elsewhere inside its pages — never see it. See [PageTokens].
+     */
+    private fun applyPageTokens(webView: WebView) {
+        tokenScripts[webView]?.forEach { runCatching { it.remove() } }
+        tokenScripts[webView] = if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            PageTokens.sites.mapNotNull { site ->
+                runCatching { WebViewCompat.addDocumentStartJavaScript(webView, PageTokens.script(site), PageTokens.origins(site)) }.getOrNull()
+            }
+        } else {
+            emptyList()
+        }
+        // The page already open, if it's one of them, gets its token now too.
+        PageTokens.forUrl(webView.url)?.let { webView.evaluateJavascript(PageTokens.script(it), null) }
+    }
+
     // ------------------------------------------------------------------ WebView factory
     /** Build a fully configured WebView for [tab] (assigned to its section's profile). */
     @SuppressLint("SetJavaScriptEnabled")
@@ -315,9 +348,6 @@ class WebPlatform(private val activity: ComponentActivity) {
         webView.addJavascriptInterface(pageFiles.bridge(tab), PageFiles.BRIDGE)
         webView.addJavascriptInterface(AdBridge(tab), "AndroidAdBridge")
         webView.addJavascriptInterface(NotifyStateBridge(tab), "AndroidNotifyState")
-        // Incognito gets no SyncUp token at all — not even the bridge object — so a page there can't
-        // read or push-notify this user, matching what "Incognito" already promises everywhere else.
-        if (tab.section != Section.INCOGNITO) webView.addJavascriptInterface(PageTokenBridge, TOKEN_BRIDGE)
         // Page notifications (asked per site) and the media detector talk over message channels,
         // which tell us the real site a message comes from.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
@@ -338,8 +368,9 @@ class WebPlatform(private val activity: ComponentActivity) {
             WebViewCompat.addDocumentStartJavaScript(webView, MediaDetector.SCAN_JS, setOf("*"))
             // YouTube's video ads come from the same servers as its videos: handled in the page.
             WebViewCompat.addDocumentStartJavaScript(webView, AdBlocker.YOUTUBE_JS, AdBlocker.YOUTUBE_ORIGINS)
-            if (tab.section != Section.INCOGNITO) WebViewCompat.addDocumentStartJavaScript(webView, SYNCUP_TOKEN_JS, setOf("*"))
         }
+        // The SyncUp page token, on the websites switched on for it only. Incognito never gets one.
+        if (tab.section != Section.INCOGNITO) applyPageTokens(webView)
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
@@ -371,7 +402,9 @@ class WebPlatform(private val activity: ComponentActivity) {
                 view?.evaluateJavascript(PageFiles.NAME_HINT_JS, null)
                 view?.evaluateJavascript(AD_CSS_JS, null)
                 view?.evaluateJavascript(MediaDetector.SCAN_JS, null)
-                if (tab.section != Section.INCOGNITO) view?.evaluateJavascript(SYNCUP_TOKEN_JS, null)
+                // Again at the end (covers an old WebView without document-start scripts): the main
+                // frame only, and only on a website switched on for a token.
+                if (tab.section != Section.INCOGNITO) PageTokens.forUrl(url)?.let { view?.evaluateJavascript(PageTokens.script(it), null) }
                 // Tint the status + navigation bars to the page's theme-color (null → app theme).
                 view?.evaluateJavascript(THEME_COLOR_JS) { result -> tab.themeColor = parseCssRgb(result) }
                 if (!url.isNullOrBlank() && url != "about:blank") {
@@ -1131,29 +1164,6 @@ class WebPlatform(private val activity: ComponentActivity) {
             Section.WORK -> "syncup_work"
             Section.INCOGNITO -> "syncup_incognito"
         }
-
-        /**
-         * The signed-in user's notification token (blank when signed out), put on every page in every
-         * Normal and Work tab as window.SyncUp.token — never in Incognito. A site needs the SyncUp
-         * notify key as well to push with it. Set by MainActivity from the account.
-         */
-        @Volatile var pageToken: String = ""
-
-        private const val TOKEN_BRIDGE = "AndroidSyncUpToken"
-
-        /** Reads the token when the page asks, so a sign-in after the tab opened still reaches new pages. */
-        private object PageTokenBridge {
-            @JavascriptInterface
-            fun get(): String = pageToken
-        }
-
-        private val SYNCUP_TOKEN_JS = """
-            (function () {
-              var b = window.$TOKEN_BRIDGE;
-              var t = b && b.get();
-              if (t) window.SyncUp = Object.assign(window.SyncUp || {}, { token: t });
-            })();
-        """.trimIndent()
 
         private const val NOTIFY_BRIDGE = "SyncUpNotify"
 

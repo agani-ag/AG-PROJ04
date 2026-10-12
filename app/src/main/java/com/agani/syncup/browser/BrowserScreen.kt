@@ -105,6 +105,7 @@ class BrowserActions(
     val onClearAuthError: () -> Unit,
     val onSignOut: () -> Unit,
     val onOpenPartners: () -> Unit,
+    val onOpenNotifications: () -> Unit,
     val onOpenSettings: () -> Unit,
     val onOpenMusic: () -> Unit,
     val onOpenTools: () -> Unit,
@@ -365,6 +366,7 @@ fun BrowserScreen(
                                     onAvatar = { if (!signedIn) actions.onSignIn() else showAccount = true },
                                     onOpenWork = { switchSection(Section.WORK) },
                                     onOpenMusic = actions.onOpenMusic,
+                                    onNotifications = actions.onOpenNotifications,
                                 )
                                 Section.INCOGNITO -> IncognitoHome(onSearch = { startEditing("") })
                                 Section.WORK -> WorkHome(
@@ -373,6 +375,7 @@ fun BrowserScreen(
                                     onOpen = { openWorkLink(it) },
                                     onAvatar = { showAccount = true },
                                     onRefresh = actions.onRefreshLinks,
+                                    onNotifications = actions.onOpenNotifications,
                                 )
                             }
                         } else if (tab.error != null) {
@@ -620,6 +623,7 @@ fun BrowserScreen(
                             MenuAction.SETTINGS -> actions.onOpenSettings()
                             MenuAction.SIGN_IN -> actions.onSignIn()
                             MenuAction.PARTNERS -> actions.onOpenPartners()
+                            MenuAction.NOTIFICATIONS -> actions.onOpenNotifications()
                         }
                     },
                 )

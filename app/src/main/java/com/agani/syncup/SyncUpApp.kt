@@ -14,6 +14,8 @@ class SyncUpApp : Application() {
         super.onCreate()
         CrashReporter.install(this)
         createVerificationChannel()
+        // Debug builds only: pages can be inspected from Chrome (chrome://inspect) when testing.
+        if (BuildConfig.DEBUG) android.webkit.WebView.setWebContentsDebuggingEnabled(true)
 
         // Load the user's auto-lock grace preference so the lock decision uses it from the start.
         AppLock.graceMs = com.agani.syncup.data.AppPrefs(this).lockGraceSeconds() * 1000L

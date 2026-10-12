@@ -137,13 +137,29 @@ fun QuickShareScreen(onBack: () -> Unit, onOpenDownloads: () -> Unit) {
         }
     }
 
+    // After the permissions: Bluetooth and Wi-Fi (and Location on Android 12 and older) must be on.
+    // While something's off, the "Turn on" dialog holds the send / receive and runs it once all are on.
+    var waitingForRadios by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var radiosReceiving by remember { mutableStateOf(false) }
+
+    fun withRadios(receiving: Boolean, action: () -> Unit) {
+        if (Radios.missing(context).isEmpty()) {
+            action()
+        } else {
+            radiosReceiving = receiving
+            waitingForRadios = action
+        }
+    }
+
+    /** Permissions, then the switches, then [action]. Every send / receive starts here. */
     fun withPermissions(receiving: Boolean, action: () -> Unit) {
+        val next = { withRadios(receiving, action) }
         val missing = QuickShare.missingPermissions(receiving)
         if (missing.isEmpty()) {
             permissionNote = false
-            action()
+            next()
         } else {
-            afterPermission = action
+            afterPermission = next
             permissions.launch(missing.toTypedArray())
         }
     }
@@ -259,6 +275,17 @@ fun QuickShareScreen(onBack: () -> Unit, onOpenDownloads: () -> Unit) {
             }
             Spacer(Modifier.height(16.dp))
         }
+    }
+
+    waitingForRadios?.let { pending ->
+        RadiosDialog(
+            receiving = radiosReceiving,
+            onReady = {
+                waitingForRadios = null
+                pending()
+            },
+            onCancel = { waitingForRadios = null },
+        )
     }
 
     if (renaming) {
