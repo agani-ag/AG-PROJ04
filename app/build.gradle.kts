@@ -119,11 +119,8 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
     // Live TV channel logos (remote images) and nothing else — small, Apache 2.0.
     implementation("io.coil-kt:coil-compose:2.7.0")
-
-    // SAF documents: Network folders' (SMB) local-cache copy/paste, no broad storage permission needed.
-    implementation("androidx.documentfile:documentfile:1.0.1")
-    // Tools → Network folders: SMB2/SMB3 client (Apache 2.0), so Windows/Samba/NAS shares work.
-    implementation("com.hierynomus:smbj:0.15.0")
+    // Tools → Quick Share: phone-to-phone file transfer (Bluetooth to find, direct Wi-Fi to send).
+    implementation("com.google.android.gms:play-services-nearby:19.3.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

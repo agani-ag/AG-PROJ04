@@ -24,11 +24,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.SmartDisplay
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,26 +45,35 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.ui.BarIcon
 import com.agani.syncup.music.LocalPlayer
+import com.agani.syncup.quickshare.QsRole
+import com.agani.syncup.quickshare.QuickShare
 import com.agani.syncup.ui.theme.isLight
 import com.agani.syncup.video.SavedPlaylists
 
 /** What's open inside Tools. */
-enum class ToolsPage { HOME, VIDEOS, CHANNELS, NETWORK_FOLDERS, NETWORK_SERVER }
+enum class ToolsPage { HOME, VIDEOS, CHANNELS, QUICK_SHARE }
 
 /** One line for the ⋮ menu's Tools row: what's going on inside right now (null = nothing). */
 @Composable
 fun toolsStatus(): String? {
     val player = LocalPlayer.current
     return when {
+        QuickShare.busy -> if (QuickShare.role == QsRole.SEND) "Sending files" else "Receiving files"
         player?.isPlaying != true -> null
         player.isRadio -> "On air"
         else -> "Playing music"
     }
 }
 
+private class TileSpec(
+    val icon: ImageVector, val accent: Color, val tint: Color,
+    val title: String, val subtitle: String, val status: String?, val onClick: () -> Unit,
+)
+
 /**
- * SyncUp's extra features in one place — Music, Video player, Radio, Downloads — each tile showing
- * what it's doing right now. New tools are added here as tiles.
+ * SyncUp's extra features in one place — Music, Video player, Channels, Radio, SyncUp Share — each
+ * tile showing what it's doing right now, laid out as one plain 2-column grid (every row has two
+ * tiles; only the last one can have a single tile when the count is odd).
  */
 @Composable
 fun ToolsScreen(
@@ -73,77 +82,77 @@ fun ToolsScreen(
     onVideos: () -> Unit,
     onRadio: () -> Unit,
     onChannels: () -> Unit,
-    onNetworkFolders: () -> Unit,
+    onQuickShare: () -> Unit,
     onBack: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     val light = cs.isLight
     val player = LocalPlayer.current
     val savedChannelsCount = SavedPlaylists.all(LocalContext.current).size
+
+    val tiles = buildList {
+        add(
+            TileSpec(
+                Icons.Rounded.LibraryMusic, accent(0xFF6D28D9, 0xFFC4B5FD, light), tint(0xFFEDE9FE, 0xFF3B2A63, light),
+                "Music", "Songs on your phone",
+                status = player?.title?.takeIf { player.isPlaying && !player.isRadio && it.isNotBlank() }?.let { "Playing: $it" },
+                onClick = onMusic,
+            ),
+        )
+        add(
+            TileSpec(
+                Icons.Rounded.SmartDisplay, accent(0xFFBE123C, 0xFFFDA4AF, light), tint(0xFFFFE4E6, 0xFF4C0519, light),
+                "Video player", "Videos, downloads & links", status = null, onClick = onVideos,
+            ),
+        )
+        add(
+            TileSpec(
+                Icons.Rounded.LiveTv, accent(0xFF15803D, 0xFF86EFAC, light), tint(0xFFDCFCE7, 0xFF14532D, light),
+                "Channels",
+                if (savedChannelsCount == 0) "Add an M3U / M3U8 link" else "$savedChannelsCount saved list${if (savedChannelsCount == 1) "" else "s"}",
+                status = null, onClick = onChannels,
+            ),
+        )
+        if (radioAvailable) {
+            add(
+                TileSpec(
+                    Icons.Rounded.Radio, accent(0xFFC2410C, 0xFFFDBA74, light), tint(0xFFFFEDD5, 0xFF431407, light),
+                    "Radio", "SyncUp's live stations",
+                    status = player?.title?.takeIf { player.isPlaying && player.isRadio && it.isNotBlank() }?.let { "On air: $it" },
+                    onClick = onRadio,
+                ),
+            )
+        }
+        add(
+            TileSpec(
+                Icons.Rounded.SwapHoriz, accent(0xFF1D4ED8, 0xFF93C5FD, light), tint(0xFFDBEAFE, 0xFF1E3A8A, light),
+                "SyncUp Share", "Send files to a nearby phone",
+                status = if (QuickShare.busy) {
+                    val total = QuickShare.totalBytes
+                    val pct = if (total > 0) " · ${QuickShare.doneBytes * 100 / total}%" else ""
+                    (if (QuickShare.role == QsRole.SEND) "Sending" else "Receiving") + pct
+                } else {
+                    null
+                },
+                onClick = onQuickShare,
+            ),
+        )
+    }
+
     Box(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
         Column(Modifier.fillMaxSize()) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
                 BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
                 Text("Tools", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
             }
-            LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-                item { Label("MEDIA") }
-                item {
-                    TileRow {
-                        Tile(
-                            Icons.Rounded.LibraryMusic, accent(0xFF6D28D9, 0xFFC4B5FD, light), tint(0xFFEDE9FE, 0xFF3B2A63, light),
-                            "Music", "Songs on your phone",
-                            status = player?.title?.takeIf { player.isPlaying && !player.isRadio && it.isNotBlank() }?.let { "Playing: $it" },
-                            onClick = onMusic,
-                        )
-                        Tile(
-                            Icons.Rounded.SmartDisplay, accent(0xFFBE123C, 0xFFFDA4AF, light), tint(0xFFFFE4E6, 0xFF4C0519, light),
-                            "Video player", "Videos, downloads & links",
-                            onClick = onVideos,
-                        )
-                    }
-                }
-                item {
-                    TileRow {
-                        Tile(
-                            Icons.Rounded.LiveTv, accent(0xFF15803D, 0xFF86EFAC, light), tint(0xFFDCFCE7, 0xFF14532D, light),
-                            "Channels",
-                            if (savedChannelsCount == 0) "Add an M3U / M3U8 link" else "$savedChannelsCount saved list${if (savedChannelsCount == 1) "" else "s"}",
-                            onClick = onChannels,
-                        )
-                        Spacer(Modifier.weight(1f))
-                    }
-                }
-                if (radioAvailable) {
+            LazyColumn(contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                for (row in tiles.chunked(2)) {
                     item {
                         TileRow {
-                            Tile(
-                                Icons.Rounded.Radio, accent(0xFFC2410C, 0xFFFDBA74, light), tint(0xFFFFEDD5, 0xFF431407, light),
-                                "Radio", "SyncUp's live stations",
-                                status = player?.title?.takeIf { player.isPlaying && player.isRadio && it.isNotBlank() }?.let { "On air: $it" },
-                                onClick = onRadio,
-                            )
-                            Spacer(Modifier.weight(1f))
+                            row.forEach { t -> Tile(t.icon, t.accent, t.tint, t.title, t.subtitle, status = t.status, onClick = t.onClick) }
+                            if (row.size == 1) Spacer(Modifier.weight(1f))
                         }
                     }
-                }
-                item { Label("NETWORK") }
-                item {
-                    TileRow {
-                        Tile(
-                            Icons.Rounded.Dns, accent(0xFF0E7490, 0xFF67E8F9, light), tint(0xFFCFFAFE, 0xFF0C3B45, light),
-                            "Network folders", "PCs and NAS boxes on this Wi-Fi",
-                            onClick = onNetworkFolders,
-                        )
-                        Spacer(Modifier.weight(1f))
-                    }
-                }
-                item {
-                    Box(
-                        Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth().height(96.dp).clip(RoundedCornerShape(22.dp))
-                            .border(1.5.dp, cs.outlineVariant, RoundedCornerShape(22.dp)),
-                        contentAlignment = Alignment.Center,
-                    ) { Text("More tools are on the way", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant) }
                 }
             }
         }
@@ -152,12 +161,6 @@ fun ToolsScreen(
 
 private fun accent(light: Long, dark: Long, isLight: Boolean) = Color(if (isLight) light else dark)
 private fun tint(light: Long, dark: Long, isLight: Boolean) = Color(if (isLight) light else dark)
-
-@Composable
-private fun Label(text: String) {
-    Text(text, fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = .3.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 8.dp))
-}
 
 @Composable
 private fun TileRow(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {

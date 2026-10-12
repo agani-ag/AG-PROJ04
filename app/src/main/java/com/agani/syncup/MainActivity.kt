@@ -109,6 +109,9 @@ class MainActivity : FragmentActivity() {
     // Set when a "partner added you" push is tapped — open the Partners page.
     private val openPartnersRequest = mutableStateOf(false)
 
+    // Set by "Share → SyncUp Share" from another app or a SyncUp Share notification tap — open SyncUp Share.
+    private val openQuickShareRequest = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Draw behind the status and navigation bars on every Android version (15+ already does),
@@ -122,6 +125,7 @@ class MainActivity : FragmentActivity() {
         lockedState.value = security.hasPin() // lock on cold start if a PIN is set
         com.agani.syncup.browser.BrowserSettings.init(this)
         com.agani.syncup.downloads.Downloads.init(this) // carries on downloads the app was closed in the middle of
+        com.agani.syncup.quickshare.QuickShare.init(this)
         com.agani.syncup.browser.SitePermissions.init(this)
         com.agani.syncup.browser.AdBlocker.init(this) // loads the filter lists; refreshes them weekly
         // The home page's shortcut catalogue (backend; refreshed once the server address is known) and the sites' icons.
@@ -287,6 +291,19 @@ class MainActivity : FragmentActivity() {
             openDownloadsRequest.value = true
             intent.removeExtra(EXTRA_DOWNLOAD_LINK)
         }
+        // SyncUp Share: files shared in from another app (in the ClipData, with read access), or a
+        // tap on the SyncUp Share notification (no files).
+        if (intent?.getBooleanExtra(EXTRA_QUICK_SHARE, false) == true) {
+            val clip = intent.clipData
+            val uris = if (clip == null) emptyList() else (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }
+            if (uris.isNotEmpty()) com.agani.syncup.quickshare.QuickShare.sharedIn = uris
+            // The Quick Settings tile: go straight to Receive.
+            if (intent.getBooleanExtra(EXTRA_QUICK_SHARE_RECEIVE, false)) com.agani.syncup.quickshare.QuickShare.receiveRequested = true
+            openQuickShareRequest.value = true
+            intent.removeExtra(EXTRA_QUICK_SHARE)
+            intent.removeExtra(EXTRA_QUICK_SHARE_RECEIVE)
+            intent.clipData = null
+        }
         // EXTRA_OPEN_CHAT = our own foreground path (SyncUpMessagingService / bubble).
         // "type" == "chat" = the FCM data payload delivered by the system tray when the app was
         // backgrounded (onMessageReceived isn't called then, so our extra isn't set).
@@ -324,7 +341,6 @@ class MainActivity : FragmentActivity() {
         var signupEnabled by remember { mutableStateOf(false) }
         var libraryPage by remember { mutableStateOf<LibraryPage?>(null) }
         var toolsPage by remember { mutableStateOf<com.agani.syncup.tools.ToolsPage?>(null) }
-        var openSmbServer by remember { mutableStateOf<com.agani.syncup.smb.SmbServer?>(null) }
         var announcement by remember { mutableStateOf<com.agani.syncup.data.AnnouncementDto?>(null) }
         var supportEmail by remember { mutableStateOf("") }
         var supportPhone by remember { mutableStateOf("") }
@@ -497,6 +513,19 @@ class MainActivity : FragmentActivity() {
             }
         }
 
+        // "Share → SyncUp Share" from another app, or the SyncUp Share notification: Tools → SyncUp Share.
+        LaunchedEffect(openQuickShareRequest.value) {
+            if (openQuickShareRequest.value) {
+                openQuickShareRequest.value = false
+                showMusic = false
+                showRadio = false
+                showPartners = false
+                showProfile = false
+                libraryPage = null
+                toolsPage = com.agani.syncup.tools.ToolsPage.QUICK_SHARE
+            }
+        }
+
         // System back: step Music/Radio -> Partners -> Settings instead of exiting the app.
         androidx.activity.compose.BackHandler(enabled = showMusic) { showMusic = false }
         androidx.activity.compose.BackHandler(enabled = showRadio) { showRadio = false }
@@ -637,6 +666,7 @@ class MainActivity : FragmentActivity() {
                     AppScreen.Browser -> {
                         // Asked once on first launch for every install (signed in or not) — SyncUp can notify anyone.
                         RequestNotificationPermission(onceOnly = true)
+                        OfferSyncUpShareTile()
                         BrowserScreen(
                             tabs = tabManager,
                             web = webPlatform,
@@ -683,23 +713,17 @@ class MainActivity : FragmentActivity() {
                         com.agani.syncup.tools.ToolsPage.CHANNELS -> com.agani.syncup.video.ChannelsHomeScreen(
                             onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
                         )
-                        com.agani.syncup.tools.ToolsPage.NETWORK_FOLDERS -> com.agani.syncup.smb.NetworkFoldersScreen(
-                            onOpenServer = { s -> openSmbServer = s; toolsPage = com.agani.syncup.tools.ToolsPage.NETWORK_SERVER },
+                        com.agani.syncup.tools.ToolsPage.QUICK_SHARE -> com.agani.syncup.quickshare.QuickShareScreen(
                             onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
+                            onOpenDownloads = { libraryPage = LibraryPage.DOWNLOADS },
                         )
-                        com.agani.syncup.tools.ToolsPage.NETWORK_SERVER -> openSmbServer?.let { server ->
-                            com.agani.syncup.smb.SmbBrowserScreen(
-                                server = server,
-                                onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.NETWORK_FOLDERS },
-                            )
-                        }
                         else -> com.agani.syncup.tools.ToolsScreen(
                             radioAvailable = radioAvailable,
                             onMusic = { showMusic = true },
                             onVideos = { toolsPage = com.agani.syncup.tools.ToolsPage.VIDEOS },
                             onRadio = { showRadio = true },
                             onChannels = { toolsPage = com.agani.syncup.tools.ToolsPage.CHANNELS },
-                            onNetworkFolders = { toolsPage = com.agani.syncup.tools.ToolsPage.NETWORK_FOLDERS },
+                            onQuickShare = { toolsPage = com.agani.syncup.tools.ToolsPage.QUICK_SHARE },
                             onBack = { toolsPage = null },
                         )
                     }
@@ -767,6 +791,29 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    /**
+     * Android never lets an app put its tile into Quick Settings by itself, so on the first launch
+     * (after install, or after the update that brought the tile) we show Android's own one-tap
+     * "Add tile?" popup — once. Waits until any other system question (notifications) is answered.
+     */
+    @Composable
+    private fun OfferSyncUpShareTile() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        LaunchedEffect(Unit) {
+            val qs = com.agani.syncup.quickshare.QuickShare
+            qs.init(this@MainActivity)
+            val tile = com.agani.syncup.quickshare.SyncUpShareTileService
+            if (qs.tileAdded || qs.tileOffered(this@MainActivity) || tile.isTurnedOff(this@MainActivity)) return@LaunchedEffect
+            delay(1500)
+            // A system dialog (e.g. the notification question) takes our window's focus — wait it out.
+            withTimeoutOrNull(60_000) { while (!hasWindowFocus()) delay(300) } ?: return@LaunchedEffect
+            delay(700)
+            if (!hasWindowFocus()) return@LaunchedEffect
+            qs.markTileOffered(this@MainActivity)
+            tile.askToAdd(this@MainActivity) {}
+        }
+    }
+
     companion object {
         /** Intent extra: when true, MainActivity opens the chat screen (used by chat push taps). */
         const val EXTRA_OPEN_CHAT = "extra_open_chat"
@@ -788,5 +835,11 @@ class MainActivity : FragmentActivity() {
 
         /** Intent extra: open the Partners page (a partner added this user). */
         const val EXTRA_OPEN_PARTNERS = "extra_open_partners"
+
+        /** Intent extra: open Tools → SyncUp Share (files to send, if any, ride in the ClipData). */
+        const val EXTRA_QUICK_SHARE = "extra_quick_share"
+
+        /** With [EXTRA_QUICK_SHARE], from the Quick Settings tile: start Receive right away. */
+        const val EXTRA_QUICK_SHARE_RECEIVE = "extra_quick_share_receive"
     }
 }

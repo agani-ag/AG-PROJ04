@@ -357,6 +357,7 @@ private fun DoneRow(t: DownloadTask) {
             Text(
                 listOf(if (t.total > 0) Files.size(t.total) else "", source, time).filter { it.isNotBlank() }.joinToString(" · "),
                 fontSize = 12.sp, color = if (t.work) MaterialTheme.colorScheme.primary.copy(alpha = .9f) else cs.onSurfaceVariant, maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         Box {

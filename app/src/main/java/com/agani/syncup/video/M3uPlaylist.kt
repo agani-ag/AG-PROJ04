@@ -33,10 +33,13 @@ object SavedPlaylists {
         }
     }.getOrDefault(emptyList())
 
+    // commit(), not apply(): a delete the user just confirmed must be on disk before this returns —
+    // apply()'s write is queued and can be lost if the process is killed right after (e.g. force-stop
+    // during testing, or the OS reclaiming memory), which would make a "deleted" entry reappear.
     private fun writeAll(context: Context, list: List<SavedPlaylistEntry>) {
         val a = JSONArray()
         list.forEach { e -> a.put(JSONObject().put("url", e.url).put("title", e.title).put("count", e.channelCount).put("at", e.addedAt)) }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, a.toString()).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, a.toString()).commit()
     }
 
     /** Adds a new entry (appended at the end), or refreshes an existing one with the same URL in place. */
@@ -77,7 +80,7 @@ object ChannelFavorites {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val set = (prefs.getStringSet(KEY, emptySet()) ?: emptySet()).toMutableSet()
         val nowFavorite = if (url in set) { set.remove(url); false } else { set.add(url); true }
-        prefs.edit().putStringSet(KEY, set).apply()
+        prefs.edit().putStringSet(KEY, set).commit() // see SavedPlaylists.writeAll — same apply()-loss risk
         return nowFavorite
     }
 }

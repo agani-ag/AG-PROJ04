@@ -17,11 +17,6 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <!-- Network folders: receive WS-Discovery's multicast replies when looking for Windows PCs on
-         this Wi-Fi (normal permission, no runtime prompt — Android filters multicast packets by
-         default to save power, this un-filters them only while discovery is running). -->
-    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Required by the WebRTC/getUserMedia audio stack in the WebView to configure the mic
@@ -40,10 +35,31 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Re-arm reminder alarms after a device reboot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Tools → SyncUp Share (Google Nearby Connections): Bluetooth finds the other phone, a direct
+         Wi-Fi link carries the files. Asked for only when Send / Receive is tapped. Never used for
+         location (neverForLocation); Android 12 and older also need location for Bluetooth scans
+         (ACCESS_FINE_LOCATION, already declared above for websites). -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="s" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation"
+        tools:targetApi="tiramisu" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <!-- SyncUp Share: keeps a transfer going with the app in the background (talks to the other phone). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
 
     <queries>
         <intent>
@@ -159,6 +175,45 @@
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <!-- Tools → SyncUp Share: keeps a phone-to-phone transfer running in the background -->
+        <service
+            android:name=".quickshare.QuickShareService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+
+        <!-- SyncUp Share's button in Quick Settings (swipe down from the status bar), like Android's
+             own Quick Share tile: tap = open SyncUp Share ready to receive. -->
+        <service
+            android:name=".quickshare.SyncUpShareTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_qs_syncup_share"
+            android:label="@string/syncup_share_tile"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- "Share → SyncUp Share" from any app: files go to SyncUp Share, ready to send. No text/*
+             (a shared link goes to "Download with SyncUp" instead). -->
+        <activity
+            android:name=".quickshare.QuickShareTargetActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:label="@string/quick_share_target"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="application/*" />
             </intent-filter>
         </activity>
 
