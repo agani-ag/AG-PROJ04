@@ -18,23 +18,15 @@ import androidx.compose.runtime.setValue
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.agani.syncup.BuildConfig
+import com.agani.syncup.group.GroupChannel
+import com.agani.syncup.group.GroupLink
+import com.agani.syncup.group.GroupMode
+import com.agani.syncup.group.GroupPhase
+import com.agani.syncup.group.GroupRole
 import com.agani.syncup.music.Song
-import com.agani.syncup.quickshare.QuickShare
-import com.google.android.gms.common.api.ApiException
-import com.google.android.gms.nearby.Nearby
-import com.google.android.gms.nearby.connection.AdvertisingOptions
-import com.google.android.gms.nearby.connection.ConnectionInfo
-import com.google.android.gms.nearby.connection.ConnectionLifecycleCallback
-import com.google.android.gms.nearby.connection.ConnectionResolution
-import com.google.android.gms.nearby.connection.ConnectionsClient
-import com.google.android.gms.nearby.connection.ConnectionsStatusCodes
-import com.google.android.gms.nearby.connection.DiscoveredEndpointInfo
-import com.google.android.gms.nearby.connection.DiscoveryOptions
-import com.google.android.gms.nearby.connection.EndpointDiscoveryCallback
+import com.google.android.gms.nearby.connection.BandwidthInfo
 import com.google.android.gms.nearby.connection.Payload
-import com.google.android.gms.nearby.connection.PayloadCallback
 import com.google.android.gms.nearby.connection.PayloadTransferUpdate
-import com.google.android.gms.nearby.connection.Strategy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -47,17 +39,14 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.BitSet
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 enum class PartyRole { NONE, HOST, GUEST }
 
 enum class PartyPhase {
     IDLE,
-    /** Host: the party is on (guests can find it). */
+    /** Host: the party is on. */
     HOSTING,
-    /** Guest: asked to join, waiting for the host to accept. */
-    JOINING,
     /** Guest: in the party. */
     IN_ROOM,
     /** Guest: the host's phone dropped — the music carries on from what's here while it reconnects. */
@@ -73,12 +62,6 @@ enum class GuestAdds(val key: String) {
     }
 }
 
-/** A party a nearby phone is hosting (from its advertisement). */
-class PartyRoom(val endpointId: String, val roomId: String, val name: String, val host: String, val people: Int, val playing: String)
-
-/** Host: someone asked to join (both phones show [code]). */
-class JoinRequest(val endpointId: String, val token: String, val name: String, val code: String)
-
 /** Host: a guest wants to add one of their songs. */
 class AddRequest(
     val endpointId: String, val guest: String, val req: Int, val title: String, val artist: String,
@@ -86,15 +69,16 @@ class AddRequest(
 )
 
 /**
- * SyncUp Party (Tools → Radio → Party): a host plays songs from their phone and every phone in the
- * party plays them at exactly the same moment — a room of phones sounds like one speaker.
+ * SyncUp Party — a group's Music party mode (Tools → Radio → Party): the host plays songs from
+ * their phone and every phone in the group plays them at exactly the same moment — a room of phones
+ * sounds like one speaker.
  *
- * Google Nearby Connections, star-shaped (one host, many guests; Bluetooth to find, direct Wi-Fi or
- * the same Wi-Fi to carry — no internet). Each host's party is its own room, so several can run side
- * by side without mixing. The host sends each song to every guest in pieces (kept only in a cache,
- * deleted after); guests match their clock to the host's ([PartyClock]) and [PartySyncPlayer] plays
- * every sample on time. The host is the DJ (queue, play / pause / next / seek); every phone keeps its
- * own volume. Guests can add songs when the host allows it (off / ask / on).
+ * Runs on the group's link ([GroupLink]: finding, joining, who's in, the clock, reconnecting). The
+ * host sends each song to every guest in pieces (kept only in a cache, deleted after); guests play
+ * on the host's clock and [PartySyncPlayer] plays every sample on time. The host is the DJ (queue,
+ * play / pause / next / seek); every phone keeps its own volume. Guests can add songs when the host
+ * allows it (off / ask / on). When the group switches to another mode the party pauses and keeps its
+ * queue — switching back carries on.
  *
  * Main thread for everything public (Nearby calls back there too).
  */
@@ -107,11 +91,14 @@ object Party {
     private const val WINDOW = 6
     /** Songs sent ahead of time: the playing one and the next ones. */
     private const val PREFETCH = 2
-    const val MAX_GUESTS = 20
+    /** A piece on its way that hasn't moved for this long is taken as lost: its place frees up and it goes again. */
+    private const val STUCK_MS = 20_000L
+    /** The queue in a "state" stays well under Nearby's 32 KB message limit (bytes). */
+    private const val STATE_QUEUE_BYTES = 18_000
+    /** Every so many heartbeats the state carries the queue again (in between: just the timeline). */
+    private const val FULL_STATE_EVERY = 6
 
-    private val strategy = Strategy.P2P_STAR
     private lateinit var app: Context
-    private val client: ConnectionsClient by lazy { Nearby.getConnectionsClient(app) }
     private val io = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val main = Handler(Looper.getMainLooper())
     private var ready = false
@@ -121,14 +108,10 @@ object Party {
         private set
     var phase by mutableStateOf(PartyPhase.IDLE)
         private set
-    /** Parties nearby (while browsing). */
-    val rooms = mutableStateListOf<PartyRoom>()
-    var roomName by mutableStateOf("")
-        private set
-    var hostName by mutableStateOf("")
-        private set
-    /** Everyone in the party, host first. */
-    val people = mutableStateListOf<String>()
+    val roomName: String get() = GroupLink.groupName
+    val hostName: String get() = GroupLink.hostName
+    /** Everyone in the group, host first. */
+    val people: List<String> get() = GroupLink.peopleNames
     var guestAdds by mutableStateOf(GuestAdds.ASK)
         private set
     /** Every song in the party, in order (played ones stay, before the current one). */
@@ -137,19 +120,14 @@ object Party {
         private set
     var paused by mutableStateOf(true)
         private set
-    /** Guest, joining: the code both phones show. */
-    var code by mutableStateOf("")
-        private set
-    val joinRequests = mutableStateListOf<JoinRequest>()
     val addRequests = mutableStateListOf<AddRequest>()
     /** Something to tell the user once (a toast / note). */
     var notice by mutableStateOf<String?>(null)
-    /** Guest: the host ended the party (shown until dismissed). */
-    var ended by mutableStateOf<String?>(null)
-        private set
     /** How far this phone is off (ms), from the last measurement; null when not playing. */
     var syncErrorMs by mutableStateOf<Double?>(null)
         private set
+    /** Guest: how fast the link to the host is ([BandwidthInfo.Quality]: LOW = Bluetooth, HIGH = Wi-Fi). */
+    val linkQuality: Int get() = GroupLink.linkQuality
     /** This phone stopped its own sound (a call / another app) — tap to rejoin. */
     var localPaused by mutableStateOf(false)
         private set
@@ -159,14 +137,13 @@ object Party {
     /** Guest: the host lets guests add songs right now. */
     val canAdd: Boolean get() = role == PartyRole.GUEST && guestAdds != GuestAdds.OFF
 
+    /** The group is in Music party mode on this phone. */
     val active: Boolean get() = phase != PartyPhase.IDLE
     val current: PartyTrack? get() = queue.firstOrNull { it.id == currentId }
     val upNext: List<PartyTrack>
         get() = queue.indexOfFirst { it.id == currentId }.let { i -> if (i < 0) queue.toList() else queue.drop(i + 1) }
 
     // ------------------------------------------------------------------ inside
-    private var myToken = ""
-    private var roomId = ""
     /** Host time (ns) at which the current song's position 0 plays. */
     private var t0HostNs = 0L
     private var pausedAtMs = 0L
@@ -175,37 +152,35 @@ object Party {
     private val localUris = ConcurrentHashMap<Int, Uri>()
     private var player: PartySyncPlayer? = null
     private var stateSeq = 0
+    /** Host: the music was playing when the group switched away (switching back plays on). */
+    private var wasPlaying = false
 
     // host
-    private class Guest(val endpointId: String, val token: String, val name: String) {
+    private class Guest(val endpointId: String, val name: String) {
         /** Song pieces this guest has, or that are on their way to it (lock the BitSet to use it). */
         val sent = ConcurrentHashMap<Int, BitSet>()
         /** Payload id → (song, piece) of the pieces on their way. */
         val inFlight = ConcurrentHashMap<Long, Pair<Int, Int>>()
+        /** Payload id → when it last moved (sent, or bytes reported going). */
+        val movedAt = ConcurrentHashMap<Long, Long>()
+        /** Song → the piece this guest's player waits for (it asked: "want"). */
+        val wanted = ConcurrentHashMap<Int, Int>()
         val wake = Channel<Unit>(Channel.CONFLATED)
         var pump: Job? = null
 
         fun sentOf(trackId: Int): BitSet = sent.getOrPut(trackId) { BitSet() }
     }
     private val guests = ConcurrentHashMap<String, Guest>()
-    private val pendingJoins = HashMap<String, JoinRequest>()
-    /** Guests let in once: their reconnects come straight back in. */
-    private val knownTokens = HashMap<String, String>()
     private var nextTrackId = 1
     private var heartbeat: Job? = null
-    private var readvertise: Runnable? = null
 
     // guest
-    private var hostEndpoint: String? = null
-    private val clock = PartyClock()
-    private var pinger: Job? = null
-    private var pingId = 0
-    private val pingSent = HashMap<Int, Long>()
-    private var leaving = false
+    private val clock get() = GroupLink.clock
     private var nextReq = 1
     private val myAdds = HashMap<Int, Pair<Uri, PartyTrack>>()
     private val uploadInFlight = ConcurrentHashMap.newKeySet<Long>()
     private val uploadWake = Channel<Unit>(Channel.CONFLATED)
+    private var helloSent = false
 
     // media session (lock screen) + audio focus
     private var controller: MediaController? = null
@@ -216,16 +191,13 @@ object Party {
         if (ready) return
         ready = true
         app = context.applicationContext
-        val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        myToken = prefs.getString("token", null) ?: UUID.randomUUID().toString().take(12).also {
-            prefs.edit().putString("token", it).apply()
-        }
-        syncAdjustMs = prefs.getInt("sync_adjust_ms", 0)
+        syncAdjustMs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt("sync_adjust_ms", 0)
         TrackData.clearCache(app)
-        QuickShare.init(app)
+        GroupLink.init(app)
+        GroupLink.register(GroupMode.MUSIC, channel)
     }
 
-    private val myName: String get() = QuickShare.myName.ifBlank { "SyncUp" }
+    private val myName: String get() = GroupLink.myName
 
     fun setSyncAdjust(ms: Int) {
         syncAdjustMs = ms.coerceIn(-400, 400)
@@ -241,174 +213,154 @@ object Party {
 
     private fun hostNow(): Long = System.nanoTime() + if (role == PartyRole.GUEST) clock.offsetNs else 0
 
-    // ================================================================== browsing (guests)
-    /** Look for parties nearby (while the Party page is open). */
-    fun startBrowsing() {
-        if (active) return
-        rooms.clear()
-        client.startDiscovery(PartyWire.SERVICE_ID, discovery, DiscoveryOptions.Builder().setStrategy(strategy).build())
-            .addOnFailureListener { e -> if (!isAlready(e)) notice = friendly(e) }
-    }
-
-    fun stopBrowsing() {
-        if (phase == PartyPhase.IDLE || phase == PartyPhase.HOSTING) runCatching { client.stopDiscovery() }
-        if (phase == PartyPhase.IDLE) rooms.clear()
-    }
-
-    private val discovery = object : EndpointDiscoveryCallback() {
-        override fun onEndpointFound(endpointId: String, info: DiscoveredEndpointInfo) {
-            if (info.serviceId != PartyWire.SERVICE_ID) return
-            val p = info.endpointName.split(PartyWire.SEP)
-            if (p.getOrNull(0) != "1" || p.size < 6) return
-            val room = PartyRoom(endpointId, p[1], p[2], p[3], p[4].toIntOrNull() ?: 1, p[5])
-            rooms.removeAll { it.endpointId == endpointId || it.roomId == room.roomId }
-            rooms.add(room)
-            // Back after a drop: rejoin our party by itself.
-            if (phase == PartyPhase.RECONNECTING && room.roomId == roomId) rejoin(room)
-        }
-
-        override fun onEndpointLost(endpointId: String) {
-            rooms.removeAll { it.endpointId == endpointId }
-        }
-    }
-
-    // ================================================================== hosting
+    // ================================================================== starting / leaving
+    /**
+     * Start a party: a new group in Music party mode — or, hosting a group doing something else,
+     * switch it to music.
+     */
     fun startHosting(name: String) {
-        if (active) return
-        runCatching { client.stopDiscovery() }
-        rooms.clear()
-        clearParty()
-        role = PartyRole.HOST
-        phase = PartyPhase.HOSTING
-        roomId = UUID.randomUUID().toString().take(6)
-        roomName = name.trim().ifBlank { "$myName's Party" }.take(30)
-        hostName = myName
-        people.clear()
-        people.add(myName)
-        guestAdds = GuestAdds.ASK
-        advertise()
-        heartbeat = io.launch {
-            while (isActive) {
-                delay(5_000)
-                main.post { if (role == PartyRole.HOST) broadcastState() }
-            }
+        if (GroupLink.active) {
+            if (GroupLink.isHost && GroupLink.mode != GroupMode.MUSIC) GroupLink.switchTo(GroupMode.MUSIC)
+            return
         }
-        connectSession()
+        GroupLink.startGroup(name.trim().ifBlank { "$myName's Party" }, GroupMode.MUSIC)
     }
 
-    private fun advertisedName(): String = listOf(
-        "1", roomId, roomName.take(30), hostName.take(24), people.size.toString(), (current?.title ?: "").take(30),
-    ).joinToString(PartyWire.SEP.toString())
+    /** Guest: leave the group. */
+    fun leave() = GroupLink.leave()
 
-    private fun advertise() {
-        client.startAdvertising(advertisedName(), PartyWire.SERVICE_ID, hostLifecycle, AdvertisingOptions.Builder().setStrategy(strategy).build())
-            .addOnFailureListener { e -> if (!isAlready(e)) notice = friendly(e) }
-    }
+    /** Host: end the group for everyone. */
+    fun end() = GroupLink.end()
 
-    /** People / song changed: nearby phones see it a moment later (debounced). */
-    private fun readvertiseSoon() {
-        if (role != PartyRole.HOST) return
-        readvertise?.let { main.removeCallbacks(it) }
-        readvertise = Runnable {
-            if (role != PartyRole.HOST) return@Runnable
-            runCatching { client.stopAdvertising() }
-            advertise()
-        }.also { main.postDelayed(it, 2_500) }
-    }
-
-    fun acceptJoin(request: JoinRequest) {
-        joinRequests.remove(request)
-        knownTokens[request.token] = request.name
-        client.acceptConnection(request.endpointId, hostPayloads).addOnFailureListener { e -> notice = friendly(e) }
-    }
-
-    fun declineJoin(request: JoinRequest) {
-        joinRequests.remove(request)
-        pendingJoins.remove(request.endpointId)
-        runCatching { client.rejectConnection(request.endpointId) }
-    }
-
-    private val hostLifecycle = object : ConnectionLifecycleCallback() {
-        override fun onConnectionInitiated(endpointId: String, info: ConnectionInfo) {
-            if (role != PartyRole.HOST) return run { client.rejectConnection(endpointId) }
-            val parts = info.endpointName.split(PartyWire.SEP)
-            val token = parts.getOrNull(0).orEmpty()
-            val name = parts.getOrNull(1)?.takeIf { it.isNotBlank() } ?: "A guest"
-            val request = JoinRequest(endpointId, token, name, info.authenticationDigits)
-            pendingJoins[endpointId] = request
-            when {
-                guests.size >= MAX_GUESTS -> client.rejectConnection(endpointId)
-                // Someone already let in, back after a drop: straight in.
-                token.isNotBlank() && knownTokens.containsKey(token) ->
-                    client.acceptConnection(endpointId, hostPayloads).addOnFailureListener { pendingJoins.remove(endpointId) }
-                else -> joinRequests.add(request)
-            }
-        }
-
-        override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
-            val request = pendingJoins.remove(endpointId)
-            joinRequests.removeAll { it.endpointId == endpointId }
-            if (result.status.statusCode != ConnectionsStatusCodes.STATUS_OK || request == null || role != PartyRole.HOST) return
-            // A reconnect replaces the old link of the same phone.
-            guests.values.filter { it.token == request.token }.forEach { dropGuest(it.endpointId, quietly = true) }
-            val guest = Guest(endpointId, request.token, request.name)
-            guests[endpointId] = guest
-            refreshPeople()
-            sendTo(listOf(endpointId), stateJson())
-            // The songs follow once the guest says what it already has ("hello").
-        }
-
-        override fun onDisconnected(endpointId: String) {
-            dropGuest(endpointId, quietly = false)
-        }
-    }
-
-    private fun dropGuest(endpointId: String, quietly: Boolean) {
-        val g = guests.remove(endpointId) ?: return
-        g.pump?.cancel()
-        if (quietly) runCatching { client.disconnectFromEndpoint(endpointId) }
-        addRequests.removeAll { it.endpointId == endpointId }
-        refreshPeople()
-    }
-
-    private fun refreshPeople() {
-        people.clear()
-        people.add(hostName)
-        people.addAll(guests.values.map { it.name })
-        broadcastState()
-        readvertiseSoon()
-    }
-
-    private val hostPayloads = object : PayloadCallback() {
-        override fun onPayloadReceived(endpointId: String, payload: Payload) {
-            val arrived = System.nanoTime()
-            val bytes = payload.asBytes() ?: return
-            when (val m = PartyWire.parse(bytes)) {
-                is PartyWire.Json -> onGuestMessage(endpointId, m.o, arrived)
+    // ================================================================== the group's music channel
+    internal val channel = object : GroupChannel {
+        override fun onReceive(endpointId: String, body: ByteArray, arrivedNs: Long) {
+            when (val m = PartyWire.parse(body)) {
+                is PartyWire.Json -> if (role == PartyRole.HOST) onGuestMessage(endpointId, m.o) else if (role == PartyRole.GUEST) onHostMessage(m.o)
                 is PartyWire.Chunk -> tracks[m.trackId]?.write(m.offset, m.data, m.start, m.len)
                 null -> Unit
             }
         }
 
-        override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {
-            if (update.status == PayloadTransferUpdate.Status.IN_PROGRESS) return
-            val g = guests[endpointId] ?: return
-            val (trackId, piece) = g.inFlight.remove(update.payloadId) ?: return
-            // Didn't make it: send that piece again.
-            if (update.status != PayloadTransferUpdate.Status.SUCCESS) g.sent[trackId]?.let { synchronized(it) { it.clear(piece) } }
-            g.wake.trySend(Unit)
+        override fun onTransfer(endpointId: String, update: PayloadTransferUpdate) {
+            if (role == PartyRole.HOST) {
+                val g = guests[endpointId] ?: return
+                if (update.status == PayloadTransferUpdate.Status.IN_PROGRESS) {
+                    if (g.movedAt.containsKey(update.payloadId)) g.movedAt[update.payloadId] = System.currentTimeMillis()
+                    return
+                }
+                g.movedAt.remove(update.payloadId)
+                val (trackId, piece) = g.inFlight.remove(update.payloadId) ?: return
+                // Didn't make it: send that piece again.
+                if (update.status != PayloadTransferUpdate.Status.SUCCESS) g.sent[trackId]?.let { synchronized(it) { it.clear(piece) } }
+                g.wake.trySend(Unit)
+            } else if (role == PartyRole.GUEST) {
+                if (update.status == PayloadTransferUpdate.Status.IN_PROGRESS) return
+                if (uploadInFlight.remove(update.payloadId)) uploadWake.trySend(Unit)
+            }
         }
+
+        override fun onMemberIn(endpointId: String, token: String, name: String) {
+            if (role != PartyRole.HOST) return
+            addGuest(endpointId, name)
+            // The songs follow once the guest says what it already has ("hello").
+            sendTo(listOf(endpointId), stateJson())
+        }
+
+        override fun onMemberOut(endpointId: String) {
+            val g = guests.remove(endpointId) ?: return
+            g.pump?.cancel()
+            addRequests.removeAll { it.endpointId == endpointId }
+        }
+
+        override fun onLinkUp() {
+            if (role != PartyRole.GUEST) return
+            phase = PartyPhase.IN_ROOM
+            helloSent = false
+            main.postDelayed({ sayHello() }, 2_000)
+        }
+
+        override fun onLinkDown() {
+            if (role == PartyRole.GUEST) phase = PartyPhase.RECONNECTING
+        }
+
+        override fun onClock() {
+            if (role != PartyRole.GUEST) return
+            if (!helloSent && clock.count >= 6) sayHello()
+            if (clock.ready && player == null && !paused && !localPaused) startAudio()
+        }
+
+        override fun activate(resume: Boolean) {
+            if (GroupLink.role == GroupRole.HOST) {
+                role = PartyRole.HOST
+                phase = PartyPhase.HOSTING
+                GroupLink.guestList().forEach { (ep, _, name) -> addGuest(ep, name) }
+                heartbeat?.cancel()
+                heartbeat = io.launch {
+                    var beats = 0
+                    while (isActive) {
+                        delay(5_000)
+                        val full = ++beats % FULL_STATE_EVERY == 0
+                        main.post { if (role == PartyRole.HOST) broadcastState(full) }
+                    }
+                }
+                connectSession()
+                if (resume && wasPlaying && current != null) play(currentId, pausedAtMs) else broadcastState()
+                wasPlaying = false
+                GroupLink.setTitle(current?.title.orEmpty())
+            } else {
+                role = PartyRole.GUEST
+                phase = if (GroupLink.phase == GroupPhase.RECONNECTING) PartyPhase.RECONNECTING else PartyPhase.IN_ROOM
+                helloSent = false
+                connectSession()
+                // Back in music with the clock already measured: straight away; just joined: once it is.
+                if (clock.count >= 6) sayHello() else main.postDelayed({ sayHello() }, 2_000)
+            }
+        }
+
+        override fun deactivate() {
+            if (role == PartyRole.HOST) {
+                wasPlaying = !paused && current != null
+                if (!paused) {
+                    pausedAtMs = positionMs()
+                    paused = true
+                }
+                guests.values.forEach { it.pump?.cancel() }
+                guests.clear()
+            }
+            heartbeat?.cancel()
+            endTimer?.let { main.removeCallbacks(it) }
+            endTimer = null
+            stopAudio()
+            addRequests.clear()
+            helloSent = false
+            localPaused = false
+            disconnectSession()
+            // Guests keep the queue and their cached songs: switching back carries on.
+            role = PartyRole.NONE
+            phase = PartyPhase.IDLE
+        }
+
+        override fun reset() {
+            clearParty()
+            role = PartyRole.NONE
+            phase = PartyPhase.IDLE
+            disconnectSession()
+        }
+
+        override fun statusText(): String? = current?.let { (if (paused) "Paused: " else "Playing “") + it.title + if (paused) "" else "”" }
     }
 
-    private fun onGuestMessage(endpointId: String, o: JSONObject, arrived: Long) {
+    private fun addGuest(endpointId: String, name: String) {
+        guests.remove(endpointId)?.pump?.cancel()
+        guests[endpointId] = Guest(endpointId, name)
+    }
+
+    private fun onGuestMessage(endpointId: String, o: JSONObject) {
         val g = guests[endpointId] ?: return
         when (o.optString("t")) {
-            "ping" -> sendTo(
-                listOf(endpointId),
-                PartyWire.msg("pong").put("id", o.optInt("id")).put("a", o.optLong("a")).put("b", arrived).put("c", System.nanoTime()),
-            )
             "hello" -> {
-                // Back after a drop: what it already has isn't sent again.
+                // Back after a drop / a switch: what it already has isn't sent again.
                 o.optJSONObject("have")?.let { have ->
                     have.keys().forEach { k ->
                         val id = k.toIntOrNull() ?: return@forEach
@@ -430,7 +382,14 @@ object Party {
                     GuestAdds.ASK -> addRequests.add(r)
                 }
             }
-            "bye" -> dropGuest(endpointId, quietly = true)
+            "want" -> {
+                val id = o.optInt("track")
+                val piece = o.optInt("piece")
+                g.wanted[id] = piece
+                // Its player waits for a piece already sent (and not on its way): it got lost — again.
+                if (g.inFlight.values.none { it.first == id && it.second == piece }) g.sent[id]?.let { synchronized(it) { it.clear(piece) } }
+                g.wake.trySend(Unit)
+            }
         }
     }
 
@@ -457,6 +416,9 @@ object Party {
         broadcastState()
     }
 
+    /** Host: this song (a file on this phone) is in the party already. Reads [queue], so screens follow it. */
+    fun isQueued(uri: Uri): Boolean = queue.any { localUris[it.id] == uri }
+
     /** Host: songs from this phone, to the end of the queue (the first starts if nothing plays). */
     fun addSongs(songs: List<Song>) {
         if (role != PartyRole.HOST) return
@@ -482,7 +444,6 @@ object Party {
             else -> broadcastState()
         }
         guests.values.forEach { it.wake.trySend(Unit) }
-        readvertiseSoon()
     }
 
     fun removeFromQueue(trackId: Int) {
@@ -503,7 +464,7 @@ object Party {
         broadcastState()
         startAudio()
         guests.values.forEach { it.wake.trySend(Unit) }
-        readvertiseSoon()
+        GroupLink.setTitle(current?.title.orEmpty())
     }
 
     fun togglePause() {
@@ -550,26 +511,43 @@ object Party {
         }
     }
 
-    private fun stateJson(): JSONObject {
-        val q = JSONArray()
-        queue.takeLast(150).forEach { q.put(it.toJson()) }
-        return PartyWire.msg("state")
+    /** What guests need to know. [full]: with the queue too (else just the timeline — small, often). */
+    private fun stateJson(full: Boolean = true): JSONObject {
+        val o = PartyWire.msg("state")
             .put("seq", ++stateSeq)
-            .put("room", roomName).put("host", hostName).put("roomId", roomId)
             .put("adds", guestAdds.key)
-            .put("people", JSONArray(people.toList()))
-            .put("queue", q)
             .put("current", currentId)
             .put("t0", t0HostNs)
             .put("paused", paused)
             .put("pos", if (paused) pausedAtMs else positionMs())
+        if (full) o.put("queue", queueWindow())
+        return o
     }
 
-    private fun broadcastState() {
+    /**
+     * The queue for guests: from the song before the current one onwards (a whole library can be in
+     * it), only as much as fits well inside one Nearby message (32 KB at most).
+     */
+    private fun queueWindow(): JSONArray {
+        val list = queue.toList()
+        val from = (list.indexOfFirst { it.id == currentId } - 1).coerceAtLeast(0)
+        val q = JSONArray()
+        var bytes = 0
+        for (t in list.drop(from)) {
+            val j = t.toJson()
+            bytes += j.toString().toByteArray().size + 1
+            if (q.length() > 0 && (bytes > STATE_QUEUE_BYTES || q.length() >= 100)) break
+            q.put(j)
+        }
+        return q
+    }
+
+    private fun broadcastState(full: Boolean = true) {
         if (role != PartyRole.HOST) return
-        if (guests.isNotEmpty()) sendTo(guests.keys.toList(), stateJson())
+        if (guests.isNotEmpty()) sendTo(guests.keys.toList(), stateJson(full))
         scheduleEnd()
         playerListener?.invoke()
+        GroupLink.setTitle(current?.title.orEmpty())
     }
 
     private var endTimer: Runnable? = null
@@ -600,6 +578,7 @@ object Party {
         while (guests[g.endpointId] === g) {
             if (g.inFlight.size >= WINDOW) {
                 withTimeoutOrNull(2_000) { g.wake.receive() }
+                resendStuck(g)
                 continue
             }
             val (track, piece) = nextFor(g) ?: run {
@@ -615,12 +594,30 @@ object Party {
             }
             val sent = g.sentOf(track.id)
             synchronized(sent) { sent.set(piece) }
-            val payload = Payload.fromBytes(PartyWire.chunk(track.id, offset, buf, n))
+            val payload = GroupLink.payload(GroupMode.MUSIC, PartyWire.chunk(track.id, offset, buf, n))
             g.inFlight[payload.id] = track.id to piece
-            runCatching { client.sendPayload(g.endpointId, payload) }.onFailure {
+            g.movedAt[payload.id] = System.currentTimeMillis()
+            if (!GroupLink.send(g.endpointId, payload)) {
                 g.inFlight.remove(payload.id)
+                g.movedAt.remove(payload.id)
                 synchronized(sent) { sent.clear(piece) }
             }
+        }
+    }
+
+    /**
+     * Pieces that stopped moving (their transfer report never came — it happens on real phones when
+     * the link changes) would hold their places forever and the guest would get nothing more: free
+     * those places and send the pieces again.
+     */
+    private fun resendStuck(g: Guest) {
+        val now = System.currentTimeMillis()
+        g.inFlight.keys.filter { now - (g.movedAt[it] ?: 0L) > STUCK_MS }.forEach { id ->
+            val (trackId, piece) = g.inFlight.remove(id) ?: return@forEach
+            g.movedAt.remove(id)
+            GroupLink.cancel(id)
+            g.sent[trackId]?.let { synchronized(it) { it.clear(piece) } }
+            if (BuildConfig.DEBUG) Log.d(TAG, "piece $piece of song $trackId stuck on the way to ${g.name}: sending again")
         }
     }
 
@@ -632,16 +629,19 @@ object Party {
             if (!tracks.containsKey(t.id)) continue
             val count = pieceCount(t.size)
             val sent = g.sentOf(t.id)
+            val wanted = g.wanted[t.id]
             val piece = synchronized(sent) {
                 fun free(i: Int) = i in 0 until count && !sent.get(i)
                 when {
+                    // The guest's player is waiting for exactly this one.
+                    wanted != null && free(wanted) -> wanted
                     free(0) -> 0
                     free(count - 1) -> count - 1
                     else -> {
-                        // From a little before where the song is now (a guess from the size; fine for
-                        // constant-bitrate files, close enough for the rest).
+                        // From where the guest's player reads, else a little before where the song is
+                        // now (a guess from the size; fine for constant-bitrate files, close enough for the rest).
                         val nowMs = if (t.id == currentId) positionMs() - 3_000 else 0
-                        val from = if (nowMs <= 0 || t.durationMs <= 0) 0 else (t.size * nowMs / t.durationMs / PartyWire.CHUNK).toInt()
+                        val from = wanted ?: if (nowMs <= 0 || t.durationMs <= 0) 0 else (t.size * nowMs / t.durationMs / PartyWire.CHUNK).toInt()
                         sent.nextClearBit(from.coerceIn(0, count)).takeIf { it < count } ?: sent.nextClearBit(0).takeIf { it < count }
                     }
                 }
@@ -653,111 +653,9 @@ object Party {
 
     private fun pieceCount(size: Long) = ((size + PartyWire.CHUNK - 1) / PartyWire.CHUNK).toInt()
 
-    // ================================================================== joining (guests)
-    fun join(room: PartyRoom) {
-        if (active) return
-        clearParty()
-        role = PartyRole.GUEST
-        phase = PartyPhase.JOINING
-        roomId = room.roomId
-        roomName = room.name
-        hostName = room.host
-        hostEndpoint = room.endpointId
-        code = ""
-        leaving = false
-        requestConnection(room.endpointId)
-    }
-
-    private fun requestConnection(endpointId: String) {
-        client.requestConnection("$myToken${PartyWire.SEP}$myName", endpointId, guestLifecycle)
-            .addOnFailureListener { e ->
-                if (phase == PartyPhase.JOINING) {
-                    notice = friendly(e)
-                    backToStart()
-                }
-            }
-    }
-
-    private fun rejoin(room: PartyRoom) {
-        if (hostEndpoint == room.endpointId) return
-        hostEndpoint = room.endpointId
-        requestConnection(room.endpointId)
-    }
-
-    fun cancelJoin() {
-        hostEndpoint?.let { runCatching { client.disconnectFromEndpoint(it) } }
-        backToStart()
-    }
-
-    private val guestLifecycle = object : ConnectionLifecycleCallback() {
-        override fun onConnectionInitiated(endpointId: String, info: ConnectionInfo) {
-            if (endpointId != hostEndpoint) return run { client.rejectConnection(endpointId) }
-            code = info.authenticationDigits
-            client.acceptConnection(endpointId, guestPayloads)
-        }
-
-        override fun onConnectionResult(endpointId: String, result: ConnectionResolution) {
-            if (endpointId != hostEndpoint) return
-            when (result.status.statusCode) {
-                ConnectionsStatusCodes.STATUS_OK -> {
-                    runCatching { client.stopDiscovery() }
-                    phase = PartyPhase.IN_ROOM
-                    // Clock first, while the link is quiet; "hello" then starts the songs coming.
-                    helloSent = false
-                    startPinging()
-                    main.postDelayed({ sayHello() }, 2_000)
-                    connectSession()
-                }
-                ConnectionsStatusCodes.STATUS_CONNECTION_REJECTED -> {
-                    notice = "$hostName didn't let you in."
-                    backToStart()
-                }
-                else -> if (phase == PartyPhase.JOINING) {
-                    notice = "Couldn't join $roomName. Keep the phones close together and try again."
-                    backToStart()
-                } else {
-                    hostEndpoint = null // try again when the room shows up
-                }
-            }
-        }
-
-        override fun onDisconnected(endpointId: String) {
-            if (endpointId != hostEndpoint || leaving || role != PartyRole.GUEST) return
-            // The host's phone dropped: keep playing what's here and look for the party again.
-            hostEndpoint = null
-            phase = PartyPhase.RECONNECTING
-            pinger?.cancel()
-            client.startDiscovery(PartyWire.SERVICE_ID, discovery, DiscoveryOptions.Builder().setStrategy(strategy).build())
-                .addOnFailureListener { }
-        }
-    }
-
-    private val guestPayloads = object : PayloadCallback() {
-        override fun onPayloadReceived(endpointId: String, payload: Payload) {
-            val arrived = System.nanoTime()
-            val bytes = payload.asBytes() ?: return
-            when (val m = PartyWire.parse(bytes)) {
-                is PartyWire.Json -> onHostMessage(m.o, arrived)
-                is PartyWire.Chunk -> tracks[m.trackId]?.write(m.offset, m.data, m.start, m.len)
-                null -> Unit
-            }
-        }
-
-        override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {
-            if (update.status == PayloadTransferUpdate.Status.IN_PROGRESS) return
-            if (uploadInFlight.remove(update.payloadId)) uploadWake.trySend(Unit)
-        }
-    }
-
-    private fun onHostMessage(o: JSONObject, arrived: Long) {
+    // ================================================================== guests
+    private fun onHostMessage(o: JSONObject) {
         when (o.optString("t")) {
-            "pong" -> {
-                val sent = pingSent.remove(o.optInt("id")) ?: return
-                clock.add(sent, o.optLong("b"), o.optLong("c"), arrived)
-                if (BuildConfig.DEBUG) Log.d(TAG, "clock rtt=%.1fms best=%.1fms offset=%.2fms".format((arrived - sent - (o.optLong("c") - o.optLong("b"))) / 1e6, clock.rttNs / 1e6, clock.offsetNs / 1e6))
-                if (!helloSent && clock.count >= 6) sayHello()
-                if (clock.ready && player == null && !paused && !localPaused) startAudio()
-            }
             "state" -> applyState(o)
             "addok" -> {
                 val (uri, track) = myAdds.remove(o.optInt("req")) ?: return
@@ -771,33 +669,33 @@ object Party {
                 val (_, track) = myAdds.remove(o.optInt("req")) ?: return
                 notice = "$hostName didn't add “${track.title}”."
             }
-            "end" -> {
-                ended = "$hostName ended the party."
-                backToStart()
-            }
         }
     }
 
     private fun applyState(o: JSONObject) {
-        roomName = o.optString("room", roomName)
-        hostName = o.optString("host", hostName)
+        if (role != PartyRole.GUEST) return
         guestAdds = GuestAdds.of(o.optString("adds"))
-        people.clear()
-        o.optJSONArray("people")?.let { a -> for (i in 0 until a.length()) people.add(a.optString(i)) }
-        val list = mutableListOf<PartyTrack>()
-        o.optJSONArray("queue")?.let { a -> for (i in 0 until a.length()) list.add(PartyTrack.fromJson(a.getJSONObject(i))) }
-        // New songs get a cache to fill; songs gone from the queue lose theirs.
-        list.forEach { t -> if (!tracks.containsKey(t.id)) tracks[t.id] = TrackData.incoming(app, t.id, t.size) }
-        val keep = list.map { it.id }.toSet()
-        tracks.keys.filter { it !in keep }.forEach { id -> tracks.remove(id)?.close(); localUris.remove(id) }
-        queue.clear()
-        queue.addAll(list)
+        // The queue comes now and then (the heartbeat in between is just the timeline).
+        o.optJSONArray("queue")?.let { a ->
+            val list = mutableListOf<PartyTrack>()
+            for (i in 0 until a.length()) list.add(PartyTrack.fromJson(a.getJSONObject(i)))
+            // New songs get a cache to fill; songs gone from the queue lose theirs.
+            list.forEach { t ->
+                if (!tracks.containsKey(t.id)) {
+                    tracks[t.id] = TrackData.incoming(app, t.id, t.size).also { d -> d.onMissing = { piece -> want(t.id, piece) } }
+                }
+            }
+            val keep = list.map { it.id }.toSet()
+            tracks.keys.filter { it !in keep }.forEach { id -> tracks.remove(id)?.close(); localUris.remove(id) }
+            queue.clear()
+            queue.addAll(list)
+        }
 
         val newCurrent = o.optInt("current", -1)
         val newT0 = o.optLong("t0")
         val newPaused = o.optBoolean("paused", true)
         pausedAtMs = o.optLong("pos")
-        val changed = newCurrent != currentId || newT0 != t0HostNs || newPaused != paused
+        val changed = newCurrent != currentId || newT0 != t0HostNs || newPaused != paused || player == null
         currentId = newCurrent
         t0HostNs = newT0
         paused = newPaused
@@ -807,7 +705,20 @@ object Party {
         playerListener?.invoke()
     }
 
-    private var helloSent = false
+    /** Guest → host: this phone's player waits for this piece — send it first (and from there on). */
+    private fun want(trackId: Int, piece: Int) {
+        if (role != PartyRole.GUEST) return
+        sendToHost(PartyWire.msg("want").put("track", trackId).put("piece", piece))
+    }
+
+    /** Guest: the host's clock is measured (before that nothing plays). */
+    val clockReady: Boolean get() = clock.ready
+
+    /** Guest: how much of the playing song is on this phone (0–100), for "Getting the song…". */
+    fun currentSongPercent(): Int {
+        val d = tracks[currentId] ?: return 0
+        return if (d.pieceCount == 0) 0 else (0 until d.pieceCount).count { d.hasPiece(it) } * 100 / d.pieceCount
+    }
 
     /** Guest → host: in, and these songs (pieces) are already here — send the rest. */
     private fun sayHello() {
@@ -815,42 +726,12 @@ object Party {
         helloSent = true
         val have = JSONObject()
         tracks.forEach { (id, d) -> have.put(id.toString(), Base64.encodeToString(d.pieces().toByteArray(), Base64.NO_WRAP)) }
-        sendToHost(PartyWire.msg("hello").put("token", myToken).put("name", myName).put("have", have))
-    }
-
-    /**
-     * Keep measuring the host's clock: a quick burst at the start, quickly again until a clean
-     * (quick) round trip comes back, then every 2 s. Not reset on a reconnect: the song plays on.
-     */
-    private fun startPinging() {
-        pinger?.cancel()
-        pinger = io.launch {
-            var n = 0
-            while (isActive) {
-                main.post { ping() }
-                n++
-                delay(
-                    when {
-                        n < 8 -> 120
-                        clock.count < 12 || clock.rttNs > 40_000_000L -> 400
-                        else -> 2_000
-                    },
-                )
-            }
-        }
-    }
-
-    private fun ping() {
-        if (hostEndpoint == null || phase != PartyPhase.IN_ROOM) return
-        val id = ++pingId
-        pingSent[id] = System.nanoTime()
-        if (pingSent.size > 50) pingSent.keys.sorted().take(25).forEach { pingSent.remove(it) }
-        sendToHost(PartyWire.msg("ping").put("id", id).put("a", pingSent[id]))
+        sendToHost(PartyWire.msg("hello").put("have", have))
     }
 
     /** Guest: ask the host to add one of this phone's songs. */
     fun requestAdd(song: Song) {
-        if (role != PartyRole.GUEST || hostEndpoint == null) return
+        if (role != PartyRole.GUEST || GroupLink.hostEndpoint == null) return
         val size = runCatching { app.contentResolver.openFileDescriptor(song.uri, "r")?.use { it.statSize } }.getOrNull() ?: return
         val mime = app.contentResolver.getType(song.uri) ?: "audio/mpeg"
         val req = nextReq++
@@ -873,18 +754,17 @@ object Party {
         val tail = (size - 1) / PartyWire.CHUNK * PartyWire.CHUNK
         var tailDone = tail == 0L
         try {
-            while (offset < size && role == PartyRole.GUEST) {
-                val host = hostEndpoint
-                if (host == null || uploadInFlight.size >= WINDOW) {
+            while (offset < size && GroupLink.role == GroupRole.GUEST) {
+                if (GroupLink.hostEndpoint == null || uploadInFlight.size >= WINDOW) {
                     withTimeoutOrNull(2_000) { uploadWake.receive() }
                     continue
                 }
                 val at = if (tailDone) offset else tail
-                val n = data.readPiece(at, buf) { role != PartyRole.GUEST }
+                val n = data.readPiece(at, buf) { GroupLink.role != GroupRole.GUEST }
                 if (n <= 0) break
-                val payload = Payload.fromBytes(PartyWire.chunk(trackId, at, buf, n))
+                val payload = GroupLink.payload(GroupMode.MUSIC, PartyWire.chunk(trackId, at, buf, n))
                 uploadInFlight.add(payload.id)
-                runCatching { client.sendPayload(host, payload) }.onFailure { uploadInFlight.remove(payload.id) }
+                if (!GroupLink.sendToHost(payload)) uploadInFlight.remove(payload.id)
                 if (tailDone) offset += n else tailDone = true
             }
         } finally {
@@ -892,79 +772,38 @@ object Party {
         }
     }
 
-    fun leave() {
-        if (role != PartyRole.GUEST) return
-        leaving = true
-        sendToHost(PartyWire.msg("bye"))
-        val host = hostEndpoint
-        main.postDelayed({ host?.let { runCatching { client.disconnectFromEndpoint(it) } } }, 300)
-        backToStart()
-    }
-
-    fun dismissEnded() {
-        ended = null
-    }
-
-    // ================================================================== ending
-    /** Host: end the party for everyone. */
-    fun end() {
-        if (role != PartyRole.HOST) return
-        if (guests.isNotEmpty()) sendTo(guests.keys.toList(), PartyWire.msg("end"))
-        // Let "end" reach them before the links close.
-        val ids = guests.keys.toList()
-        main.postDelayed({ ids.forEach { runCatching { client.disconnectFromEndpoint(it) } } }, 400)
-        backToStart()
-    }
-
-    private fun backToStart() {
-        val wasHost = role == PartyRole.HOST
-        runCatching { client.stopAdvertising() }
-        runCatching { client.stopDiscovery() }
-        if (!wasHost) hostEndpoint?.let { h -> main.postDelayed({ runCatching { client.disconnectFromEndpoint(h) } }, 400) }
-        clearParty()
-        role = PartyRole.NONE
-        phase = PartyPhase.IDLE
-        disconnectSession()
-    }
-
     private fun clearParty() {
         stopAudio()
         endTimer?.let { main.removeCallbacks(it) }
         endTimer = null
         heartbeat?.cancel()
-        pinger?.cancel()
-        readvertise?.let { main.removeCallbacks(it) }
         guests.values.forEach { it.pump?.cancel() }
         guests.clear()
-        pendingJoins.clear()
-        knownTokens.clear()
-        joinRequests.clear()
         addRequests.clear()
         tracks.values.forEach { it.close() }
         tracks.clear()
         localUris.clear()
         myAdds.clear()
         uploadInFlight.clear()
-        pingSent.clear()
-        clock.reset()
         queue.clear()
-        people.clear()
         currentId = -1
         paused = true
         pausedAtMs = 0
         t0HostNs = 0
-        code = ""
-        hostEndpoint = null
         localPaused = false
         syncErrorMs = null
         nextTrackId = 1
+        helloSent = false
+        wasPlaying = false
+        guestAdds = GuestAdds.ASK
+        if (ready) TrackData.clearCache(app)
     }
 
     // ================================================================== this phone's sound
     private fun startAudio() {
         stopAudio()
         val track = current ?: return
-        if (paused || localPaused) return
+        if (paused || localPaused || !active) return
         if (role == PartyRole.GUEST && !clock.ready) return // starts on the next pong
         val data = tracks[track.id]
         val uri = localUris[track.id]
@@ -1064,28 +903,10 @@ object Party {
     // ================================================================== sending
     private fun sendTo(endpoints: List<String>, o: JSONObject) {
         if (endpoints.isEmpty()) return
-        runCatching { client.sendPayload(endpoints, Payload.fromBytes(PartyWire.json(o))) }
-            .onFailure { Log.w(TAG, "send failed", it) }
+        GroupLink.send(endpoints, GroupLink.payload(GroupMode.MUSIC, PartyWire.json(o)))
     }
 
     private fun sendToHost(o: JSONObject) {
-        val h = hostEndpoint ?: return
-        sendTo(listOf(h), o)
-    }
-
-    private fun isAlready(e: Exception) =
-        (e as? ApiException)?.statusCode.let { it == ConnectionsStatusCodes.STATUS_ALREADY_ADVERTISING || it == ConnectionsStatusCodes.STATUS_ALREADY_DISCOVERING }
-
-    private fun friendly(e: Exception): String {
-        val code = (e as? ApiException)?.statusCode ?: return "Something went wrong. Try again."
-        return when (code) {
-            ConnectionsStatusCodes.MISSING_PERMISSION_BLUETOOTH, ConnectionsStatusCodes.MISSING_PERMISSION_BLUETOOTH_ADMIN,
-            ConnectionsStatusCodes.MISSING_PERMISSION_ACCESS_WIFI_STATE, ConnectionsStatusCodes.MISSING_PERMISSION_CHANGE_WIFI_STATE,
-            ConnectionsStatusCodes.MISSING_PERMISSION_ACCESS_COARSE_LOCATION,
-            -> "SyncUp needs the Nearby devices permission for Party."
-            ConnectionsStatusCodes.STATUS_RADIO_ERROR ->
-                "Turn on Bluetooth and Wi-Fi, then try again."
-            else -> "Couldn't start the party (code $code). Turn on Bluetooth and Wi-Fi, then try again."
-        }
+        GroupLink.sendToHost(GroupLink.payload(GroupMode.MUSIC, PartyWire.json(o)))
     }
 }

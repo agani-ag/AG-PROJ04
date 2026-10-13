@@ -31,11 +31,18 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -43,7 +50,9 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -70,6 +79,11 @@ import com.agani.syncup.downloads.DlState
 import com.agani.syncup.downloads.Downloads
 import com.agani.syncup.downloads.FileKind
 import com.agani.syncup.downloads.Files
+import com.agani.syncup.music.playAudioOnly
+import com.agani.syncup.party.Segmented
+import com.agani.syncup.watchparty.WatchParty
+import com.agani.syncup.watchparty.WatchPartyTab
+import com.agani.syncup.watchparty.WatchSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -82,11 +96,21 @@ import kotlinx.coroutines.withContext
  * M3U/M3U8 playlist links are handled entirely in Tools → Channels instead (see [ChannelsHomeScreen],
  * [M3uPlaylist]) — this screen no longer inspects a pasted link for a channel list, it just plays
  * whatever URL is pasted here directly, same as any other video link.
+ *
+ * Two tabs: My videos (this page) and Watch Party ([WatchPartyTab]). Every video has a ⋮: Play, Play
+ * audio only, Play with another app, Watch together. [startWith] opens Watch Party ready to start with
+ * that video ("Watch together" from the player).
  */
 @Composable
-fun VideoLibraryScreen(onBack: () -> Unit) {
+fun VideoLibraryScreen(onBack: () -> Unit, startWith: WatchSource? = null, onStartWithUsed: () -> Unit = {}, partyTab: Boolean = false) {
     val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
+    remember { WatchParty.init(context) }
+    var tab by remember { mutableIntStateOf(if (partyTab || startWith != null || WatchParty.active) 1 else 0) }
+    LaunchedEffect(partyTab, startWith) { if (partyTab || startWith != null) tab = 1 }
+    // "Watch together" from a video's ⋮ here.
+    var together by remember { mutableStateOf<WatchSource?>(null) }
+    var playWith by remember { mutableStateOf<Pair<String, String>?>(null) }
     var link by remember { mutableStateOf("") }
     var reload by remember { mutableStateOf(0) }
 
@@ -130,6 +154,28 @@ fun VideoLibraryScreen(onBack: () -> Unit) {
                 BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
                 Text("Videos", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
             }
+            Segmented(
+                listOf("My videos", "Watch Party"), selected = tab, onSelect = { tab = it },
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                selectedBg = Color(0xFFFFE4E6), selectedFg = Color(0xFF4C0519),
+            )
+            if (tab == 1) {
+                Box(Modifier.weight(1f)) {
+                    WatchPartyTab(startWith = startWith ?: together, onStartWithUsed = { onStartWithUsed(); together = null })
+                }
+                return@Column
+            }
+            /** The ⋮ on a video. */
+            @Composable
+            fun Menu(uri: String, title: String, source: String) = VideoMenu(
+                onPlay = { play(uri, title, source) },
+                onAudioOnly = { playAudioOnly(context, uri, title, source, WatchHistory.positionOf(context, uri)) },
+                onPlayWith = { playWith = uri to title },
+                onTogether = {
+                    together = WatchSource(uri, title, WatchHistory.positionOf(context, uri))
+                    tab = 1
+                },
+            )
             LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
                 item {
                     Row(
@@ -173,7 +219,7 @@ fun VideoLibraryScreen(onBack: () -> Unit) {
                     item { SectionLabel("CONTINUE WATCHING") }
                     item {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(horizontal = 16.dp)) {
-                            items(watching, key = { it.uri }) { w -> WatchingCard(w) { play(w.uri, w.title, w.source) } }
+                            items(watching, key = { it.uri }) { w -> WatchingCard(w, menu = { Menu(w.uri, w.title, w.source) }) { play(w.uri, w.title, w.source) } }
                         }
                     }
                 }
@@ -182,12 +228,32 @@ fun VideoLibraryScreen(onBack: () -> Unit) {
                     item { Empty("Videos you download with SyncUp show here") }
                 } else {
                     items(downloads, key = { it.id }) { t ->
-                        ListRow(Icons.Rounded.Download, t.fileName, Files.size(t.total)) {
+                        ListRow(Icons.Rounded.Download, t.fileName, Files.size(t.total), menu = { Menu(t.contentUri!!, t.fileName, "SyncUp downloads") }) {
                             play(t.contentUri!!, t.fileName, "SyncUp downloads")
                         }
                     }
                 }
             }
+        }
+    }
+    playWith?.let { (uri, title) ->
+        PlayWithSheet(uri = uri, title = title, onPlayHere = { play(uri, title, "SyncUp") }, onDismiss = { playWith = null })
+    }
+}
+
+/** ⋮ on a video: Play, Play audio only, Play with another app, Watch together. */
+@Composable
+private fun VideoMenu(onPlay: () -> Unit, onAudioOnly: () -> Unit, onPlayWith: () -> Unit, onTogether: () -> Unit, tint: Color = androidx.compose.material3.LocalContentColor.current) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Box(Modifier.size(40.dp).clip(RoundedCornerShape(20.dp)).clickable { open = true }, contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.MoreVert, "More", tint = tint)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(text = { Text("Play") }, leadingIcon = { Icon(Icons.Rounded.PlayArrow, null) }, onClick = { open = false; onPlay() })
+            DropdownMenuItem(text = { Text("Play audio only") }, leadingIcon = { Icon(Icons.Rounded.Headphones, null) }, onClick = { open = false; onAudioOnly() })
+            DropdownMenuItem(text = { Text("Play with another app") }, leadingIcon = { Icon(Icons.Rounded.OpenInNew, null) }, onClick = { open = false; onPlayWith() })
+            DropdownMenuItem(text = { Text("Watch together") }, leadingIcon = { Icon(Icons.Rounded.Theaters, null) }, onClick = { open = false; onTogether() })
         }
     }
 }
@@ -218,7 +284,7 @@ private fun Thumb(uri: Uri, modifier: Modifier) {
 }
 
 @Composable
-private fun WatchingCard(w: Watched, onClick: () -> Unit) {
+private fun WatchingCard(w: Watched, menu: @Composable () -> Unit, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val uri = remember(w.uri) { Uri.parse(w.uri) }
     Column(Modifier.width(168.dp).clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick)) {
@@ -230,6 +296,9 @@ private fun WatchingCard(w: Watched, onClick: () -> Unit) {
             Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Color.White.copy(alpha = .35f))) {
                 Box(Modifier.fillMaxHeight().fillMaxWidth(w.progress).background(Color(0xFFEF4444)))
             }
+            Box(Modifier.align(Alignment.TopEnd).padding(4.dp).size(32.dp).clip(RoundedCornerShape(16.dp)).background(Color.Black.copy(alpha = .45f)), contentAlignment = Alignment.Center) {
+                CompositionLocalProviderWhite { menu() }
+            }
         }
         Text(w.title, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
         val left = if (w.durationMs > 0) " · ${duration(w.durationMs - w.positionMs)} left" else ""
@@ -238,7 +307,7 @@ private fun WatchingCard(w: Watched, onClick: () -> Unit) {
 }
 
 @Composable
-private fun ListRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+private fun ListRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, menu: (@Composable () -> Unit)? = null, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 10.dp)) {
         Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(cs.surfaceContainerHigh), contentAlignment = Alignment.Center) {
@@ -249,7 +318,14 @@ private fun ListRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title
             Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(subtitle, fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        menu?.invoke()
     }
+}
+
+/** The ⋮ on a thumbnail is white. */
+@Composable
+private fun CompositionLocalProviderWhite(content: @Composable () -> Unit) {
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides Color.White) { content() }
 }
 
 private fun duration(ms: Long): String {

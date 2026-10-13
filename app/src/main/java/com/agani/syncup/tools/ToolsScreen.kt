@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Radio
@@ -54,9 +55,10 @@ import com.agani.syncup.ui.theme.isLight
 import com.agani.syncup.video.SavedPlaylists
 import com.agani.syncup.walkie.Walkie
 import com.agani.syncup.walkie.walkieStatus
+import com.agani.syncup.watchparty.watchPartyStatus
 
 /** What's open inside Tools. */
-enum class ToolsPage { HOME, VIDEOS, CHANNELS, QUICK_SHARE, WALKIE }
+enum class ToolsPage { HOME, VIDEOS, CHANNELS, QUICK_SHARE, WALKIE, GROUP }
 
 /** One line for the ⋮ menu's Tools row: what's going on inside right now (null = nothing). */
 @Composable
@@ -64,7 +66,7 @@ fun toolsStatus(): String? {
     val player = LocalPlayer.current
     return when {
         QuickShare.busy -> if (QuickShare.role == QsRole.SEND) "Sending files" else "Receiving files"
-        Party.active -> "Party on"
+        com.agani.syncup.group.GroupLink.active -> "In a group · ${com.agani.syncup.group.GroupLink.mode.label}"
         Walkie.active -> "Walkie Talkie on"
         player?.isPlaying != true -> null
         player.isRadio -> "On air"
@@ -92,6 +94,7 @@ fun ToolsScreen(
     onChannels: () -> Unit,
     onQuickShare: () -> Unit,
     onWalkie: () -> Unit,
+    onGroup: () -> Unit = {},
     onBack: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -111,7 +114,7 @@ fun ToolsScreen(
         add(
             TileSpec(
                 Icons.Rounded.SmartDisplay, accent(0xFFBE123C, 0xFFFDA4AF, light), tint(0xFFFFE4E6, 0xFF4C0519, light),
-                "Video player", "Videos, downloads & links", status = null, onClick = onVideos,
+                "Video player", "Videos & Watch Party", status = watchPartyStatus(), onClick = onVideos,
             ),
         )
         add(
@@ -163,6 +166,10 @@ fun ToolsScreen(
                 Text("Tools", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
             }
             LazyColumn(contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // In a group: the way back to it from anywhere.
+                if (com.agani.syncup.group.GroupLink.active) {
+                    item { GroupBanner(onGroup) }
+                }
                 for (row in tiles.chunked(2)) {
                     item {
                         TileRow {
@@ -216,5 +223,34 @@ private fun androidx.compose.foundation.layout.RowScope.Tile(
             }
         }
         Text(subtitle, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+    }
+}
+
+/** "You're in Ravi's group · Watch together · 4 phones" — Open goes to what the group is doing. */
+@Composable
+private fun GroupBanner(onOpen: () -> Unit) {
+    val g = com.agani.syncup.group.GroupLink
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
+            .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF312E81), Color(0xFF4338CA), Color(0xFF6366F1))))
+            .clickable(onClick = onOpen).padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Icon(Icons.Rounded.Groups, null, tint = Color.White, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (g.phase == com.agani.syncup.group.GroupPhase.JOINING) "Joining ${g.groupName}…" else "You're in ${g.groupName}",
+                color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1,
+            )
+            Text(
+                "${g.mode.label} · ${g.people.size} phone${if (g.people.size == 1) "" else "s"}",
+                color = Color.White.copy(alpha = .88f), fontSize = 12.5.sp, maxLines = 1,
+            )
+        }
+        Text(
+            "Open", color = Color(0xFF4338CA), fontSize = 13.5.sp, fontWeight = FontWeight.Medium,
+            modifier = Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(17.dp)).background(Color.White).padding(horizontal = 14.dp, vertical = 7.dp),
+        )
     }
 }

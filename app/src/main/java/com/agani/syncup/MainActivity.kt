@@ -105,6 +105,10 @@ class MainActivity : FragmentActivity() {
     // Set when the Walkie Talkie card is tapped — open Tools → Walkie Talkie.
     private val openWalkieRequest = mutableStateOf(false)
 
+    // Watch Party: its card tapped (open the tab), or "Watch together" from the Video player (start with that video).
+    private val openWatchPartyRequest = mutableStateOf(false)
+    private val watchTogether = mutableStateOf<com.agani.syncup.watchparty.WatchSource?>(null)
+
     // Set when a download notification is tapped — open Downloads; or a link shared to SyncUp to download.
     private val openDownloadsRequest = mutableStateOf(false)
     private val downloadLink = mutableStateOf<String?>(null)
@@ -139,6 +143,8 @@ class MainActivity : FragmentActivity() {
         com.agani.syncup.quickshare.QuickShare.init(this)
         com.agani.syncup.party.Party.init(this)
         com.agani.syncup.walkie.Walkie.init(this)
+        com.agani.syncup.watchparty.WatchParty.init(this)
+        com.agani.syncup.group.GroupLink.init(this)
         com.agani.syncup.browser.SitePermissions.init(this)
         com.agani.syncup.browser.AdBlocker.init(this) // loads the filter lists; refreshes them weekly
         // The home page's shortcut catalogue (backend; refreshed once the server address is known) and the sites' icons.
@@ -269,7 +275,7 @@ class MainActivity : FragmentActivity() {
 
     /** Walkie Talkie's volume-key talk (hold a volume key to talk) gets the volume keys first. */
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
-        com.agani.syncup.walkie.Walkie.onVolumeKey(event) || super.dispatchKeyEvent(event)
+        com.agani.syncup.walkie.Walkie.onVolumeKey(event) || com.agani.syncup.group.GroupWalkie.onVolumeKey(event) || super.dispatchKeyEvent(event)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -312,6 +318,29 @@ class MainActivity : FragmentActivity() {
         if (intent?.getBooleanExtra(EXTRA_OPEN_WALKIE, false) == true) {
             openWalkieRequest.value = true
             intent.removeExtra(EXTRA_OPEN_WALKIE)
+        }
+        if (intent?.getBooleanExtra(EXTRA_GROUP_SWITCH, false) == true) {
+            // The group's notification: Switch (host).
+            com.agani.syncup.group.GroupLink.requestSwitch()
+            intent.removeExtra(EXTRA_GROUP_SWITCH)
+        }
+        if (intent?.getBooleanExtra(EXTRA_OPEN_GROUP, false) == true) {
+            // The group's notification: whatever the group is doing now.
+            com.agani.syncup.group.GroupLink.requestOpen()
+            intent.removeExtra(EXTRA_OPEN_GROUP)
+        }
+        if (intent?.getBooleanExtra(EXTRA_OPEN_WATCH_PARTY, false) == true) {
+            openWatchPartyRequest.value = true
+            intent.removeExtra(EXTRA_OPEN_WATCH_PARTY)
+        }
+        intent?.getStringExtra(EXTRA_WATCH_TOGETHER_URI)?.takeIf { it.isNotBlank() }?.let { uri ->
+            watchTogether.value = com.agani.syncup.watchparty.WatchSource(
+                uri, intent.getStringExtra(EXTRA_WATCH_TOGETHER_TITLE).orEmpty(), intent.getLongExtra(EXTRA_WATCH_TOGETHER_POS, 0L),
+            )
+            openWatchPartyRequest.value = true
+            intent.removeExtra(EXTRA_WATCH_TOGETHER_URI)
+            intent.removeExtra(EXTRA_WATCH_TOGETHER_TITLE)
+            intent.removeExtra(EXTRA_WATCH_TOGETHER_POS)
         }
         if (intent?.getBooleanExtra(EXTRA_OPEN_DOWNLOADS, false) == true) {
             openDownloadsRequest.value = true
@@ -570,6 +599,51 @@ class MainActivity : FragmentActivity() {
             }
         }
 
+        // Watch Party (its card, or "Watch together" in the Video player): Tools → Video player → Watch Party.
+        var videoPartyTab by remember { mutableStateOf(false) }
+        LaunchedEffect(openWatchPartyRequest.value) {
+            if (openWatchPartyRequest.value) {
+                openWatchPartyRequest.value = false
+                showMusic = false
+                showRadio = false
+                showPartners = false
+                showNotifications = false
+                showProfile = false
+                libraryPage = null
+                videoPartyTab = true
+                toolsPage = com.agani.syncup.tools.ToolsPage.VIDEOS
+            }
+        }
+
+        // The group: every phone goes where the group is (just joined, the host switched, or "Open").
+        val groupGen = com.agani.syncup.group.GroupLink.modeGen
+        val groupOpen = com.agani.syncup.group.GroupLink.openRequest
+        LaunchedEffect(groupGen, groupOpen) {
+            if (!com.agani.syncup.group.GroupLink.inGroup || groupGen == 0) return@LaunchedEffect
+            showMusic = false
+            showPartners = false
+            showNotifications = false
+            showProfile = false
+            libraryPage = null
+            when (com.agani.syncup.group.GroupLink.mode) {
+                com.agani.syncup.group.GroupMode.MUSIC -> {
+                    radioOnParty = true
+                    showRadio = true
+                }
+                com.agani.syncup.group.GroupMode.WATCH -> {
+                    showRadio = false
+                    // Straight into the player (the Watch Party tab opens it).
+                    if (com.agani.syncup.watchparty.WatchParty.active) com.agani.syncup.watchparty.WatchParty.wantsPlayer = true
+                    videoPartyTab = true
+                    toolsPage = com.agani.syncup.tools.ToolsPage.VIDEOS
+                }
+                else -> {
+                    showRadio = false
+                    toolsPage = com.agani.syncup.tools.ToolsPage.GROUP
+                }
+            }
+        }
+
         // The Walkie Talkie card: Tools → Walkie Talkie.
         LaunchedEffect(openWalkieRequest.value) {
             if (openWalkieRequest.value) {
@@ -755,7 +829,15 @@ class MainActivity : FragmentActivity() {
                     )
                     AppScreen.Music -> {
                         RequestNotificationPermission() // media notification (status bar + lock screen)
-                        MusicScreen(onBack = { showMusic = false })
+                        MusicScreen(
+                            onBack = { showMusic = false },
+                            // Music → Party: on to Radio → Party (the host screen).
+                            onOpenParty = {
+                                showMusic = false
+                                radioOnParty = true
+                                showRadio = true
+                            },
+                        )
                     }
                     AppScreen.Radio -> {
                         RequestNotificationPermission() // media notification (status bar + lock screen)
@@ -829,9 +911,18 @@ class MainActivity : FragmentActivity() {
                     }
                     AppScreen.Tools -> when (toolsPage) {
                         com.agani.syncup.tools.ToolsPage.VIDEOS -> com.agani.syncup.video.VideoLibraryScreen(
-                            onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
+                            onBack = {
+                                videoPartyTab = false
+                                toolsPage = com.agani.syncup.tools.ToolsPage.HOME
+                            },
+                            startWith = watchTogether.value,
+                            onStartWithUsed = { watchTogether.value = null },
+                            partyTab = videoPartyTab,
                         )
                         com.agani.syncup.tools.ToolsPage.CHANNELS -> com.agani.syncup.video.ChannelsHomeScreen(
+                            onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
+                        )
+                        com.agani.syncup.tools.ToolsPage.GROUP -> com.agani.syncup.group.GroupModeScreen(
                             onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
                         )
                         com.agani.syncup.tools.ToolsPage.WALKIE -> com.agani.syncup.walkie.WalkieScreen(
@@ -853,6 +944,7 @@ class MainActivity : FragmentActivity() {
                             onChannels = { toolsPage = com.agani.syncup.tools.ToolsPage.CHANNELS },
                             onQuickShare = { toolsPage = com.agani.syncup.tools.ToolsPage.QUICK_SHARE },
                             onWalkie = { toolsPage = com.agani.syncup.tools.ToolsPage.WALKIE },
+                            onGroup = { com.agani.syncup.group.GroupLink.requestOpen() },
                             onBack = { toolsPage = null },
                         )
                     }
@@ -875,6 +967,8 @@ class MainActivity : FragmentActivity() {
                     )
                 }
             }
+            // The group, whatever screen is open: join requests, "switched to…", ended, notes.
+            com.agani.syncup.group.GroupOverlays()
         }
 
     }
@@ -952,6 +1046,20 @@ class MainActivity : FragmentActivity() {
 
         /** Intent extra: when true, MainActivity opens Tools → Walkie Talkie (its notification tap). */
         const val EXTRA_OPEN_WALKIE = "extra_open_walkie"
+
+        /** Intent extra: when true, MainActivity opens what the group is doing now (the group's notification). */
+        const val EXTRA_OPEN_GROUP = "extra_open_group"
+
+        /** Intent extra: when true, MainActivity opens "Switch the group to…" (the group notification's Switch, host). */
+        const val EXTRA_GROUP_SWITCH = "extra_group_switch"
+
+        /** Intent extra: when true, MainActivity opens Tools → Video player → Watch Party (its card). */
+        const val EXTRA_OPEN_WATCH_PARTY = "extra_open_watch_party"
+
+        /** Intent extras: "Watch together" in the Video player — start a Watch Party with this video from here. */
+        const val EXTRA_WATCH_TOGETHER_URI = "extra_watch_together_uri"
+        const val EXTRA_WATCH_TOGETHER_TITLE = "extra_watch_together_title"
+        const val EXTRA_WATCH_TOGETHER_POS = "extra_watch_together_pos"
 
         /** Intent extra: when true, MainActivity opens Radio → Party (the party's notification tap). */
         const val EXTRA_OPEN_PARTY = "extra_open_party"

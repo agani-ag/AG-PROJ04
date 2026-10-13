@@ -112,11 +112,23 @@ class PlayerHandle internal constructor(private val prefs: SharedPreferences) {
         error = if (isRadio) "This station went off air." else "Couldn't play this song."
     }
 
+    /** The songs last given to [playSongs], in their list order (for "Play at a party"). */
+    var queue: List<Song> = emptyList()
+        private set
+
+    /** The song playing now and the ones after it in the list — what a party carries on with. */
+    fun currentAndNext(): List<Song> {
+        val id = songId ?: return emptyList()
+        val i = queue.indexOfFirst { it.id == id }
+        return if (i < 0) emptyList() else queue.drop(i)
+    }
+
     /** Play [songs] from [start]; [shuffled] turns shuffle on and starts anywhere. */
     fun playSongs(songs: List<Song>, start: Int, shuffled: Boolean = false) {
         val c = controller ?: return
         if (songs.isEmpty()) return
         error = null
+        queue = songs
         if (shuffled) updateShuffle(true)
         // Modes first, so the player never reports songs with a station's shuffle / repeat (off).
         c.shuffleModeEnabled = shuffle
@@ -184,6 +196,34 @@ class PlayerHandle internal constructor(private val prefs: SharedPreferences) {
         prefs.edit().putInt(PREF_REPEAT, repeat).apply()
         if (!isRadio) controller?.repeatMode = repeat
     }
+}
+
+/**
+ * "Play audio only": [uri]'s sound (a video's) in the Music player from [startMs] — it keeps playing
+ * with the screen off, with the lock-screen controls. Works from any screen (its own connection).
+ */
+fun playAudioOnly(context: Context, uri: String, title: String, subtitle: String, startMs: Long) {
+    val app = context.applicationContext
+    val token = SessionToken(app, ComponentName(app, MusicPlaybackService::class.java))
+    val future = MediaController.Builder(app, token).buildAsync()
+    future.addListener({
+        val c = runCatching { future.get() }.getOrNull() ?: return@addListener
+        val item = MediaItem.Builder()
+            .setMediaId(SONG_ID + "video-" + uri.hashCode())
+            .setUri(uri)
+            .setMediaMetadata(
+                MediaMetadata.Builder().setTitle(title).setArtist(subtitle.ifBlank { "Video · sound only" })
+                    .setIsPlayable(true).setIsBrowsable(false).setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC).build(),
+            )
+            .build()
+        c.shuffleModeEnabled = false
+        c.repeatMode = Player.REPEAT_MODE_OFF
+        c.setMediaItem(item, startMs.coerceAtLeast(0))
+        c.prepare()
+        c.play()
+        // The service plays on by itself; let the commands go through, then hang up.
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ MediaController.releaseFuture(future) }, 1_500)
+    }, ContextCompat.getMainExecutor(app))
 }
 
 /** Connects to the player service for as long as the caller is on screen. */

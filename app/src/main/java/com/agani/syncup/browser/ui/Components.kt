@@ -34,12 +34,18 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderColors
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -501,4 +507,43 @@ fun SheetHeader(title: String, subtitle: String? = null) {
 @Composable
 fun SheetDivider() {
     Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 6.dp).height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
+}
+
+/**
+ * A slider with − on the left and + on the right, for exact steps without dragging. Every slider in
+ * SyncUp works this way (Party, the Video player's sound).
+ */
+@Composable
+fun StepSlider(
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    step: Float,
+    label: String,
+    onChange: (Float) -> Unit,
+    onChangeFinished: (() -> Unit)? = null,
+    steps: Int = 0,
+    colors: SliderColors = SliderDefaults.colors(),
+) {
+    fun nudge(by: Float) {
+        onChange((value + by).coerceIn(range.start, range.endInclusive))
+        onChangeFinished?.invoke()
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        StepButton(Icons.Rounded.Remove, "Less $label", enabled = value > range.start) { nudge(-step) }
+        Slider(
+            value = value, valueRange = range, steps = steps,
+            onValueChange = onChange,
+            onValueChangeFinished = onChangeFinished,
+            colors = colors,
+            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+        )
+        StepButton(Icons.Rounded.Add, "More $label", enabled = value < range.endInclusive) { nudge(step) }
+    }
+}
+
+@Composable
+private fun StepButton(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
+    FilledTonalIconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(40.dp)) {
+        Icon(icon, description, modifier = Modifier.size(20.dp))
+    }
 }

@@ -556,8 +556,8 @@ object QuickShare {
         }
     }
 
-    /** Copy Nearby's temporary file into the shared Downloads folder. Background thread. Returns (final name, address). */
-    private fun publish(payload: Payload, name: String, mime: String): Pair<String, String> {
+    /** Copy Nearby's temporary file into the shared Downloads folder. Background thread. Returns (final name, address). Also used by a group's Share files. */
+    internal fun publish(payload: Payload, name: String, mime: String): Pair<String, String> {
         val pf = payload.asFile() ?: error("not a file")
         val kind = FileKind.of(name, mime)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

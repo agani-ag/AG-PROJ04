@@ -38,7 +38,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LibraryMusic
@@ -61,6 +64,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -97,6 +101,10 @@ import com.agani.syncup.browser.ui.EmptyState
 import com.agani.syncup.browser.ui.PillButton
 import com.agani.syncup.browser.ui.SyncPill
 import com.agani.syncup.data.RadioChannel
+import com.agani.syncup.party.Party
+import com.agani.syncup.party.PartyRole
+import com.agani.syncup.party.rememberPartyStarter
+import com.agani.syncup.ui.theme.isLight
 import com.agani.syncup.data.RadioChannelsResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -108,10 +116,15 @@ import kotlinx.coroutines.withContext
  * notification and the lock screen work the same whichever screen started playback.
  */
 @Composable
-fun MusicScreen(onBack: () -> Unit) {
+fun MusicScreen(onBack: () -> Unit, onOpenParty: () -> Unit = {}) {
     val player = LocalPlayer.current ?: return
     val cs = MaterialTheme.colorScheme
     var nowPlaying by rememberSaveable { mutableStateOf(false) }
+    // Music → Party: start a Radio → Party with these songs, then go to the host screen.
+    val startParty = rememberPartyStarter(onStarted = {
+        nowPlaying = false
+        onOpenParty()
+    })
 
     Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
@@ -119,7 +132,7 @@ fun MusicScreen(onBack: () -> Unit) {
             Text("Music", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
         }
         Box(Modifier.weight(1f)) {
-            SongsTab(player, onOpenPlayer = { nowPlaying = true })
+            SongsTab(player, onOpenPlayer = { nowPlaying = true }, onParty = { songs -> startParty(songs, 0L) }, onOpenParty = onOpenParty)
         }
         AnimatedVisibility(
             visible = player.item != null,
@@ -130,7 +143,12 @@ fun MusicScreen(onBack: () -> Unit) {
         }
     }
 
-    if (nowPlaying && player.item != null) NowPlayingSheet(player, onDismiss = { nowPlaying = false })
+    if (nowPlaying && player.item != null) {
+        NowPlayingSheet(
+            player, onDismiss = { nowPlaying = false },
+            onPlayAtParty = if (Party.active) null else ({ startParty(player.currentAndNext(), player.position) }),
+        )
+    }
 }
 
 /**
@@ -208,7 +226,7 @@ fun RadioScreen(
 
 // ============================================================================ songs
 @Composable
-private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit) {
+private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit, onParty: (List<Song>) -> Unit, onOpenParty: () -> Unit) {
     val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
     var granted by remember { mutableStateOf(LocalSongs.canRead(context)) }
@@ -262,7 +280,27 @@ private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit) {
                 if (q.isEmpty()) all
                 else all.filter { it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true) }
             }
+            // While this phone hosts a party, Music adds to it instead of playing on its own.
+            val hosting = Party.role == PartyRole.HOST
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 8.dp)) {
+                if (Party.active) {
+                    item(key = "party") {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 6.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                                .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF4C1D95), Color(0xFF7C3AED))))
+                                .clickable(onClick = onOpenParty).padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                        ) {
+                            Icon(Icons.Rounded.Groups, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                (if (hosting) "You're hosting " else "You're in ") + Party.roomName + " · ${Party.people.size} ${if (Party.people.size == 1) "person" else "people"}",
+                                color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                            )
+                            Text("Open", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = .2f)).padding(horizontal = 12.dp, vertical = 5.dp))
+                        }
+                    }
+                }
                 item(key = "search") {
                     SyncPill(
                         modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 4.dp),
@@ -295,7 +333,23 @@ private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit) {
                             "${list.size} song${if (list.size == 1) "" else "s"}",
                             fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.weight(1f),
                         )
-                        if (list.isNotEmpty()) {
+                        if (list.isNotEmpty() && hosting) {
+                            FilledTonalButton(onClick = { Party.addSongs(list.filterNot { Party.isQueued(it.uri) }) }, contentPadding = PaddingValues(horizontal = 16.dp)) {
+                                Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Add all to party")
+                            }
+                        } else if (list.isNotEmpty() && !Party.active) {
+                            // Play the listed songs at a party: everyone nearby hears them in sync.
+                            OutlinedButton(
+                                onClick = { onParty(list) }, contentPadding = PaddingValues(horizontal = 12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF7C3AED)),
+                            ) {
+                                Icon(Icons.Rounded.Groups, null, tint = Color(0xFF7C3AED), modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Party", color = Color(0xFF7C3AED))
+                            }
+                            Spacer(Modifier.width(8.dp))
                             FilledTonalButton(onClick = { player.playSongs(list, 0, shuffled = true) }, contentPadding = PaddingValues(horizontal = 16.dp)) {
                                 Icon(Icons.Rounded.Shuffle, null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
@@ -319,9 +373,14 @@ private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit) {
                     }
                 }
                 itemsIndexed(list, key = { _, s -> s.id }) { index, song ->
-                    val current = song.id == player.songId
-                    SongRow(song, current, playing = current && player.isPlaying) {
-                        if (current) onOpenPlayer() else player.playSongs(list, index)
+                    if (hosting) {
+                        val queued = Party.isQueued(song.uri)
+                        SongRow(song, current = false, playing = false, partyAdded = queued) { if (!queued) Party.addSongs(listOf(song)) }
+                    } else {
+                        val current = song.id == player.songId
+                        SongRow(song, current, playing = current && player.isPlaying) {
+                            if (current) onOpenPlayer() else player.playSongs(list, index)
+                        }
                     }
                 }
             }
@@ -330,7 +389,7 @@ private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit) {
 }
 
 @Composable
-private fun SongRow(song: Song, current: Boolean, playing: Boolean, onClick: () -> Unit) {
+private fun SongRow(song: Song, current: Boolean, playing: Boolean, partyAdded: Boolean? = null, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -355,6 +414,19 @@ private fun SongRow(song: Song, current: Boolean, playing: Boolean, onClick: () 
         if (current) {
             Spacer(Modifier.width(8.dp))
             if (playing) EqBars() else Icon(Icons.Rounded.Pause, "Paused", tint = cs.primary, modifier = Modifier.size(18.dp))
+        }
+        // Hosting a party: + adds the song to it; ✓ = already in the party.
+        if (partyAdded != null) {
+            Spacer(Modifier.width(8.dp))
+            Box(
+                Modifier.size(34.dp).clip(CircleShape).background(if (partyAdded) Color(0xFF7C3AED) else Color(0xFFEDE9FE)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    if (partyAdded) Icons.Rounded.CheckCircle else Icons.Rounded.Add, if (partyAdded) "In the party" else "Add to party",
+                    tint = if (partyAdded) Color.White else Color(0xFF6D28D9), modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
 }
@@ -452,14 +524,14 @@ private fun StationRow(station: RadioChannel, active: Boolean, playing: Boolean,
 // ============================================================================ now playing
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NowPlayingSheet(player: PlayerHandle, onDismiss: () -> Unit) {
+private fun NowPlayingSheet(player: PlayerHandle, onDismiss: () -> Unit, onPlayAtParty: (() -> Unit)? = null) {
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        NowPlaying(player)
+        NowPlaying(player, onPlayAtParty)
     }
 }
 
 @Composable
-private fun NowPlaying(player: PlayerHandle) {
+private fun NowPlaying(player: PlayerHandle, onPlayAtParty: (() -> Unit)? = null) {
     val cs = MaterialTheme.colorScheme
     val radio = player.isRadio
     Column(
@@ -544,6 +616,31 @@ private fun NowPlaying(player: PlayerHandle) {
         player.error?.let {
             Spacer(Modifier.height(12.dp))
             Text(it, fontSize = 13.sp, color = cs.error, textAlign = TextAlign.Center)
+        }
+        if (!radio && onPlayAtParty != null) {
+            // Carry on as a party: this song from where it is, the rest of the list next.
+            var at by remember { mutableLongStateOf(player.position) }
+            LaunchedEffect(player.item, player.isPlaying) {
+                while (true) {
+                    at = player.position
+                    if (!player.isPlaying) break
+                    delay(1_000)
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = 18.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                    .background(Color(0xFFEDE9FE).copy(alpha = if (cs.isLight) 1f else .2f)).clickable(onClick = onPlayAtParty).padding(14.dp),
+            ) {
+                Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF6D28D9)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Groups, null, tint = Color.White)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Play at a party", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = if (cs.isLight) Color(0xFF2E1065) else Color(0xFFDDD6FE))
+                    Text("Everyone nearby hears this, from ${formatTime(at)}", fontSize = 12.5.sp, color = cs.onSurfaceVariant)
+                }
+            }
         }
     }
 }

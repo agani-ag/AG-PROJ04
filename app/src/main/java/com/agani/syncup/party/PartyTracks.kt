@@ -52,6 +52,16 @@ internal class TrackData private constructor(
     private var pfd: ParcelFileDescriptor? = null
     private var input: FileInputStream? = null
     @Volatile private var closed = false
+    /** A read is waiting for this piece (Watch Party asks the host for it). Called on the reading thread. */
+    @Volatile var onMissing: ((piece: Int) -> Unit)? = null
+    private var lastMissing = -1
+    private var lastMissingAt = 0L
+
+    /** How many pieces the song / video has. */
+    val pieceCount: Int get() = pieces
+
+    /** Is this piece here? */
+    fun hasPiece(i: Int): Boolean = local != null || synchronized(lock) { have.get(i) }
 
     /** Every byte is on this phone. */
     val complete: Boolean get() = local != null || synchronized(lock) { have.cardinality() >= pieces }
@@ -95,6 +105,12 @@ internal class TrackData private constructor(
         synchronized(lock) {
             while (!have.get(piece)) {
                 if (closed || cancelled()) return -1
+                val now = System.currentTimeMillis()
+                if (piece != lastMissing || now - lastMissingAt > 1_500) {
+                    lastMissing = piece
+                    lastMissingAt = now
+                    onMissing?.invoke(piece)
+                }
                 lock.wait(500)
             }
             if (closed) return -1
@@ -151,15 +167,15 @@ internal class TrackData private constructor(
         /** A song file on this phone. */
         fun local(context: Context, uri: Uri, size: Long) = TrackData(context.applicationContext, size, uri, null)
 
-        /** A song arriving from another phone, into the party cache. */
-        fun incoming(context: Context, trackId: Int, size: Long): TrackData {
-            val dir = File(context.cacheDir, "party").apply { mkdirs() }
+        /** A song (or video) arriving from another phone, into [folder] of the cache. */
+        fun incoming(context: Context, trackId: Int, size: Long, folder: String = "party"): TrackData {
+            val dir = File(context.cacheDir, folder).apply { mkdirs() }
             return TrackData(context.applicationContext, size, null, File(dir, "track-$trackId-${System.nanoTime()}.part"))
         }
 
         /** Left over from a party the app didn't get to close (killed): clear it. */
-        fun clearCache(context: Context) {
-            File(context.cacheDir, "party").listFiles()?.forEach { it.delete() }
+        fun clearCache(context: Context, folder: String = "party") {
+            File(context.cacheDir, folder).listFiles()?.forEach { it.delete() }
         }
     }
 }

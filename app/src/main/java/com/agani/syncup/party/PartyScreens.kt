@@ -41,7 +41,6 @@ import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
@@ -55,7 +54,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -70,6 +68,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -90,6 +89,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.ui.EmptyState
+import com.agani.syncup.browser.ui.StepSlider
+import com.agani.syncup.group.GroupBar
+import com.agani.syncup.group.GroupElsewhere
+import com.agani.syncup.group.GroupJoiningView
+import com.agani.syncup.group.GroupLink
+import com.agani.syncup.group.GroupMode
+import com.agani.syncup.group.GroupPhase
+import com.agani.syncup.group.GroupRoom
+import com.agani.syncup.group.GroupRoomCard
 import com.agani.syncup.music.LocalPlayer
 import com.agani.syncup.music.LocalSongs
 import com.agani.syncup.music.Song
@@ -99,6 +107,7 @@ import com.agani.syncup.quickshare.Radios
 import com.agani.syncup.quickshare.RadiosDialog
 import com.agani.syncup.ui.theme.isLight
 import kotlinx.coroutines.Dispatchers
+import com.google.android.gms.nearby.connection.BandwidthInfo
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
@@ -160,30 +169,43 @@ fun PartyTab() {
         }
     }
 
-    // Look for parties while this page is open and nobody's in one.
+    // Look for groups while this page is open and this phone isn't in one.
     val canBrowse = QuickShare.missingPermissions(receiving = false).isEmpty() && Radios.missing(context).isEmpty()
     var browsing by remember { mutableStateOf(false) }
-    DisposableEffect(Party.phase, canBrowse, browsing) {
-        if (Party.phase == PartyPhase.IDLE && (canBrowse || browsing) && QuickShare.phase == QsPhase.IDLE) Party.startBrowsing()
-        onDispose { Party.stopBrowsing() }
+    DisposableEffect(GroupLink.phase, canBrowse, browsing) {
+        if (GroupLink.phase == GroupPhase.IDLE && (canBrowse || browsing) && QuickShare.phase == QsPhase.IDLE) GroupLink.startBrowsing()
+        onDispose { GroupLink.stopBrowsing() }
     }
+    var switchHere by remember { mutableStateOf(false) }
 
     when {
         Party.role == PartyRole.HOST -> HostScreen(onAddSongs = { picking = true })
-        Party.phase == PartyPhase.JOINING -> JoiningScreen()
+        GroupLink.phase == GroupPhase.JOINING -> GroupJoiningView(Violet, VioletLight)
         Party.role == PartyRole.GUEST -> GuestScreen(onAddSong = { picking = true })
+        // In a group doing something else: back to music from here (the queue carries on, else pick songs).
+        GroupLink.inGroup -> GroupElsewhere(GroupMode.MUSIC, onSwitchHere = {
+            if (Party.queue.isNotEmpty()) GroupLink.switchTo(GroupMode.MUSIC) else switchHere = true
+        })
         else -> PartyHome(
             canBrowse = canBrowse,
             permissionNote = permissionNote,
             onStart = { ready { naming = true } },
-            onLook = { ready { browsing = true; Party.startBrowsing() } },
+            onLook = { ready { browsing = true; GroupLink.startBrowsing() } },
             onJoin = { room ->
                 ready {
-                    musicPlayer?.stop()
-                    Party.join(room)
+                    if (room.mode == GroupMode.MUSIC) musicPlayer?.stop()
+                    GroupLink.join(room)
                 }
             },
         )
+    }
+    if (switchHere) {
+        SongPicker(multiple = true, onDismiss = { switchHere = false }, onPicked = { songs ->
+            switchHere = false
+            musicPlayer?.stop()
+            GroupLink.switchTo(GroupMode.MUSIC)
+            Party.addSongs(songs)
+        })
     }
 
     if (naming) {
@@ -232,22 +254,6 @@ fun PartyTab() {
         )
     }
 
-    // Host: someone wants in.
-    Party.joinRequests.firstOrNull()?.let { r ->
-        AlertDialog(
-            onDismissRequest = {},
-            title = { Text("${r.name} wants to join") },
-            text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    Text("Let them in only if their phone shows this code.", fontSize = 14.sp, textAlign = TextAlign.Center)
-                    CodeBox(r.code, Modifier.padding(top = 16.dp))
-                }
-            },
-            confirmButton = { Button(onClick = { Party.acceptJoin(r) }, colors = violetButton()) { Text("Accept") } },
-            dismissButton = { OutlinedButton(onClick = { Party.declineJoin(r) }) { Text("Decline") } },
-        )
-    }
-
     // Host: a guest wants to add a song ("Ask me").
     Party.addRequests.firstOrNull()?.let { r ->
         ModalBottomSheet(onDismissRequest = { Party.declineAdd(r) }) {
@@ -267,16 +273,6 @@ fun PartyTab() {
             }
         }
     }
-
-    // Guest: the host ended it.
-    Party.ended?.let { message ->
-        AlertDialog(
-            onDismissRequest = { Party.dismissEnded() },
-            title = { Text("Party over") },
-            text = { Text(message) },
-            confirmButton = { TextButton(onClick = { Party.dismissEnded() }) { Text("OK") } },
-        )
-    }
 }
 
 // ============================================================================ home
@@ -286,7 +282,7 @@ private fun PartyHome(
     permissionNote: Boolean,
     onStart: () -> Unit,
     onLook: () -> Unit,
-    onJoin: (PartyRoom) -> Unit,
+    onJoin: (GroupRoom) -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     val light = cs.isLight
@@ -314,11 +310,11 @@ private fun PartyHome(
         }
         item {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, top = 22.dp, bottom = 8.dp)) {
-                Text("Parties nearby", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
-                if (Party.rooms.isNotEmpty()) Text("  · ${Party.rooms.size}", fontSize = 14.sp, color = cs.onSurfaceVariant)
+                Text("Groups nearby", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
+                if (GroupLink.rooms.isNotEmpty()) Text("  · ${GroupLink.rooms.size}", fontSize = 14.sp, color = cs.onSurfaceVariant)
             }
         }
-        if (Party.rooms.isEmpty()) {
+        if (GroupLink.rooms.isEmpty()) {
             item {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -327,31 +323,14 @@ private fun PartyHome(
                     if (canBrowse) {
                         CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.width(14.dp))
-                        Text("Looking for parties… Ask your friend to start one in Radio → Party.", fontSize = 13.5.sp, lineHeight = 19.sp, color = cs.onSurfaceVariant)
+                        Text("Looking for groups… Ask your friend to start a party in Radio → Party.", fontSize = 13.5.sp, lineHeight = 19.sp, color = cs.onSurfaceVariant)
                     } else {
                         Text("Tap Join a party to look for parties nearby.", fontSize = 13.5.sp, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f))
                     }
                 }
             }
         }
-        items(Party.rooms, key = { it.endpointId }) { room ->
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 10.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                    .background(cs.surfaceContainerLowest).border(1.dp, cs.outlineVariant, RoundedCornerShape(18.dp)).padding(12.dp),
-            ) {
-                Letter(room.name)
-                Spacer(Modifier.width(14.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(room.name, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        "${room.people} ${if (room.people == 1) "person" else "people"}" + if (room.playing.isNotBlank()) " · playing “${room.playing}”" else "",
-                        fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Button(onClick = { onJoin(room) }, colors = violetButton(), contentPadding = PaddingValues(horizontal = 18.dp)) { Text("Join") }
-            }
-        }
+        items(GroupLink.rooms, key = { it.endpointId }) { room -> GroupRoomCard(room) { onJoin(room) } }
         item {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -361,34 +340,11 @@ private fun PartyHome(
                 Spacer(Modifier.width(10.dp))
                 Text(
                     "Every phone plays the same moment — a room of phones sounds like one speaker. No internet needed. " +
-                        "Up to 8 phones anywhere; more on the same Wi-Fi.",
+                        "Up to 8 phones in a group — the host can switch everyone to a video, Walkie talkie or sharing files.",
                     fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant,
                 )
             }
         }
-    }
-}
-
-// ============================================================================ joining
-@Composable
-private fun JoiningScreen() {
-    val cs = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxSize().padding(horizontal = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(Modifier.weight(1f))
-        Box(Modifier.size(140.dp).clip(CircleShape).background(VioletLight.copy(alpha = if (cs.isLight) 1f else .2f)), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.WifiTethering, null, tint = Violet, modifier = Modifier.size(44.dp))
-        }
-        Text(
-            if (Party.code.isBlank()) "Connecting to ${Party.roomName}…" else "Asking ${Party.hostName} to let you in…",
-            fontSize = 19.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 20.dp),
-        )
-        if (Party.code.isNotBlank()) {
-            CodeBox(Party.code, Modifier.padding(top = 16.dp))
-            Text("Check ${Party.hostName}'s phone shows the same code.", fontSize = 14.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
-        }
-        Spacer(Modifier.weight(1f))
-        OutlinedButton(onClick = { Party.cancelJoin() }, modifier = Modifier.fillMaxWidth().height(48.dp).padding(bottom = 0.dp)) { Text("Cancel") }
-        Spacer(Modifier.height(20.dp))
     }
 }
 
@@ -398,6 +354,7 @@ private fun HostScreen(onAddSongs: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     var confirmEnd by remember { mutableStateOf(false) }
     LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+        item { GroupBar(Modifier.padding(top = 4.dp, bottom = 10.dp)) }
         if (Party.localPaused) item { PlayHereRow() }
         item { NowPlayingCard(host = true) }
         item { PeopleRow() }
@@ -435,19 +392,19 @@ private fun HostScreen(onAddSongs: () -> Unit) {
             OutlinedButton(
                 onClick = { confirmEnd = true },
                 modifier = Modifier.padding(top = 26.dp).fillMaxWidth().height(48.dp),
-            ) { Text("End party", color = cs.error) }
+            ) { Text("End the group", color = cs.error) }
         }
     }
     if (confirmEnd) {
         AlertDialog(
             onDismissRequest = { confirmEnd = false },
-            title = { Text("End the party?") },
-            text = { Text("The music stops on every phone.") },
+            title = { Text("End the group?") },
+            text = { Text("The music stops on every phone, and everyone leaves the group.") },
             confirmButton = {
                 TextButton(onClick = {
                     confirmEnd = false
                     Party.end()
-                }) { Text("End party", color = cs.error) }
+                }) { Text("End group", color = cs.error) }
             },
             dismissButton = { TextButton(onClick = { confirmEnd = false }) { Text("Keep going") } },
         )
@@ -460,6 +417,7 @@ private fun GuestScreen(onAddSong: () -> Unit) {
     val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
     LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+        item { GroupBar(Modifier.padding(top = 4.dp, bottom = 10.dp)) }
         if (Party.phase == PartyPhase.RECONNECTING) {
             item {
                 Banner(Icons.Rounded.Sync, "Reconnecting to ${Party.hostName}…", "The music keeps playing from what this phone already has.")
@@ -573,43 +531,6 @@ private fun SyncAdjustRow(context: Context) {
     }
 }
 
-/**
- * A slider with − on the left and + on the right, for exact steps without dragging. Every slider
- * in Party works this way.
- */
-@Composable
-private fun StepSlider(
-    value: Float,
-    range: ClosedFloatingPointRange<Float>,
-    step: Float,
-    label: String,
-    onChange: (Float) -> Unit,
-    onChangeFinished: (() -> Unit)? = null,
-    steps: Int = 0,
-) {
-    fun nudge(by: Float) {
-        onChange((value + by).coerceIn(range.start, range.endInclusive))
-        onChangeFinished?.invoke()
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        StepButton(Icons.Rounded.Remove, "Less $label", enabled = value > range.start) { nudge(-step) }
-        Slider(
-            value = value, valueRange = range, steps = steps,
-            onValueChange = onChange,
-            onValueChangeFinished = onChangeFinished,
-            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-        )
-        StepButton(Icons.Rounded.Add, "More $label", enabled = value < range.endInclusive) { nudge(step) }
-    }
-}
-
-@Composable
-private fun StepButton(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
-    FilledTonalIconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(40.dp)) {
-        Icon(icon, description, modifier = Modifier.size(20.dp))
-    }
-}
-
 // ============================================================================ shared pieces
 @Composable
 private fun NowPlayingCard(host: Boolean) {
@@ -693,12 +614,25 @@ private fun NowPlayingCard(host: Boolean) {
 private fun SyncLine(host: Boolean) {
     val others = (Party.people.size - 1).coerceAtLeast(0)
     val err = Party.syncErrorMs
+    // A guest not playing yet: how much of the song is here (it ticks up while it arrives).
+    var percent by remember { mutableIntStateOf(0) }
+    var timed by remember { mutableStateOf(false) }
+    val waiting = !host && err == null && Party.current != null && !Party.paused
+    LaunchedEffect(waiting, Party.current?.id) {
+        while (waiting) {
+            percent = Party.currentSongPercent()
+            timed = Party.clockReady
+            delay(1_000)
+        }
+    }
+    val slow = Party.linkQuality == BandwidthInfo.Quality.LOW
     val (dot, text) = when {
         Party.current == null -> Color.White.copy(alpha = .5f) to (if (host) "Add songs to start" else "Waiting for ${Party.hostName} to play")
         Party.paused -> Color.White.copy(alpha = .5f) to "Paused"
         Party.phase == PartyPhase.RECONNECTING -> Color(0xFFFCD34D) to "Playing from what's on this phone"
         host -> Color(0xFF86EFAC) to if (others == 0) "Waiting for friends to join" else "Playing on ${others + 1} phones"
-        err == null -> Color(0xFFFCD34D) to "Getting in sync…"
+        err == null && !timed -> Color(0xFFFCD34D) to ("Setting the time with ${Party.hostName}'s phone…" + if (slow) " · slow link" else "")
+        err == null -> Color(0xFFFCD34D) to ("Getting the song… $percent%" + if (slow) " · slow link" else "")
         abs(err) <= 15 -> Color(0xFF86EFAC) to "In sync with $others other phone${if (others == 1) "" else "s"}"
         else -> Color(0xFFFCD34D) to "Lining up… (${err.toInt()} ms)"
     }
@@ -706,6 +640,13 @@ private fun SyncLine(host: Boolean) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
         Spacer(Modifier.width(6.dp))
         Text(text, color = Color.White.copy(alpha = .92f), fontSize = 12.5.sp)
+    }
+    if (waiting && slow) {
+        // Bluetooth only: songs crawl in. Wi-Fi (the same network, or just on and close by) is much faster.
+        Text(
+            "The phones are on a slow Bluetooth link. Put both phones on the same Wi-Fi, or keep Wi-Fi on and the phones close, for a faster link.",
+            color = Color.White.copy(alpha = .8f), fontSize = 12.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 6.dp),
+        )
     }
 }
 
@@ -761,7 +702,14 @@ private fun ActionCard(icon: ImageVector, title: String, subtitle: String, tint:
 
 /** A pill row of choices (Radio's Party / Live stations; the host's guest-adds setting). */
 @Composable
-internal fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+internal fun Segmented(
+    options: List<String>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    selectedBg: Color = VioletLight,
+    selectedFg: Color = Color(0xFF2E1065),
+) {
     val cs = MaterialTheme.colorScheme
     Row(
         modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(22.dp)).background(cs.surfaceContainer).padding(4.dp),
@@ -771,10 +719,10 @@ internal fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> 
             val on = i == selected
             Box(
                 Modifier.weight(1f).fillMaxSize().clip(RoundedCornerShape(18.dp))
-                    .background(if (on) VioletLight.copy(alpha = if (cs.isLight) 1f else .25f) else Color.Transparent)
+                    .background(if (on) selectedBg.copy(alpha = if (cs.isLight) 1f else .25f) else Color.Transparent)
                     .clickable { onSelect(i) },
                 contentAlignment = Alignment.Center,
-            ) { Text(label, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = if (on) (if (cs.isLight) Color(0xFF2E1065) else Color(0xFFDDD6FE)) else cs.onSurfaceVariant) }
+            ) { Text(label, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = if (on) (if (cs.isLight) selectedFg else selectedBg) else cs.onSurfaceVariant) }
         }
     }
 }
@@ -824,7 +772,7 @@ private fun formatMs(ms: Long): String {
 /** Songs on this phone: the host picks several, a guest one. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SongPicker(multiple: Boolean, onDismiss: () -> Unit, onPicked: (List<Song>) -> Unit) {
+internal fun SongPicker(multiple: Boolean, onDismiss: () -> Unit, onPicked: (List<Song>) -> Unit) {
     val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
     var granted by remember { mutableStateOf(LocalSongs.canRead(context)) }
@@ -910,8 +858,8 @@ private fun SongPicker(multiple: Boolean, onDismiss: () -> Unit, onPicked: (List
 
 /** For the Tools tile / menu: what the party is doing, or null. */
 fun partyStatus(): String? = when {
+    GroupLink.phase == GroupPhase.JOINING && GroupLink.mode == GroupMode.MUSIC -> "Joining ${GroupLink.groupName}"
     !Party.active -> null
-    Party.phase == PartyPhase.JOINING -> "Joining ${Party.roomName}"
     else -> "Party: ${Party.roomName} · ${Party.people.size} ${if (Party.people.size == 1) "person" else "people"}"
 }
 

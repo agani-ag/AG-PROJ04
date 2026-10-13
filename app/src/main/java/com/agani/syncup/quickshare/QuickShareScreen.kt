@@ -154,8 +154,8 @@ fun QuickShareScreen(onBack: () -> Unit, onOpenDownloads: () -> Unit) {
     /** Permissions, then the switches, then [action]. Every send / receive starts here. */
     fun withPermissions(receiving: Boolean, action: () -> Unit) {
         // Both use Nearby: one at a time.
-        if (com.agani.syncup.party.Party.active) {
-            Toast.makeText(context, "Leave the party first (Tools → Radio → Party)", Toast.LENGTH_LONG).show()
+        if (com.agani.syncup.group.GroupLink.active) {
+            Toast.makeText(context, "Leave the group first — or send to the group with its Share files", Toast.LENGTH_LONG).show()
             return
         }
         if (com.agani.syncup.walkie.Walkie.active) {

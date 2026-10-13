@@ -1,5 +1,12 @@
 package com.agani.syncup.walkie
 
+import com.agani.syncup.group.GroupElsewhere
+import com.agani.syncup.group.GroupJoiningView
+import com.agani.syncup.group.GroupLink
+import com.agani.syncup.group.GroupMode
+import com.agani.syncup.group.GroupPhase
+import com.agani.syncup.group.GroupRoom
+import com.agani.syncup.group.GroupRoomCard
 import android.Manifest
 import android.app.Activity
 import android.media.AudioManager
@@ -52,6 +59,7 @@ import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.PanTool
 import androidx.compose.material.icons.rounded.PersonAddAlt1
 import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.SwapHoriz
@@ -142,6 +150,10 @@ fun WalkieScreen(onBack: () -> Unit) {
     var waitingForRadios by remember { mutableStateOf<(() -> Unit)?>(null) }
     var afterPermission by remember { mutableStateOf<(() -> Unit)?>(null) }
     var permissionNote by remember { mutableStateOf(false) }
+    // Home: Walkie Talkie channels, or SyncUp groups nearby (one search at a time).
+    var listGroups by remember { mutableStateOf(false) }
+    // In a group doing something else (host): pick the talk style, then switch it here.
+    var pickGroupTalk by remember { mutableStateOf(false) }
 
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         val next = afterPermission
@@ -162,7 +174,7 @@ fun WalkieScreen(onBack: () -> Unit) {
     /** Permissions (Nearby + mic), then Bluetooth / Wi-Fi on, then [action]. */
     fun ready(action: () -> Unit) {
         when {
-            Party.active -> return Toast.makeText(context, "Leave the party first (Tools → Radio)", Toast.LENGTH_LONG).show()
+            com.agani.syncup.group.GroupLink.active -> return Toast.makeText(context, "Leave the group first — or switch the group to Walkie talkie", Toast.LENGTH_LONG).show()
             QuickShare.phase != QsPhase.IDLE -> return Toast.makeText(context, "Finish SyncUp Share first", Toast.LENGTH_SHORT).show()
         }
         val next = { if (Radios.missing(context).isEmpty()) action() else waitingForRadios = action }
@@ -202,12 +214,15 @@ fun WalkieScreen(onBack: () -> Unit) {
         }
     }
 
-    // Look for channels while this page is open and this phone isn't in one.
+    // Look for channels (or groups) while this page is open and this phone isn't in one.
     val canBrowse = QuickShare.missingPermissions(receiving = false).isEmpty() && Radios.missing(context).isEmpty()
     var browsing by remember { mutableStateOf(false) }
-    DisposableEffect(Walkie.phase, canBrowse, browsing) {
-        if (Walkie.phase == WalkiePhase.IDLE && (canBrowse || browsing) && QuickShare.phase == QsPhase.IDLE && !Party.active) Walkie.startBrowsing()
-        onDispose { Walkie.stopBrowsing() }
+    DisposableEffect(Walkie.phase, GroupLink.phase, canBrowse, browsing, listGroups) {
+        val idle = Walkie.phase == WalkiePhase.IDLE && GroupLink.phase == GroupPhase.IDLE && (canBrowse || browsing) && QuickShare.phase == QsPhase.IDLE
+        if (idle) {
+            if (listGroups) GroupLink.startBrowsing() else Walkie.startBrowsing()
+        }
+        onDispose { if (listGroups) GroupLink.stopBrowsing() else Walkie.stopBrowsing() }
     }
 
     Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
@@ -243,19 +258,45 @@ fun WalkieScreen(onBack: () -> Unit) {
                         }
                     },
                 )
+                GroupLink.phase == GroupPhase.JOINING -> GroupJoiningView(Teal, TealLight)
+                // In a group: what it's doing; the host can switch it to Walkie talkie from here.
+                GroupLink.inGroup -> GroupElsewhere(GroupMode.WALKIE, onSwitchHere = { pickGroupTalk = true })
                 else -> HomeView(
                     canBrowse = canBrowse,
                     permissionNote = permissionNote,
+                    listGroups = listGroups,
+                    onListGroups = { listGroups = it },
                     onRename = { renaming = true },
                     onStart = { ready { starting = true } },
-                    onLook = { ready { browsing = true; Walkie.startBrowsing() } },
+                    onLook = { ready { browsing = true; if (listGroups) GroupLink.startBrowsing() else Walkie.startBrowsing() } },
                     onJoin = { ch -> ready { Walkie.join(ch) } },
+                    onJoinGroup = { room -> ready { GroupLink.join(room) } },
                 )
             }
         }
     }
 
     if (starting) StartSheet(onDismiss = { starting = false })
+
+    if (pickGroupTalk) {
+        AlertDialog(
+            onDismissRequest = { pickGroupTalk = false },
+            title = { Text("Switch the group to Walkie talkie") },
+            text = { Text("How does the group talk? Everyone in ${GroupLink.groupName} comes here.", fontSize = 14.sp) },
+            confirmButton = {
+                TextButton(onClick = {
+                    pickGroupTalk = false
+                    GroupLink.switchTo(GroupMode.WALKIE, org.json.JSONObject().put("talk", TalkMode.HOLD.key))
+                }) { Text("Hold to talk") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    pickGroupTalk = false
+                    GroupLink.switchTo(GroupMode.WALKIE, org.json.JSONObject().put("talk", TalkMode.OPEN.key))
+                }) { Text("Open talk") }
+            },
+        )
+    }
 
     if (renaming) {
         var name by remember { mutableStateOf(Walkie.myName) }
@@ -378,10 +419,13 @@ fun WalkieScreen(onBack: () -> Unit) {
 private fun HomeView(
     canBrowse: Boolean,
     permissionNote: Boolean,
+    listGroups: Boolean,
+    onListGroups: (Boolean) -> Unit,
     onRename: () -> Unit,
     onStart: () -> Unit,
     onLook: () -> Unit,
     onJoin: (WalkieChannel) -> Unit,
+    onJoinGroup: (GroupRoom) -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     val light = cs.isLight
@@ -420,7 +464,43 @@ private fun HomeView(
             }
         }
         item {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, top = 22.dp, bottom = 8.dp)) {
+            // Walkie Talkie channels, or SyncUp groups (a group can switch to Walkie talkie, music, a video, sharing).
+            Box(Modifier.padding(top = 18.dp)) {
+                Segmented(
+                    listOf(Icons.Rounded.RecordVoiceOver to "Channels", Icons.Rounded.Groups to "Groups"),
+                    selected = if (listGroups) 1 else 0, onSelect = { onListGroups(it == 1) },
+                )
+            }
+        }
+        if (listGroups) {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, top = 18.dp, bottom = 8.dp)) {
+                    Text("Groups nearby", fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                    if (GroupLink.rooms.isNotEmpty()) Text("  · ${GroupLink.rooms.size}", fontSize = 14.sp, color = cs.onSurfaceVariant)
+                }
+            }
+            if (GroupLink.rooms.isEmpty()) {
+                item {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainerLow).padding(16.dp),
+                    ) {
+                        if (canBrowse) {
+                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(14.dp))
+                        }
+                        Text(
+                            "Looking for groups… A group started in Radio → Party or Video player → Watch Party shows here — joining takes you to whatever it's doing.",
+                            fontSize = 13.5.sp, lineHeight = 19.sp, color = cs.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            items(GroupLink.rooms, key = { "g" + it.endpointId }) { room -> GroupRoomCard(room) { onJoinGroup(room) } }
+            return@LazyColumn
+        }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, top = 18.dp, bottom = 8.dp)) {
                 Text("Channels nearby", fontSize = 14.sp, fontWeight = FontWeight.Medium)
                 if (Walkie.channels.isNotEmpty()) Text("  · ${Walkie.channels.size}", fontSize = 14.sp, color = cs.onSurfaceVariant)
             }

@@ -13,6 +13,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.util.Rational
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -38,6 +39,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -45,6 +48,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.AspectRatio
+import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.material.icons.rounded.BrightnessMedium
 import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.Forward10
@@ -109,20 +116,26 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import com.agani.syncup.MainActivity
 import com.agani.syncup.downloads.Downloads
+import com.agani.syncup.music.playAudioOnly
 import kotlinx.coroutines.delay
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * The video player: a phone video, a SyncUp download or a video link (mp4, m3u8 …). Tap for the
  * controls; double-tap a side to skip 10 s; slide the left side for brightness and the right side for
- * volume; pinch to fill the screen. Speed, subtitles (the video's own or a .srt), audio track, lock,
- * rotate and picture-in-picture. Picks up where each video stopped.
+ * volume (and on past full volume into the booster); pinch to fill the screen. Speed, subtitles (the
+ * video's own or a .srt), audio track, lock, rotate and picture-in-picture; Sound & booster (100–200%
+ * and a sound style), sleep timer, play audio only, play with another app, watch together. Picks up
+ * where each video stopped.
  */
 @OptIn(UnstableApi::class)
 class VideoPlayerActivity : ComponentActivity() {
 
     private var player: ExoPlayer? = null
+    private var effects: SoundEffects? = null
     private var inPip by mutableStateOf(false)
     private var uri = ""
     private var title by mutableStateOf("")
@@ -138,10 +151,21 @@ class VideoPlayerActivity : ComponentActivity() {
         }
         val exo = ExoPlayer.Builder(this).build()
         player = exo
+        // Our own sound session, so the booster and the sound style can work on it.
+        VideoSound.init(this)
+        val session = getSystemService(AudioManager::class.java).generateAudioSessionId()
+        exo.setAudioSessionId(session)
+        val fx = SoundEffects(session)
+        effects = fx
         open(intent, exo)
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFFEF4444))) {
-                PlayerScreen(exo, title, inPip, onBack = { finish() }, onPip = { enterPip() })
+                LaunchedEffect(VideoSound.boost, VideoSound.style) { fx.apply(VideoSound.boost, VideoSound.style) }
+                PlayerScreen(
+                    exo, title, uri, inPip,
+                    onBack = { finish() }, onPip = { enterPip() },
+                    onAudioOnly = { audioOnly() }, onWatchTogether = { watchTogether() },
+                )
             }
         }
     }
@@ -204,6 +228,12 @@ class VideoPlayerActivity : ComponentActivity() {
         inPip = isInPictureInPictureMode
     }
 
+    override fun onPause() {
+        super.onPause()
+        // Saved before the screen underneath comes back — its "Continue watching" reads this.
+        save()
+    }
+
     override fun onStop() {
         super.onStop()
         save()
@@ -213,9 +243,40 @@ class VideoPlayerActivity : ComponentActivity() {
 
     override fun onDestroy() {
         save()
+        effects?.release()
+        effects = null
         player?.release()
         player = null
         super.onDestroy()
+    }
+
+    /** Play audio only: the sound carries on in the Music player (screen off, lock-screen controls). */
+    /** Where to carry on from elsewhere — the start again if this video has (nearly) finished. */
+    private fun resumeAt(p: ExoPlayer): Long = p.currentPosition.takeIf { p.duration <= 0 || it < p.duration - 1_000 } ?: 0L
+
+    private fun audioOnly() {
+        val p = player ?: return
+        save()
+        val at = resumeAt(p)
+        p.pause()
+        playAudioOnly(this, uri, title, source, at)
+        Toast.makeText(this, "Playing the sound only — it carries on with the screen off", Toast.LENGTH_LONG).show()
+        finish()
+    }
+
+    /** Watch together: SyncUp → Videos → Watch Party, ready to start a party with this video from here. */
+    private fun watchTogether() {
+        val p = player ?: return
+        save()
+        p.pause()
+        startActivity(
+            Intent(this, MainActivity::class.java)
+                .putExtra(MainActivity.EXTRA_WATCH_TOGETHER_URI, uri)
+                .putExtra(MainActivity.EXTRA_WATCH_TOGETHER_TITLE, title)
+                .putExtra(MainActivity.EXTRA_WATCH_TOGETHER_POS, resumeAt(p))
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+        )
+        finish()
     }
 
     private fun save() {
@@ -250,7 +311,16 @@ class VideoPlayerActivity : ComponentActivity() {
 
 @OptIn(UnstableApi::class)
 @Composable
-private fun PlayerScreen(exo: ExoPlayer, title: String, inPip: Boolean, onBack: () -> Unit, onPip: () -> Unit) {
+private fun PlayerScreen(
+    exo: ExoPlayer,
+    title: String,
+    uri: String,
+    inPip: Boolean,
+    onBack: () -> Unit,
+    onPip: () -> Unit,
+    onAudioOnly: () -> Unit,
+    onWatchTogether: () -> Unit,
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val activity = context as ComponentActivity
     var playing by remember { mutableStateOf(exo.isPlaying) }
@@ -270,6 +340,22 @@ private fun PlayerScreen(exo: ExoPlayer, title: String, inPip: Boolean, onBack: 
     var menu by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<String?>(null) }
     var landscapeSet by remember { mutableStateOf(false) }
+    var soundOpen by remember { mutableStateOf(false) }
+    var playWith by remember { mutableStateOf(false) }
+    // Sleep timer: when the video pauses by itself (elapsedRealtime), 0 = off.
+    var sleepAt by remember { mutableLongStateOf(0L) }
+    var now by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
+    LaunchedEffect(sleepAt) {
+        while (sleepAt > 0) {
+            now = android.os.SystemClock.elapsedRealtime()
+            if (now >= sleepAt) {
+                exo.pause()
+                sleepAt = 0
+                Toast.makeText(context, "Sleep timer: paused", Toast.LENGTH_SHORT).show()
+            }
+            delay(1_000)
+        }
+    }
 
     DisposableEffect(exo) {
         val l = object : Player.Listener {
@@ -301,8 +387,8 @@ private fun PlayerScreen(exo: ExoPlayer, title: String, inPip: Boolean, onBack: 
         }
     }
     // Controls hide themselves after a few seconds of playing.
-    LaunchedEffect(showControls, playing, lastTouch, menu, dialog) {
-        if (showControls && playing && !menu && dialog == null) {
+    LaunchedEffect(showControls, playing, lastTouch, menu, dialog, soundOpen) {
+        if (showControls && playing && !menu && dialog == null && !soundOpen) {
             delay(3500)
             showControls = false
         }
@@ -367,6 +453,9 @@ private fun PlayerScreen(exo: ExoPlayer, title: String, inPip: Boolean, onBack: 
                 .pointerInput(locked) {
                     if (locked) return@pointerInput
                     var scale = 1f
+                    // The right-side slide: 0..1 = volume, 1..2 = boost, kept unrounded while sliding.
+                    var level = -1f
+                    var levelAt = 0L
                     detectTransformGestures { centroid, pan, gestureZoom, _ ->
                         if (gestureZoom != 1f) {
                             scale *= gestureZoom
@@ -379,9 +468,18 @@ private fun PlayerScreen(exo: ExoPlayer, title: String, inPip: Boolean, onBack: 
                                 activity.window.attributes = activity.window.attributes.apply { screenBrightness = brightness }
                                 show(Icons.Rounded.BrightnessMedium, "Brightness ${(brightness * 100).toInt()}%")
                             } else {
-                                volume = (volume + delta).coerceIn(0f, 1f)
+                                // 0..1 = the phone's volume, 1..2 = the booster on top (100–200%).
+                                val now = System.currentTimeMillis()
+                                if (level < 0f || now - levelAt > 400) {
+                                    level = if (VideoSound.boost > 100) 1f + (VideoSound.boost - 100) / 100f else volume
+                                }
+                                levelAt = now
+                                level = (level + delta).coerceIn(0f, 2f)
+                                volume = level.coerceAtMost(1f)
                                 audio.setStreamVolume(AudioManager.STREAM_MUSIC, (volume * maxVol).toInt(), 0)
-                                show(Icons.AutoMirrored.Rounded.VolumeUp, "Volume ${(volume * 100).toInt()}%")
+                                VideoSound.changeBoost(context, 100 + (((level - 1f).coerceAtLeast(0f) * 100f) / 5f).roundToInt() * 5)
+                                if (VideoSound.boost > 100) show(Icons.AutoMirrored.Rounded.VolumeUp, "Boost ${VideoSound.boost}%")
+                                else show(Icons.AutoMirrored.Rounded.VolumeUp, "Volume ${(volume * 100).toInt()}%")
                             }
                         }
                     }
@@ -415,12 +513,36 @@ private fun PlayerScreen(exo: ExoPlayer, title: String, inPip: Boolean, onBack: 
             return@Box
         }
 
+        if (soundOpen) {
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val wide = maxWidth > maxHeight
+                Box(Modifier.fillMaxSize().clickable { soundOpen = false })
+                SoundPanel(
+                    onClose = { soundOpen = false },
+                    modifier = if (wide) Modifier.align(Alignment.CenterEnd).width(360.dp).fillMaxHeight().windowInsetsPadding(WindowInsets.safeDrawing)
+                    else Modifier.align(Alignment.BottomCenter).fillMaxWidth().clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)).windowInsetsPadding(WindowInsets.safeDrawing),
+                )
+            }
+            return@Box
+        }
+
         AnimatedVisibility(showControls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .35f)).windowInsetsPadding(WindowInsets.safeDrawing)) {
                 // Top: back, title, small window, more.
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)) {
                     IconBtn(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onBack)
                     Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    if (VideoSound.boost > 100) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(Color(0xFFE11D48)).clickable { soundOpen = true }
+                                .padding(horizontal = 10.dp, vertical = 5.dp),
+                        ) {
+                            Icon(Icons.AutoMirrored.Rounded.VolumeUp, null, tint = Color.White, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Boost ${VideoSound.boost}%", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) IconBtn(Icons.Rounded.PictureInPictureAlt, "Small window", onPip)
                     Box {
                         IconBtn(Icons.Rounded.MoreVert, "More") { menu = true; lastTouch = System.currentTimeMillis() }
@@ -433,6 +555,18 @@ private fun PlayerScreen(exo: ExoPlayer, title: String, inPip: Boolean, onBack: 
                                 subtitleLauncher.launch(arrayOf("application/x-subrip", "text/vtt", "text/plain", "application/octet-stream", "*/*"))
                             })
                             DropdownMenuItem(text = { Text(if (zoom) "Fit to screen" else "Fill screen") }, leadingIcon = { Icon(Icons.Rounded.AspectRatio, null) }, onClick = { menu = false; zoom = !zoom })
+                            androidx.compose.material3.HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Sound & booster · ${VideoSound.boost}%") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.VolumeUp, null) },
+                                onClick = { menu = false; soundOpen = true },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (sleepAt > 0) "Sleep timer · ${((sleepAt - now) / 60_000 + 1)} min" else "Sleep timer") },
+                                leadingIcon = { Icon(Icons.Rounded.Bedtime, null) }, onClick = { menu = false; dialog = "sleep" },
+                            )
+                            DropdownMenuItem(text = { Text("Play audio only") }, leadingIcon = { Icon(Icons.Rounded.Headphones, null) }, onClick = { menu = false; onAudioOnly() })
+                            DropdownMenuItem(text = { Text("Play with another app") }, leadingIcon = { Icon(Icons.Rounded.OpenInNew, null) }, onClick = { menu = false; playWith = true })
+                            DropdownMenuItem(text = { Text("Watch together") }, leadingIcon = { Icon(Icons.Rounded.Theaters, null) }, onClick = { menu = false; onWatchTogether() })
                         }
                     }
                 }
@@ -477,7 +611,22 @@ private fun PlayerScreen(exo: ExoPlayer, title: String, inPip: Boolean, onBack: 
         }
     }
 
+    if (playWith) {
+        PlayWithSheet(uri = uri, title = title, onPlayHere = { exo.play() }, onDismiss = { playWith = false })
+    }
+
     when (dialog) {
+        "sleep" -> ChoiceDialog(
+            "Sleep timer",
+            listOf("Off") + SLEEP_MINUTES.map { "$it minutes" },
+            if (sleepAt <= 0) 0 else -1,
+            onPick = { i ->
+                sleepAt = if (i == 0) 0 else android.os.SystemClock.elapsedRealtime() + SLEEP_MINUTES[i - 1] * 60_000L
+                if (i > 0) Toast.makeText(context, "The video pauses in ${SLEEP_MINUTES[i - 1]} minutes", Toast.LENGTH_SHORT).show()
+                dialog = null
+            },
+            onDismiss = { dialog = null },
+        )
         "speed" -> ChoiceDialog(
             "Playback speed",
             SPEEDS.map { fmtSpeed(it) }, SPEEDS.indexOfFirst { it == speed },
@@ -521,6 +670,7 @@ private fun PlayerScreen(exo: ExoPlayer, title: String, inPip: Boolean, onBack: 
 }
 
 private val SPEEDS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
+private val SLEEP_MINUTES = listOf(10, 15, 30, 45, 60, 90)
 
 private fun fmtSpeed(s: Float) = if (s == 1f) "1×" else "${s.toString().trimEnd('0').trimEnd('.')}×"
 

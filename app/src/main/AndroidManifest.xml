@@ -73,6 +73,11 @@
         </intent>
         <!-- Browser menu: "Open in Chrome" -->
         <package android:name="com.android.chrome" />
+        <!-- Video player: "Play with another app" lists the phone's video players -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="video/*" />
+        </intent>
     </queries>
 
     <application
@@ -174,6 +179,25 @@
             android:resizeableActivity="true"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden"
             android:theme="@style/Theme.Player" />
+
+        <!-- Tools → Video player → Watch Party: the party's player (same window behaviour as the Video player) -->
+        <activity
+            android:name=".watchparty.WatchPartyActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.agani.syncup.watchparty"
+            android:autoRemoveFromRecents="true"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden"
+            android:theme="@style/Theme.Player" />
+
+        <!-- SyncUp Group (Music party, Watch together, Walkie talkie, Share files): keeps a group going in the background;
+             the microphone joins only in Walkie talkie, while SyncUp is open -->
+        <service
+            android:name=".group.GroupService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice|microphone" />
 
         <!-- Download Manager: keeps user-started downloads running in the background -->
         <service
