@@ -92,6 +92,9 @@ data class BrowserAccount(
     val privacyUrl: String = "",
     val partnersWaiting: Int = 0,
     val hasPartners: Boolean = false,
+    // Chat with admin (switched on by the admin) and its unread replies — on the avatar's sheet.
+    val chatEnabled: Boolean = false,
+    val chatUnread: Int = 0,
 )
 
 enum class LibraryPage { HISTORY, BOOKMARKS, DOWNLOADS }
@@ -105,6 +108,7 @@ class BrowserActions(
     val onClearAuthError: () -> Unit,
     val onSignOut: () -> Unit,
     val onOpenPartners: () -> Unit,
+    val onOpenChat: () -> Unit,
     val onOpenNotifications: () -> Unit,
     val onOpenSettings: () -> Unit,
     val onOpenMusic: () -> Unit,
@@ -662,9 +666,9 @@ fun BrowserScreen(
                     showAccount = false
                     actions.onOpenSettings()
                 },
-                onPartners = {
+                onChat = {
                     showAccount = false
-                    actions.onOpenPartners()
+                    actions.onOpenChat()
                 },
                 onSignOut = {
                     showAccount = false

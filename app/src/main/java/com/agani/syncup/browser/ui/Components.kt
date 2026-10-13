@@ -393,10 +393,22 @@ fun StatusChip(text: String, icon: ImageVector? = null, container: Color = Mater
 @Composable
 fun CountBadge(text: String) {
     val cs = MaterialTheme.colorScheme
-    Box(Modifier.height(20.dp).clip(RoundedCornerShape(10.dp)).background(cs.error).padding(horizontal = 8.dp), contentAlignment = Alignment.Center) {
-        Text(text, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = .3.sp, color = cs.onError)
+    // Grows with the phone's font size (a fixed height cut the text off-centre), text centred exactly.
+    Box(
+        Modifier.heightIn(min = 22.dp).clip(RoundedCornerShape(11.dp)).background(cs.error).padding(horizontal = 9.dp, vertical = 3.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = BadgeTextStyle, fontSize = 12.sp, lineHeight = 14.sp, fontWeight = FontWeight.SemiBold, letterSpacing = .2.sp, color = cs.onError)
     }
 }
+
+/** Badge numbers: a line exactly as tall as the text and centred in it, so they sit in the middle of their pill. */
+val BadgeTextStyle = androidx.compose.ui.text.TextStyle(
+    lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+        alignment = androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center,
+        trim = androidx.compose.ui.text.style.LineHeightStyle.Trim.Both,
+    ),
+)
 
 /** Initial-letter avatar with the optional unread dot. */
 @Composable

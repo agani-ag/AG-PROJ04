@@ -96,7 +96,7 @@ internal fun WorkHome(
                     )
                 }
                 Box(Modifier.offset(x = 4.dp)) { com.agani.syncup.notifications.NotificationBell(onNotifications) }
-                Box(Modifier.offset(x = 4.dp)) { Avatar(user, unread = account.partnersWaiting > 0, onClick = onAvatar) }
+                Box(Modifier.offset(x = 4.dp)) { Avatar(user, unread = account.chatUnread > 0, onClick = onAvatar) }
             }
             SyncPill(modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp), height = 48.dp, focused = query.isNotEmpty()) {
                 Icon(Icons.Rounded.Search, null, tint = cs.onSurfaceVariant)

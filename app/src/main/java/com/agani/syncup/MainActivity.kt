@@ -99,6 +99,12 @@ class MainActivity : FragmentActivity() {
     // Set when the media notification is tapped — open the Music player.
     private val openMusicRequest = mutableStateOf(false)
 
+    // Set when the party's notification is tapped — open Radio → Party.
+    private val openPartyRequest = mutableStateOf(false)
+
+    // Set when the Walkie Talkie card is tapped — open Tools → Walkie Talkie.
+    private val openWalkieRequest = mutableStateOf(false)
+
     // Set when a download notification is tapped — open Downloads; or a link shared to SyncUp to download.
     private val openDownloadsRequest = mutableStateOf(false)
     private val downloadLink = mutableStateOf<String?>(null)
@@ -131,6 +137,8 @@ class MainActivity : FragmentActivity() {
         com.agani.syncup.browser.BrowserSettings.init(this)
         com.agani.syncup.downloads.Downloads.init(this) // carries on downloads the app was closed in the middle of
         com.agani.syncup.quickshare.QuickShare.init(this)
+        com.agani.syncup.party.Party.init(this)
+        com.agani.syncup.walkie.Walkie.init(this)
         com.agani.syncup.browser.SitePermissions.init(this)
         com.agani.syncup.browser.AdBlocker.init(this) // loads the filter lists; refreshes them weekly
         // The home page's shortcut catalogue (backend; refreshed once the server address is known) and the sites' icons.
@@ -259,6 +267,10 @@ class MainActivity : FragmentActivity() {
         super.onDestroy()
     }
 
+    /** Walkie Talkie's volume-key talk (hold a volume key to talk) gets the volume keys first. */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
+        com.agani.syncup.walkie.Walkie.onVolumeKey(event) || super.dispatchKeyEvent(event)
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -292,6 +304,14 @@ class MainActivity : FragmentActivity() {
         if (intent?.getBooleanExtra(EXTRA_OPEN_MUSIC, false) == true) {
             openMusicRequest.value = true
             intent.removeExtra(EXTRA_OPEN_MUSIC)
+        }
+        if (intent?.getBooleanExtra(EXTRA_OPEN_PARTY, false) == true) {
+            openPartyRequest.value = true
+            intent.removeExtra(EXTRA_OPEN_PARTY)
+        }
+        if (intent?.getBooleanExtra(EXTRA_OPEN_WALKIE, false) == true) {
+            openWalkieRequest.value = true
+            intent.removeExtra(EXTRA_OPEN_WALKIE)
         }
         if (intent?.getBooleanExtra(EXTRA_OPEN_DOWNLOADS, false) == true) {
             openDownloadsRequest.value = true
@@ -347,6 +367,8 @@ class MainActivity : FragmentActivity() {
         var showSiteSettings by remember { mutableStateOf(false) }
         var showMusic by remember { mutableStateOf(false) }
         var showRadio by remember { mutableStateOf(false) }
+        // Radio's tab: Party (true) or Live stations.
+        var radioOnParty by remember { mutableStateOf(true) }
         var showLogin by remember { mutableStateOf(false) }
         var showPartners by remember { mutableStateOf(false) }
         var showNotifications by remember { mutableStateOf(false) }
@@ -386,6 +408,12 @@ class MainActivity : FragmentActivity() {
             val started = SystemClock.elapsedRealtime()
             // Base URL is needed before any API call — bound it so startup never hangs.
             withTimeoutOrNull(2500) { withContext(Dispatchers.IO) { AppBootstrap.applyBaseUrl() } }
+            // A debug build made for a test server says so — on any other phone it can't reach anything.
+            if (BuildConfig.DEBUG_API_BASE_URL.isNotBlank()) {
+                android.widget.Toast.makeText(
+                    this@MainActivity, "Test build — server: ${BuildConfig.DEBUG_API_BASE_URL}", android.widget.Toast.LENGTH_LONG,
+                ).show()
+            }
             // Every install checks in (signed in or not) so SyncUp can reach it.
             DeviceRegistrar.hello(applicationContext)
             val elapsed = SystemClock.elapsedRealtime() - started
@@ -520,7 +548,39 @@ class MainActivity : FragmentActivity() {
         LaunchedEffect(openMusicRequest.value) {
             if (openMusicRequest.value) {
                 openMusicRequest.value = false
-                if (player.isRadio) showRadio = true else showMusic = true
+                if (player.isRadio) {
+                    radioOnParty = false
+                    showRadio = true
+                } else {
+                    showMusic = true
+                }
+            }
+        }
+
+        // The party's notification: Radio → Party.
+        LaunchedEffect(openPartyRequest.value) {
+            if (openPartyRequest.value) {
+                openPartyRequest.value = false
+                showMusic = false
+                showPartners = false
+                showNotifications = false
+                showProfile = false
+                radioOnParty = true
+                showRadio = true
+            }
+        }
+
+        // The Walkie Talkie card: Tools → Walkie Talkie.
+        LaunchedEffect(openWalkieRequest.value) {
+            if (openWalkieRequest.value) {
+                openWalkieRequest.value = false
+                showMusic = false
+                showRadio = false
+                showPartners = false
+                showNotifications = false
+                showProfile = false
+                libraryPage = null
+                toolsPage = com.agani.syncup.tools.ToolsPage.WALKIE
             }
         }
 
@@ -606,7 +666,7 @@ class MainActivity : FragmentActivity() {
             forceUpdate -> AppScreen.ForceUpdate
             loggedIn && showAnnouncement -> AppScreen.Announcement
             showMusic -> AppScreen.Music
-            showRadio && radioAvailable -> AppScreen.Radio
+            showRadio -> AppScreen.Radio
             showPartners && loggedIn -> AppScreen.Partners
             showNotifications -> AppScreen.Notifications
             showSiteSettings -> AppScreen.SiteSettings
@@ -700,7 +760,16 @@ class MainActivity : FragmentActivity() {
                     AppScreen.Radio -> {
                         RequestNotificationPermission() // media notification (status bar + lock screen)
                         com.agani.syncup.music.RadioScreen(
+                            liveStations = radioEnabled,
+                            signedIn = loggedIn,
+                            partyTab = radioOnParty,
+                            onTab = { radioOnParty = it },
                             loadStations = { vm.radioChannels() },
+                            onSignIn = {
+                                showRadio = false
+                                toolsPage = null
+                                showLogin = true
+                            },
                             onBack = { showRadio = false },
                         )
                     }
@@ -719,6 +788,8 @@ class MainActivity : FragmentActivity() {
                                 refreshing = state.refreshing,
                                 partnersWaiting = state.partnersWaiting,
                                 hasPartners = state.hasPartners,
+                                chatEnabled = chatEnabled,
+                                chatUnread = state.chatUnread,
                             ) else BrowserAccount(
                                 loginLoading = state.loading,
                                 loginError = state.error,
@@ -739,9 +810,17 @@ class MainActivity : FragmentActivity() {
                                     vm.logout()
                                 },
                                 onOpenPartners = { showPartners = true },
+                                onOpenChat = { openChatRequest.value = true },
                                 onOpenNotifications = { showNotifications = true },
                                 onOpenSettings = { showProfile = true },
-                                onOpenMusic = { if (player.isRadio) showRadio = true else showMusic = true },
+                                onOpenMusic = {
+                                    if (player.isRadio) {
+                                        radioOnParty = false
+                                        showRadio = true
+                                    } else {
+                                        showMusic = true
+                                    }
+                                },
                                 onOpenTools = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
                                 onOpenLibrary = { libraryPage = it },
                                 onRefreshLinks = { runFullRefresh(silent = false) },
@@ -755,6 +834,9 @@ class MainActivity : FragmentActivity() {
                         com.agani.syncup.tools.ToolsPage.CHANNELS -> com.agani.syncup.video.ChannelsHomeScreen(
                             onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
                         )
+                        com.agani.syncup.tools.ToolsPage.WALKIE -> com.agani.syncup.walkie.WalkieScreen(
+                            onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
+                        )
                         com.agani.syncup.tools.ToolsPage.QUICK_SHARE -> com.agani.syncup.quickshare.QuickShareScreen(
                             onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
                             onOpenDownloads = { libraryPage = LibraryPage.DOWNLOADS },
@@ -763,9 +845,14 @@ class MainActivity : FragmentActivity() {
                             radioAvailable = radioAvailable,
                             onMusic = { showMusic = true },
                             onVideos = { toolsPage = com.agani.syncup.tools.ToolsPage.VIDEOS },
-                            onRadio = { showRadio = true },
+                            onRadio = {
+                                // Straight to what's going on: the party, a station playing, else Party.
+                                radioOnParty = com.agani.syncup.party.Party.active || !(player.isRadio && radioAvailable)
+                                showRadio = true
+                            },
                             onChannels = { toolsPage = com.agani.syncup.tools.ToolsPage.CHANNELS },
                             onQuickShare = { toolsPage = com.agani.syncup.tools.ToolsPage.QUICK_SHARE },
+                            onWalkie = { toolsPage = com.agani.syncup.tools.ToolsPage.WALKIE },
                             onBack = { toolsPage = null },
                         )
                     }
@@ -862,6 +949,12 @@ class MainActivity : FragmentActivity() {
 
         /** Intent extra: when true, MainActivity opens the Music player (media-notification tap). */
         const val EXTRA_OPEN_MUSIC = "extra_open_music"
+
+        /** Intent extra: when true, MainActivity opens Tools → Walkie Talkie (its notification tap). */
+        const val EXTRA_OPEN_WALKIE = "extra_open_walkie"
+
+        /** Intent extra: when true, MainActivity opens Radio → Party (the party's notification tap). */
+        const val EXTRA_OPEN_PARTY = "extra_open_party"
 
         /** Intent extra: when true, MainActivity opens the Download Manager (download notification tap). */
         const val EXTRA_OPEN_DOWNLOADS = "extra_open_downloads"

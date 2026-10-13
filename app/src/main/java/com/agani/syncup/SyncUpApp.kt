@@ -14,6 +14,7 @@ class SyncUpApp : Application() {
         super.onCreate()
         CrashReporter.install(this)
         createVerificationChannel()
+        com.agani.syncup.notifications.Inbox.attach(this)
         // Debug builds only: pages can be inspected from Chrome (chrome://inspect) when testing.
         if (BuildConfig.DEBUG) android.webkit.WebView.setWebContentsDebuggingEnabled(true)
 

@@ -123,8 +123,14 @@ class SyncUpMessagingService : FirebaseMessagingService() {
         } else {
             builder.setStyle(NotificationCompat.BigTextStyle().bigText(body))
         }
-        getSystemService(NotificationManager::class.java)
-            .notify(System.currentTimeMillis().toInt(), builder.build())
+        val nm = getSystemService(NotificationManager::class.java)
+        // A push the Notifications page lists goes under its log's tag — the same one the system uses
+        // when it shows the push itself — so reading it in the app takes it off the panel.
+        if (!logId.isNullOrBlank() && !openChat && actionId.isNullOrBlank()) {
+            nm.notify(com.agani.syncup.notifications.PushTray.tag(logId), 0, builder.build())
+        } else {
+            nm.notify(System.currentTimeMillis().toInt(), builder.build())
+        }
     }
 
     private fun ensureChannel() {

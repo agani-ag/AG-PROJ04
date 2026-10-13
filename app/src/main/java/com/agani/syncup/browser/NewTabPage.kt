@@ -132,7 +132,7 @@ internal fun NormalHome(
                         )
                     }
                     Box(Modifier.offset(x = 4.dp)) { com.agani.syncup.notifications.NotificationBell(onNotifications) }
-                    Box(Modifier.offset(x = 4.dp)) { Avatar(user, unread = account.partnersWaiting > 0, onClick = onAvatar) }
+                    Box(Modifier.offset(x = 4.dp)) { Avatar(user, unread = account.chatUnread > 0, onClick = onAvatar) }
                 }
                 Spacer(Modifier.height(12.dp))
             }

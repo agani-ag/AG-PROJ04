@@ -133,31 +133,66 @@ fun MusicScreen(onBack: () -> Unit) {
     if (nowPlaying && player.item != null) NowPlayingSheet(player, onDismiss = { nowPlaying = false })
 }
 
-/** Radio: SyncUp's live stations (admin on/off, signed-in users only — gated by the caller). */
+/**
+ * Radio, for everyone: **Party** (play songs in sync on phones nearby — no sign-in) and **Live
+ * stations** (SyncUp's AudioSync broadcasts — signed-in users, while the admin has them on; the tab
+ * is hidden when the admin has them off).
+ */
 @Composable
-fun RadioScreen(loadStations: suspend () -> Result<RadioChannelsResponse>, onBack: () -> Unit) {
+fun RadioScreen(
+    liveStations: Boolean,
+    signedIn: Boolean,
+    partyTab: Boolean,
+    onTab: (party: Boolean) -> Unit,
+    loadStations: suspend () -> Result<RadioChannelsResponse>,
+    onSignIn: () -> Unit,
+    onBack: () -> Unit,
+) {
     val player = LocalPlayer.current ?: return
     val cs = MaterialTheme.colorScheme
     var nowPlaying by rememberSaveable { mutableStateOf(false) }
+    val onParty = partyTab || !liveStations
 
     Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
             BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
             Text("Radio", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
         }
-        Row(
-            verticalAlignment = Alignment.Top,
-            modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 10.dp),
-        ) {
-            Icon(Icons.Rounded.Info, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(15.dp).padding(top = 2.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "Private broadcasts via this organization's own AudioSync only — not public radio stations.",
-                fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant,
+        if (liveStations) {
+            com.agani.syncup.party.Segmented(
+                listOf("Party", "Live stations"),
+                selected = if (onParty) 0 else 1,
+                onSelect = { onTab(it == 0) },
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
             )
         }
         Box(Modifier.weight(1f)) {
-            RadioTab(player, loadStations, onOpenPlayer = { nowPlaying = true })
+            if (onParty) {
+                com.agani.syncup.party.PartyTab()
+            } else {
+                Column {
+                    Row(
+                        verticalAlignment = Alignment.Top,
+                        modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 10.dp),
+                    ) {
+                        Icon(Icons.Rounded.Info, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(15.dp).padding(top = 2.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Private broadcasts via this organization's own AudioSync only — not public radio stations.",
+                            fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant,
+                        )
+                    }
+                    if (signedIn) {
+                        RadioTab(player, loadStations, onOpenPlayer = { nowPlaying = true })
+                    } else {
+                        EmptyState(
+                            Icons.Rounded.Radio, "Sign in to listen",
+                            "Live stations are for signed-in SyncUp users. Party works without signing in.",
+                            action = "Sign in", onAction = onSignIn,
+                        )
+                    }
+                }
+            }
         }
         AnimatedVisibility(
             visible = player.item != null,

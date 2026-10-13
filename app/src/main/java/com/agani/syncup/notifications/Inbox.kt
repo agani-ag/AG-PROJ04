@@ -26,9 +26,19 @@ object Inbox {
         private set
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var app: Context? = null
+
+    /** Once, at app start: lets a count of 0 clear SyncUp's pushes off the notification panel. */
+    fun attach(context: Context) {
+        app = context.applicationContext
+    }
 
     fun setCount(count: Int) {
+        val was = newCount
         newCount = count.coerceAtLeast(0)
+        // All read (here or on the user's other phone): none of them belong in the panel any more,
+        // so the app icon's badge goes too.
+        if (newCount == 0 && was > 0) app?.let(PushTray::clearAll)
     }
 
     /** Signed in: the Bearer token. Signed out: this phone's id + secret (null until device/hello answered). */

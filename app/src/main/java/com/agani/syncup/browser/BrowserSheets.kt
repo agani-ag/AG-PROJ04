@@ -63,7 +63,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.rounded.AlternateEmail
-import androidx.compose.material.icons.rounded.Handshake
+import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material3.Checkbox
@@ -446,7 +446,7 @@ fun AccountSheet(
     hasWork: Boolean,
     onWork: () -> Unit,
     onSettings: () -> Unit,
-    onPartners: () -> Unit,
+    onChat: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -477,13 +477,15 @@ fun AccountSheet(
             }
         }
         SheetDivider()
-        if (account.hasPartners) {
+        // Chat with admin, straight from the avatar (Partners lives in the ⋮ menu).
+        if (account.chatEnabled) {
+            val unread = account.chatUnread
             TonalRow(
-                "Partners", if (account.partnersWaiting > 0) "Waiting for you to enable" else "Services that added you",
-                leading = { IconTile(Icons.Rounded.Handshake, container = cs.surfaceContainerHigh, content = cs.onSurfaceVariant) },
-                trailing = { if (account.partnersWaiting > 0) CountBadge("${account.partnersWaiting} new") },
+                "Chat with admin", if (unread > 0) "New reply from SyncUp" else "Message SyncUp support",
+                leading = { IconTile(Icons.Rounded.ChatBubbleOutline, container = cs.surfaceContainerHigh, content = cs.onSurfaceVariant) },
+                trailing = { if (unread > 0) CountBadge("$unread new") },
                 minHeight = 60.dp,
-                onClick = onPartners,
+                onClick = onChat,
             )
         }
         TonalRow(

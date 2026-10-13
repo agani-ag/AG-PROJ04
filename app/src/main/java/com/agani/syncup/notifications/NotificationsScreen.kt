@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.agani.syncup.browser.dayLabel
 import com.agani.syncup.browser.parseIsoMs
+import com.agani.syncup.browser.ui.BadgeTextStyle
 import com.agani.syncup.browser.ui.BarIcon
 import com.agani.syncup.browser.ui.EmptyState
 import com.agani.syncup.data.NotificationItem
@@ -109,11 +110,13 @@ fun NotificationsScreen(onBack: () -> Unit, onOpen: (NotificationItem) -> Unit) 
                 items.clear()
                 items.addAll(it.items.orEmpty())
                 hasMore = it.hasMore
-                listState.scrollToItem(0)
             }
             .onFailure { error = it.message ?: "Couldn't load notifications" }
         loading = false
         refreshing = false
+        // Back to the top — only with something to show: scrollToItem waits for the list to be on
+        // screen, and an empty tab never puts it there (the spinner then never went away).
+        if (items.isNotEmpty()) listState.scrollToItem(0)
     }
 
     // Near the end of the list: the next page.
@@ -137,8 +140,10 @@ fun NotificationsScreen(onBack: () -> Unit, onOpen: (NotificationItem) -> Unit) 
 
     fun open(item: NotificationItem) {
         if (!item.read) {
-            // Read now: off the New list at once, the server catches up behind.
+            // Read now: off the New list (and the phone's notification panel) at once, the server
+            // catches up behind.
             if (tab == Tab.NEW) items.remove(item)
+            PushTray.clear(context, listOf(item.id))
             Inbox.setCount(Inbox.newCount - 1)
             scope.launch { runCatching { Inbox.markRead(context, ids = listOf(item.id)) } }
         }
@@ -153,6 +158,7 @@ fun NotificationsScreen(onBack: () -> Unit, onOpen: (NotificationItem) -> Unit) 
                 enabled = tab == Tab.NEW && Inbox.newCount > 0,
                 onClick = {
                     items.clear()
+                    PushTray.clearAll(context)
                     Inbox.setCount(0)
                     scope.launch { runCatching { Inbox.markRead(context, all = true) } }
                 },
@@ -240,7 +246,7 @@ private fun TabSwitch(tab: Tab, newCount: Int, onSelect: (Tab) -> Unit) {
                             .padding(horizontal = 6.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(if (newCount > 99) "99+" else "$newCount", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = cs.onPrimary)
+                        Text(if (newCount > 99) "99+" else "$newCount", style = BadgeTextStyle, fontSize = 12.sp, lineHeight = 14.sp, fontWeight = FontWeight.Bold, color = cs.onPrimary)
                     }
                 }
             }
@@ -346,7 +352,7 @@ fun NotificationBell(onClick: () -> Unit) {
                     .clip(RoundedCornerShape(9.dp)).background(cs.error).padding(horizontal = 4.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(if (count > 99) "99+" else "$count", fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.Bold, color = cs.onError)
+                Text(if (count > 99) "99+" else "$count", style = BadgeTextStyle, fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.Bold, color = cs.onError)
             }
         }
     }

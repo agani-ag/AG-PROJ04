@@ -153,6 +153,15 @@ fun QuickShareScreen(onBack: () -> Unit, onOpenDownloads: () -> Unit) {
 
     /** Permissions, then the switches, then [action]. Every send / receive starts here. */
     fun withPermissions(receiving: Boolean, action: () -> Unit) {
+        // Both use Nearby: one at a time.
+        if (com.agani.syncup.party.Party.active) {
+            Toast.makeText(context, "Leave the party first (Tools → Radio → Party)", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (com.agani.syncup.walkie.Walkie.active) {
+            Toast.makeText(context, "Leave Walkie Talkie first (Tools → Walkie Talkie)", Toast.LENGTH_LONG).show()
+            return
+        }
         val next = { withRadios(receiving, action) }
         val missing = QuickShare.missingPermissions(receiving)
         if (missing.isEmpty()) {

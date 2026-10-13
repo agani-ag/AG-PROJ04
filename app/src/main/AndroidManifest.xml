@@ -53,6 +53,8 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <!-- SyncUp Share: keeps a transfer going with the app in the background (talks to the other phone). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- Walkie Talkie: Talk from the lock screen / with the screen off (only while in a channel). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
@@ -144,6 +146,22 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!-- Radio → Party: the party in the status bar / lock screen, and playing on with the screen off -->
+        <service
+            android:name=".party.PartyService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+        <!-- Tools → Walkie Talkie: keeps a channel going with the screen off; the lock-screen card -->
+        <service
+            android:name=".walkie.WalkieService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice|microphone" />
 
         <!-- Tools → Video player: full screen, rotates, plays on in a small window (picture-in-picture) -->
         <activity

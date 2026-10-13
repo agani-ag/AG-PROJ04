@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material3.Icon
@@ -45,13 +46,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.ui.BarIcon
 import com.agani.syncup.music.LocalPlayer
+import com.agani.syncup.party.Party
+import com.agani.syncup.party.partyStatus
 import com.agani.syncup.quickshare.QsRole
 import com.agani.syncup.quickshare.QuickShare
 import com.agani.syncup.ui.theme.isLight
 import com.agani.syncup.video.SavedPlaylists
+import com.agani.syncup.walkie.Walkie
+import com.agani.syncup.walkie.walkieStatus
 
 /** What's open inside Tools. */
-enum class ToolsPage { HOME, VIDEOS, CHANNELS, QUICK_SHARE }
+enum class ToolsPage { HOME, VIDEOS, CHANNELS, QUICK_SHARE, WALKIE }
 
 /** One line for the ⋮ menu's Tools row: what's going on inside right now (null = nothing). */
 @Composable
@@ -59,6 +64,8 @@ fun toolsStatus(): String? {
     val player = LocalPlayer.current
     return when {
         QuickShare.busy -> if (QuickShare.role == QsRole.SEND) "Sending files" else "Receiving files"
+        Party.active -> "Party on"
+        Walkie.active -> "Walkie Talkie on"
         player?.isPlaying != true -> null
         player.isRadio -> "On air"
         else -> "Playing music"
@@ -71,7 +78,8 @@ private class TileSpec(
 )
 
 /**
- * SyncUp's extra features in one place — Music, Video player, Channels, Radio, SyncUp Share — each
+ * SyncUp's extra features in one place — Music, Video player, Channels, Radio (Party + live stations), SyncUp Share,
+ * Walkie Talkie — each
  * tile showing what it's doing right now, laid out as one plain 2-column grid (every row has two
  * tiles; only the last one can have a single tile when the count is odd).
  */
@@ -83,6 +91,7 @@ fun ToolsScreen(
     onRadio: () -> Unit,
     onChannels: () -> Unit,
     onQuickShare: () -> Unit,
+    onWalkie: () -> Unit,
     onBack: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
@@ -113,16 +122,16 @@ fun ToolsScreen(
                 status = null, onClick = onChannels,
             ),
         )
-        if (radioAvailable) {
-            add(
-                TileSpec(
-                    Icons.Rounded.Radio, accent(0xFFC2410C, 0xFFFDBA74, light), tint(0xFFFFEDD5, 0xFF431407, light),
-                    "Radio", "SyncUp's live stations",
-                    status = player?.title?.takeIf { player.isPlaying && player.isRadio && it.isNotBlank() }?.let { "On air: $it" },
-                    onClick = onRadio,
-                ),
-            )
-        }
+        // Shown to everyone: Party needs no sign-in (Live stations inside keep their own rules).
+        add(
+            TileSpec(
+                Icons.Rounded.Radio, accent(0xFFC2410C, 0xFFFDBA74, light), tint(0xFFFFEDD5, 0xFF431407, light),
+                "Radio", if (radioAvailable) "Parties nearby & live stations" else "Parties nearby",
+                status = partyStatus()
+                    ?: player?.title?.takeIf { player.isPlaying && player.isRadio && it.isNotBlank() }?.let { "On air: $it" },
+                onClick = onRadio,
+            ),
+        )
         add(
             TileSpec(
                 Icons.Rounded.SwapHoriz, accent(0xFF1D4ED8, 0xFF93C5FD, light), tint(0xFFDBEAFE, 0xFF1E3A8A, light),
@@ -135,6 +144,14 @@ fun ToolsScreen(
                     null
                 },
                 onClick = onQuickShare,
+            ),
+        )
+        add(
+            TileSpec(
+                Icons.Rounded.RecordVoiceOver, accent(0xFF0F766E, 0xFF5EEAD4, light), tint(0xFFCCFBF1, 0xFF134E4A, light),
+                "Walkie Talkie", "Talk to friends nearby",
+                status = walkieStatus(),
+                onClick = onWalkie,
             ),
         )
     }
