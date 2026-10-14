@@ -165,6 +165,8 @@ data class BrowserSyncRequest(
     val since: String,
     val changes: List<SyncChange>,
     val tabs: TabsSnapshot?,
+    /** Only these kinds come back (each feature keeps its own cursor); null = all. */
+    val kinds: List<String>? = null,
 )
 
 /** Another phone of the same user, with its open Normal tabs. */

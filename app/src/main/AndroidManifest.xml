@@ -33,6 +33,8 @@
     <!-- HIGH-importance notification channels (reminders, chat, push) vibrate by default, but
          Android silently drops the vibration unless this is declared. Normal permission. -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Tools → Sensors → Steps: the phone's own step counter (Android 10+ asks once). -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <!-- Re-arm reminder alarms after a device reboot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Tools → SyncUp Share (Google Nearby Connections): Bluetooth finds the other phone, a direct
@@ -239,8 +241,8 @@
             </intent-filter>
         </service>
 
-        <!-- "Share → SyncUp Share" from any app: files go to SyncUp Share, ready to send. No text/*
-             (a shared link goes to "Download with SyncUp" instead). -->
+        <!-- "Share → SyncUp Share" from any app: files go to SyncUp Share, ready to send; shared text
+             (a PNR, an address, a link) opens Send text with it. "Download with SyncUp" stays for links. -->
         <activity
             android:name=".quickshare.QuickShareTargetActivity"
             android:exported="true"
@@ -256,6 +258,7 @@
                 <data android:mimeType="video/*" />
                 <data android:mimeType="audio/*" />
                 <data android:mimeType="application/*" />
+                <data android:mimeType="text/*" />
             </intent-filter>
         </activity>
 
@@ -268,7 +271,22 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <!-- Tools → Calendar: a to-do's reminder is due, the refresh alarm, and the notification's Done / Snooze. -->
+        <receiver
+            android:name=".calendar.CalendarAlarmReceiver"
+            android:exported="false" />
+
+        <!-- Tools → Forest: the gentle daily reminder and calm time's end; a calm sound playing on with the screen off. -->
+        <receiver
+            android:name=".forest.ForestAlarmReceiver"
+            android:exported="false" />
+        <service
+            android:name=".forest.CalmSoundService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
     </application>
 </manifest>

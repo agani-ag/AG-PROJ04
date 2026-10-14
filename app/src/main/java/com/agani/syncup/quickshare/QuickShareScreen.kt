@@ -55,6 +55,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.Smartphone
 import androidx.compose.material.icons.rounded.SwipeDown
+import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.WifiTethering
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -76,6 +77,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -107,10 +109,10 @@ import java.io.File
 import java.text.DateFormat
 import java.util.Date
 
-/** Tools → SyncUp Share: send files to / receive files from a nearby SyncUp phone. See [QuickShare]. */
+/** Tools → SyncUp Share: send files or text to / receive them from a nearby SyncUp phone. See [QuickShare]. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun QuickShareScreen(onBack: () -> Unit, onOpenDownloads: () -> Unit) {
+fun QuickShareScreen(onBack: () -> Unit, onOpenDownloads: () -> Unit, onOpenLink: (String) -> Unit = {}) {
     val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
@@ -120,6 +122,10 @@ fun QuickShareScreen(onBack: () -> Unit, onOpenDownloads: () -> Unit) {
     var confirmStop by remember { mutableStateOf(false) }
     var permissionNote by remember { mutableStateOf(false) }
     var afterPermission by remember { mutableStateOf<(() -> Unit)?>(null) }
+    // Send → Text or link: the "Send text" screen, and what's typed there (kept while it's being sent).
+    var composing by rememberSaveable { mutableStateOf(false) }
+    var draft by rememberSaveable { mutableStateOf("") }
+    var draftSecret by rememberSaveable { mutableStateOf(false) }
 
     DisposableEffect(Unit) {
         QuickShare.screenVisible = true
@@ -198,6 +204,33 @@ fun QuickShareScreen(onBack: () -> Unit, onOpenDownloads: () -> Unit) {
         }
     }
 
+    // Text shared from another app: Send text, filled in.
+    val sharedText = QuickShare.sharedText
+    LaunchedEffect(sharedText) {
+        if (sharedText != null) {
+            QuickShare.sharedText = null
+            if (!QuickShare.busy) {
+                QuickShare.reset()
+                draft = sharedText.take(QuickShare.MAX_TEXT)
+                draftSecret = false
+                composing = true
+            }
+        }
+    }
+
+    fun writeText() {
+        if (!QuickShare.busy) QuickShare.reset()
+        composing = true
+    }
+
+    fun sendText() {
+        if (draft.isBlank()) return
+        QuickShare.setText(draft, draftSecret)
+        // Back on the page: a missing permission shows its note there; the draft stays for "Change".
+        composing = false
+        withPermissions(receiving = false) { QuickShare.startSending() }
+    }
+
     // The Quick Settings tile: straight to Receive (asking for the permission first if needed).
     val receiveRequested = QuickShare.receiveRequested
     LaunchedEffect(receiveRequested) {
@@ -228,19 +261,27 @@ fun QuickShareScreen(onBack: () -> Unit, onOpenDownloads: () -> Unit) {
         when {
             QuickShare.busy -> confirmStop = true
             QuickShare.phase != QsPhase.IDLE -> QuickShare.reset()
+            composing -> composing = false
             else -> onBack()
         }
     }
-    BackHandler(enabled = QuickShare.phase != QsPhase.IDLE) { back() }
+    BackHandler(enabled = QuickShare.phase != QsPhase.IDLE || composing) { back() }
+    val writing = composing && QuickShare.phase == QsPhase.IDLE
 
     Box(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
         Column(Modifier.fillMaxSize()) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
                 BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = ::back)
-                Text("SyncUp Share", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
+                Text(if (writing) "Send text" else "SyncUp Share", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
             }
             when (QuickShare.phase) {
-                QsPhase.IDLE -> Home(
+                QsPhase.IDLE -> if (writing) TextComposer(
+                    value = draft,
+                    onValue = { draft = it },
+                    secret = draftSecret,
+                    onSecret = { draftSecret = it },
+                    onChoosePhone = ::sendText,
+                ) else Home(
                     permissionNote = permissionNote,
                     onSend = { pickSheet = true },
                     onReceive = { withPermissions(receiving = true) { QuickShare.startReceiving() } },
@@ -249,12 +290,16 @@ fun QuickShareScreen(onBack: () -> Unit, onOpenDownloads: () -> Unit) {
                     tileOn = QuickShare.tileAdded,
                     onTileChange = ::setTile,
                 )
-                QsPhase.SEARCHING -> Searching(onChange = { pickSheet = true }, onCancel = { QuickShare.reset() })
+                QsPhase.SEARCHING -> Searching(onChange = { if (QuickShare.textMode) writeText() else pickSheet = true }, onCancel = { QuickShare.reset() })
                 QsPhase.VISIBLE -> Visible(onRename = { renaming = true }, onStop = { QuickShare.reset() })
                 QsPhase.CONFIRM -> Confirm(onAccept = { QuickShare.accept() }, onDecline = { QuickShare.decline() })
                 QsPhase.CONNECTING -> Connecting(onCancel = { QuickShare.cancel() })
                 QsPhase.TRANSFERRING -> Transferring(onCancel = { confirmStop = true })
-                QsPhase.DONE -> Finished(
+                QsPhase.DONE -> if (QuickShare.textMode) TextFinished(
+                    onOpenLink = onOpenLink,
+                    onAgain = { if (QuickShare.role == QsRole.SEND) pickSheet = true else withPermissions(true) { QuickShare.startReceiving() } },
+                    onDone = { QuickShare.reset() },
+                ) else Finished(
                     onOpen = { openFile(context, it) },
                     onDownloads = onOpenDownloads,
                     onAgain = { if (QuickShare.role == QsRole.SEND) pickSheet = true else withPermissions(true) { QuickShare.startReceiving() } },
@@ -281,6 +326,10 @@ fun QuickShareScreen(onBack: () -> Unit, onOpenDownloads: () -> Unit) {
             MenuRow(Icons.Rounded.FolderOpen, "Files") {
                 pickSheet = false
                 pickFiles.launch(arrayOf("*/*"))
+            }
+            MenuRow(Icons.Rounded.TextFields, "Text or link") {
+                pickSheet = false
+                writeText()
             }
             Spacer(Modifier.height(16.dp))
         }
@@ -369,7 +418,7 @@ private fun Home(
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth()) {
                 ActionCard(
-                    Icons.Rounded.ArrowUpward, "Send", "Pick files for a nearby phone",
+                    Icons.Rounded.ArrowUpward, "Send", "Files, photos or text for a nearby phone",
                     Color(if (light) 0xFF1D4ED8 else 0xFF93C5FD), Color(if (light) 0xFFDBEAFE else 0xFF1E3A8A),
                     Modifier.weight(1f), onSend,
                 )
@@ -422,6 +471,10 @@ private fun Home(
         if (QuickShare.history.isNotEmpty()) {
             item { SectionHeader("Recent", Modifier.padding(start = 20.dp, end = 12.dp, top = 12.dp), action = "Clear", onAction = { QuickShare.clearHistory() }) }
             items(QuickShare.history, key = { it.at }) { r ->
+                if (r.isText) {
+                    TextRecentRow(r, ago(r.at))
+                    return@items
+                }
                 TonalRow(
                     title = if (r.incoming) "Received from ${r.peer}" else "Sent to ${r.peer}",
                     subtitle = buildString {
@@ -467,7 +520,10 @@ private fun Searching(onChange: () -> Unit, onCancel: () -> Unit) {
     val picked = QuickShare.picked
     Column(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 16.dp)) {
-            item {
+            val text = QuickShare.outText
+            if (QuickShare.textMode && text != null) {
+                item { TextOfferCard(text, QuickShare.outSecret, onChange) }
+            } else item {
                 Column(
                     Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp))
                         .background(cs.surfaceContainerLow).padding(vertical = 8.dp),
@@ -568,6 +624,8 @@ private fun Confirm(onAccept: () -> Unit, onDecline: () -> Unit) {
             Text(QuickShare.peerName, fontSize = 20.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, textAlign = TextAlign.Center)
             Text(
                 when {
+                    QuickShare.textMode && QuickShare.secret -> "wants to send you a secret"
+                    QuickShare.textMode -> "wants to send you text · ${"%,d".format(QuickShare.offerChars)} character${if (QuickShare.offerChars == 1) "" else "s"}"
                     QuickShare.offerCount == 1 -> "wants to send you 1 file · ${Files.size(QuickShare.offerBytes)}"
                     QuickShare.offerCount > 1 -> "wants to send you ${QuickShare.offerCount} files · ${Files.size(QuickShare.offerBytes)}"
                     else -> "wants to send you files"
@@ -622,6 +680,24 @@ private fun Transferring(onCancel: () -> Unit) {
     val total = QuickShare.totalBytes
     val done = QuickShare.doneBytes
     val speed = QuickShare.speed
+    if (QuickShare.textMode) {
+        Column(Modifier.fillMaxSize()) {
+            Column(
+                Modifier.weight(1f).fillMaxWidth().padding(horizontal = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(48.dp), strokeWidth = 3.dp)
+                Spacer(Modifier.height(24.dp))
+                Text(
+                    if (sending) "Sending text to ${QuickShare.peerName}…" else "Receiving text from ${QuickShare.peerName}…",
+                    fontSize = 18.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, textAlign = TextAlign.Center,
+                )
+            }
+            BottomButtons { OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancel") } }
+        }
+        return
+    }
     Column(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 16.dp)) {
             item {

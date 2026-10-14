@@ -161,6 +161,15 @@ class VideoPlayerActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFFEF4444))) {
                 LaunchedEffect(VideoSound.boost, VideoSound.style) { fx.apply(VideoSound.boost, VideoSound.style) }
+                // Tools → Sensors → Wave to control: pause / ±10 s with a wave (when switched on).
+                com.agani.syncup.sensors.WaveEffect { action ->
+                    when (action) {
+                        com.agani.syncup.sensors.WaveControl.Action.PLAY_PAUSE -> exo.playWhenReady = !exo.playWhenReady
+                        com.agani.syncup.sensors.WaveControl.Action.NEXT -> exo.seekTo((exo.currentPosition + 10_000).coerceAtMost(exo.duration.coerceAtLeast(0)))
+                        com.agani.syncup.sensors.WaveControl.Action.PREVIOUS -> exo.seekTo((exo.currentPosition - 10_000).coerceAtLeast(0))
+                        com.agani.syncup.sensors.WaveControl.Action.NOTHING -> Unit
+                    }
+                }
                 PlayerScreen(
                     exo, title, uri, inPip,
                     onBack = { finish() }, onPip = { enterPip() },

@@ -24,6 +24,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Eco
+import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.LiveTv
@@ -58,14 +61,17 @@ import com.agani.syncup.walkie.walkieStatus
 import com.agani.syncup.watchparty.watchPartyStatus
 
 /** What's open inside Tools. */
-enum class ToolsPage { HOME, VIDEOS, CHANNELS, QUICK_SHARE, WALKIE, GROUP }
+enum class ToolsPage { HOME, VIDEOS, CHANNELS, QUICK_SHARE, WALKIE, GROUP, SENSORS, CALENDAR, FOREST }
 
 /** One line for the ⋮ menu's Tools row: what's going on inside right now (null = nothing). */
 @Composable
 fun toolsStatus(): String? {
     val player = LocalPlayer.current
     return when {
-        QuickShare.busy -> if (QuickShare.role == QsRole.SEND) "Sending files" else "Receiving files"
+        QuickShare.busy -> {
+            val what = if (QuickShare.textMode) "text" else "files"
+            if (QuickShare.role == QsRole.SEND) "Sending $what" else "Receiving $what"
+        }
         com.agani.syncup.group.GroupLink.active -> "In a group · ${com.agani.syncup.group.GroupLink.mode.label}"
         Walkie.active -> "Walkie Talkie on"
         player?.isPlaying != true -> null
@@ -81,7 +87,7 @@ private class TileSpec(
 
 /**
  * SyncUp's extra features in one place — Music, Video player, Channels, Radio (Party + live stations), SyncUp Share,
- * Walkie Talkie — each
+ * Walkie Talkie, Sensors — each
  * tile showing what it's doing right now, laid out as one plain 2-column grid (every row has two
  * tiles; only the last one can have a single tile when the count is odd).
  */
@@ -94,6 +100,9 @@ fun ToolsScreen(
     onChannels: () -> Unit,
     onQuickShare: () -> Unit,
     onWalkie: () -> Unit,
+    onSensors: () -> Unit,
+    onCalendar: () -> Unit = {},
+    onForest: () -> Unit = {},
     onGroup: () -> Unit = {},
     onBack: () -> Unit,
 ) {
@@ -138,7 +147,7 @@ fun ToolsScreen(
         add(
             TileSpec(
                 Icons.Rounded.SwapHoriz, accent(0xFF1D4ED8, 0xFF93C5FD, light), tint(0xFFDBEAFE, 0xFF1E3A8A, light),
-                "SyncUp Share", "Send files to a nearby phone",
+                "SyncUp Share", "Send files & text to a nearby phone",
                 status = if (QuickShare.busy) {
                     val total = QuickShare.totalBytes
                     val pct = if (total > 0) " · ${QuickShare.doneBytes * 100 / total}%" else ""
@@ -155,6 +164,30 @@ fun ToolsScreen(
                 "Walkie Talkie", "Talk to friends nearby",
                 status = walkieStatus(),
                 onClick = onWalkie,
+            ),
+        )
+        add(
+            TileSpec(
+                Icons.Rounded.Explore, accent(0xFF0369A1, 0xFF7DD3FC, light), tint(0xFFE0F2FE, 0xFF0C4A6E, light),
+                "Sensors", "Compass, level, light & sound meters…",
+                status = if (com.agani.syncup.sensors.Torch.on) "Flashlight on" else null,
+                onClick = onSensors,
+            ),
+        )
+        add(
+            TileSpec(
+                Icons.Rounded.CalendarMonth, accent(0xFF4F46E5, 0xFFA5B4FC, light), tint(0xFFE0E7FF, 0xFF312E81, light),
+                "Calendar", "To-dos & reminders",
+                status = com.agani.syncup.calendar.calendarStatus(),
+                onClick = onCalendar,
+            ),
+        )
+        add(
+            TileSpec(
+                Icons.Rounded.Eco, accent(0xFF4D7C0F, 0xFFBEF264, light), tint(0xFFECFCCB, 0xFF1A2E05, light),
+                "Forest", "Calm time grows trees",
+                status = com.agani.syncup.forest.forestStatus(),
+                onClick = onForest,
             ),
         )
     }

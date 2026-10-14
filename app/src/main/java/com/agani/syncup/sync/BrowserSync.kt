@@ -37,6 +37,9 @@ enum class SyncType(val pref: String, val label: String) {
     HISTORY("history", "History"),
     TABS("tabs", "Open tabs"),
     SETTINGS("settings", "Settings"),
+    // Tools features with their own sync (see ItemSync), under the same switches.
+    CALENDAR("calendar", "Calendar"),
+    FOREST("forest", "Forest"),
 }
 
 /**
@@ -59,6 +62,14 @@ object BrowserSync {
     private const val MAX_ROUNDS = 12
     private const val DEBOUNCE_MS = 15_000L
     private const val SETTING_KEYS = "search_engine,block_popups,theme"
+    /** What the browser itself syncs (Calendar and Forest ask for theirs separately). */
+    private val BROWSER_KINDS = listOf("bookmark", "history", "shortcut", "setting")
+
+    /** Settings → Sync on, and [type]'s own switch on — read straight from storage, so it works before [init] (background work). */
+    fun switchOn(context: Context, type: SyncType): Boolean {
+        val p = context.applicationContext.getSharedPreferences("browser_sync", Context.MODE_PRIVATE)
+        return p.getBoolean("enabled", true) && p.getBoolean("on_${type.pref}", true)
+    }
 
     private lateinit var app: Context
     private lateinit var db: BrowserDb
@@ -199,19 +210,25 @@ object BrowserSync {
                 prefs.edit().putString("cursor", "").apply()
                 syncNow()
             }
+            ItemSync.resyncAll()
         }
     }
 
     fun setOn(type: SyncType, on: Boolean) {
         typeOn.getValue(type).value = on
         prefs.edit().putBoolean("on_${type.pref}", on).apply()
+        ItemSync.forType(type)?.let { feature ->
+            if (on) feature.resync()
+            requestSync(0) // the server's per-phone list of switches
+            return
+        }
         if (on) {
             // Changes that arrived while this was off were skipped: download everything again.
             scope.launch {
                 when (type) {
                     SyncType.BOOKMARKS, SyncType.HISTORY -> db.markAllDirty()
                     SyncType.SETTINGS -> markExistingSettingsDirty()
-                    SyncType.TABS -> Unit
+                    SyncType.TABS, SyncType.CALENDAR, SyncType.FOREST -> Unit
                 }
                 prefs.edit().putString("cursor", "").apply()
                 syncNow()
@@ -236,6 +253,7 @@ object BrowserSync {
         enabled = false
         prefs.edit().putBoolean("enabled", false).putString("cursor", "").putString("other_devices", "[]").apply()
         otherDevices = emptyList()
+        ItemSync.forgetAllCursors()
     }
 
     // ------------------------------------------------------------------ triggers
@@ -290,7 +308,7 @@ object BrowserSync {
             }
             val resp = ApiClient.service.browserSync(
                 auth,
-                BrowserSyncRequest(deviceId, prefs.getString("cursor", "").orEmpty(), changes, tabs),
+                BrowserSyncRequest(deviceId, prefs.getString("cursor", "").orEmpty(), changes, tabs, BROWSER_KINDS),
             )
             db.markSynced("bookmark", bookmarks)
             db.markSynced("history", history)

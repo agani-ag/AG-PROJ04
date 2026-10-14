@@ -128,6 +128,10 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     // Tools → Quick Share: phone-to-phone file transfer (Bluetooth to find, direct Wi-Fi to send).
     implementation("com.google.android.gms:play-services-nearby:19.3.0")
+    // Tools → Sensors: the camera picture for Magnifier and Colour picker.
+    implementation("androidx.camera:camera-camera2:1.3.4")
+    implementation("androidx.camera:camera-lifecycle:1.3.4")
+    implementation("androidx.camera:camera-view:1.3.4")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

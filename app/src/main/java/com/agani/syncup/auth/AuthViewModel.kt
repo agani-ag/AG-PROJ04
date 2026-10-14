@@ -206,6 +206,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
     fun logout(tellServer: Boolean = true) {
         val token = repository.token()
         BrowserSync.onSignedOut()
+        com.agani.syncup.sync.ItemSync.signedOutAll()
         repository.logout()
         state = AuthState()
         val app = getApplication<Application>()
@@ -214,6 +215,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         if (tellServer && token != null) {
             ioScope.launch {
                 BrowserSync.finalFlush(token)
+                com.agani.syncup.sync.ItemSync.finalFlushAll(token)
                 repository.serverLogout(token)
                 // Signed out on the server too: check in as this phone (its own page tokens + bell).
                 com.agani.syncup.push.DeviceRegistrar.hello(app)
@@ -239,6 +241,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             ReminderStore(ctx).clear()
             ReminderScheduler.rescheduleAll(ctx, emptyList())
             BrowserSync.onSignedOut()
+            com.agani.syncup.sync.ItemSync.signedOutAll()
             com.agani.syncup.push.DeviceRegistrar.applyTopics(ctx, signedIn = false)
             signedOutTokensAndBell(ctx)
             com.agani.syncup.push.DeviceRegistrar.hello(ctx)

@@ -28,6 +28,8 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Park
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.FormatSize
@@ -364,6 +366,8 @@ fun ProfileScreen(
                                         SyncType.HISTORY -> Icons.Rounded.History
                                         SyncType.TABS -> Icons.Rounded.Devices
                                         SyncType.SETTINGS -> Icons.Rounded.Tune
+                                        SyncType.CALENDAR -> Icons.Rounded.CalendarMonth
+                                        SyncType.FOREST -> Icons.Rounded.Park
                                     },
                                     title = t.label,
                                     subtitle = when (t) {
@@ -371,6 +375,8 @@ fun ProfileScreen(
                                         SyncType.HISTORY -> "Normal browsing, last 90 days"
                                         SyncType.TABS -> "See your open tabs on your other devices"
                                         SyncType.SETTINGS -> "Search engine, pop-ups, theme"
+                                        SyncType.CALENDAR -> "To-dos and lists — their reminders on every phone"
+                                        SyncType.FOREST -> "Your trees and calm minutes"
                                     },
                                     checked = BrowserSync.isOn(t),
                                     enabled = true,

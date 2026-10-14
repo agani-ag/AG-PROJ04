@@ -84,8 +84,14 @@ class QsFile(val payloadId: Long, name: String, size: Long, mime: String) {
     var savedUri by mutableStateOf<String?>(null)
 }
 
-/** A finished transfer, for "Recent" on the SyncUp Share page. */
-class QsRecord(val incoming: Boolean, val peer: String, val count: Int, val bytes: Long, val at: Long, val ok: Boolean)
+/**
+ * A finished transfer, for "Recent" on the SyncUp Share page. A text send has [isText]; its words are in
+ * [text] — null for a secret, which is never kept.
+ */
+class QsRecord(
+    val incoming: Boolean, val peer: String, val count: Int, val bytes: Long, val at: Long, val ok: Boolean,
+    val isText: Boolean = false, val text: String? = null, val secret: Boolean = false,
+)
 
 /**
  * SyncUp Share: send files straight from one SyncUp phone to another nearby, using Google Nearby
@@ -98,6 +104,10 @@ class QsRecord(val incoming: Boolean, val peer: String, val count: Int, val byte
  * sender then sends a small list of what's coming (names, sizes), then each file. Received files land
  * in Download / SyncUp / <kind> and in SyncUp's Downloads list, like any other download.
  *
+ * Text or link: the same connection, but the text goes as one small message (no files) and shows up on
+ * the receiver's screen with Copy / Open link / Call…. A secret is hidden there until tapped and is
+ * never kept in Recent.
+ *
  * All public functions are for the main thread (Nearby delivers its callbacks there too).
  */
 object QuickShare {
@@ -106,6 +116,10 @@ object QuickShare {
     private const val SEP = '\u001F'
     private const val PREFS = "quick_share"
     private const val MAX_HISTORY = 30
+    /** Texts kept in Recent (on this phone only). */
+    private const val MAX_TEXTS = 20
+    /** Longest text that can be sent. */
+    const val MAX_TEXT = 5_000
 
     private val strategy = Strategy.P2P_POINT_TO_POINT
     private lateinit var app: Context
@@ -139,8 +153,26 @@ object QuickShare {
         private set
     /** Sender: the files picked, waiting to go. */
     val picked = mutableStateListOf<PickedFile>()
+    /** Sender: the text picked to send instead of files (Text or link); null when sending files. */
+    var outText by mutableStateOf<String?>(null)
+        private set
+    var outSecret by mutableStateOf(false)
+        private set
+    /** This transfer is a text, not files (both sides). */
+    var textMode by mutableStateOf(false)
+        private set
+    /** The text that went (sender) or arrived (receiver). */
+    var text by mutableStateOf("")
+        private set
+    var secret by mutableStateOf(false)
+        private set
+    /** Receiver: how long the offered text is, shown before Accept. */
+    var offerChars by mutableIntStateOf(0)
+        private set
     /** Files shared into SyncUp from another app ("Share → SyncUp Share"), until the page picks them up. */
     var sharedIn by mutableStateOf<List<Uri>>(emptyList())
+    /** Text shared into SyncUp from another app, until the page picks it up (it opens Send text with it). */
+    var sharedText by mutableStateOf<String?>(null)
     val history = mutableStateListOf<QsRecord>()
     /** The SyncUp Share page is on screen (no "received" notification needed then). */
     var screenVisible = false
@@ -161,6 +193,8 @@ object QuickShare {
     private var lastSpeedAt = 0L
     private var lastSpeedBytes = 0L
     private var lastNotifyAt = 0L
+    /** Sender: the text's payload, to know when it got there. */
+    private var textPayloadId = 0L
 
     val busy: Boolean get() = phase == QsPhase.CONNECTING || phase == QsPhase.TRANSFERRING
     val totalBytes: Long get() = files.sumOf { it.size.coerceAtLeast(0) }
@@ -238,8 +272,17 @@ object QuickShare {
     }
 
     fun setPicked(list: List<PickedFile>) {
+        outText = null
+        outSecret = false
         picked.clear()
         picked.addAll(list)
+    }
+
+    /** Send [value] (cut to [MAX_TEXT]) instead of files. */
+    fun setText(value: String, isSecret: Boolean) {
+        picked.clear()
+        outText = value.take(MAX_TEXT)
+        outSecret = isSecret
     }
 
     fun removePicked(p: PickedFile) {
@@ -248,9 +291,10 @@ object QuickShare {
 
     /** Look for phones that are on Receive. */
     fun startSending() {
-        if (picked.isEmpty()) return
+        if (picked.isEmpty() && outText.isNullOrBlank()) return
         stopRadios()
         clearTransfer()
+        textMode = !outText.isNullOrBlank()
         role = QsRole.SEND
         moveTo(QsPhase.SEARCHING)
         client.startDiscovery(SERVICE_ID, discovery, DiscoveryOptions.Builder().setStrategy(strategy).build())
@@ -264,15 +308,19 @@ object QuickShare {
         peerName = phone.name
         moveTo(QsPhase.CONNECTING)
         client.stopDiscovery()
-        val count = picked.size
-        val bytes = picked.sumOf { it.size.coerceAtLeast(0) }
-        client.requestConnection("$myName$SEP$count$SEP$bytes", phone.endpointId, lifecycle)
+        // The receiver sees what's coming before Accept: "T" + length + secret for a text, else count + size.
+        val offer = if (textMode) {
+            "T$SEP${outText.orEmpty().length}$SEP${if (outSecret) 1 else 0}"
+        } else {
+            "${picked.size}$SEP${picked.sumOf { it.size.coerceAtLeast(0) }}"
+        }
+        client.requestConnection("$myName$SEP$offer", phone.endpointId, lifecycle)
             .addOnFailureListener { e -> fail(friendly(e)) }
     }
 
     /** After a failed or declined send: look again, same files. */
     fun retrySend() {
-        if (picked.isNotEmpty()) startSending() else reset()
+        if (picked.isNotEmpty() || !outText.isNullOrBlank()) startSending() else reset()
     }
 
     // ------------------------------------------------------------------ receiving
@@ -351,6 +399,11 @@ object QuickShare {
         offerBytes = 0
         expected = 0
         manifestSeen = false
+        textMode = false
+        text = ""
+        secret = false
+        offerChars = 0
+        textPayloadId = 0
         error = null
         speed = 0
         lastSpeedAt = 0
@@ -398,8 +451,14 @@ object QuickShare {
                 peerId = endpointId
                 val parts = info.endpointName.split(SEP)
                 peerName = parts.getOrNull(0)?.takeIf { it.isNotBlank() } ?: "A nearby phone"
-                offerCount = parts.getOrNull(1)?.toIntOrNull() ?: 0
-                offerBytes = parts.getOrNull(2)?.toLongOrNull() ?: 0
+                if (parts.getOrNull(1) == "T") {
+                    textMode = true
+                    offerChars = parts.getOrNull(2)?.toIntOrNull() ?: 0
+                    secret = parts.getOrNull(3) == "1"
+                } else {
+                    offerCount = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                    offerBytes = parts.getOrNull(2)?.toLongOrNull() ?: 0
+                }
                 moveTo(QsPhase.CONFIRM)
             } else {
                 if (endpointId != peerId) return
@@ -414,7 +473,9 @@ object QuickShare {
             when (result.status.statusCode) {
                 ConnectionsStatusCodes.STATUS_OK -> {
                     moveTo(QsPhase.TRANSFERRING)
-                    if (role == QsRole.SEND) sendFiles(endpointId)
+                    if (role == QsRole.SEND) {
+                        if (textMode) sendText(endpointId) else sendFiles(endpointId)
+                    }
                 }
                 ConnectionsStatusCodes.STATUS_CONNECTION_REJECTED ->
                     if (role == QsRole.SEND) fail("$peerName declined.") else startReceiving()
@@ -441,7 +502,7 @@ object QuickShare {
     private val payloads = object : PayloadCallback() {
         override fun onPayloadReceived(endpointId: String, payload: Payload) {
             when (payload.type) {
-                Payload.Type.BYTES -> payload.asBytes()?.let { readManifest(it) }
+                Payload.Type.BYTES -> payload.asBytes()?.let { if (textMode) readText(it) else readManifest(it) }
                 Payload.Type.FILE -> {
                     incoming[payload.id] = payload
                     fileFor(payload.id, payload.asFile()?.size ?: -1)
@@ -451,6 +512,14 @@ object QuickShare {
         }
 
         override fun onPayloadTransferUpdate(endpointId: String, update: PayloadTransferUpdate) {
+            if (textMode && role == QsRole.SEND && update.payloadId == textPayloadId) {
+                when (update.status) {
+                    PayloadTransferUpdate.Status.SUCCESS -> finish()
+                    PayloadTransferUpdate.Status.IN_PROGRESS -> Unit
+                    else -> fail("The text didn't get to $peerName. Try again.")
+                }
+                return
+            }
             val f = files.firstOrNull { it.payloadId == update.payloadId } ?: return
             if (f.size <= 0 && update.totalBytes > 0) f.size = update.totalBytes
             when (update.status) {
@@ -507,6 +576,27 @@ object QuickShare {
             client.sendPayload(endpointId, payload).addOnFailureListener { e -> fail(friendly(e)) }
         }
         lastSpeedAt = SystemClock.elapsedRealtime()
+    }
+
+    /** Sender: the text as one small message — it arrives whole, there's nothing to track but "got there". */
+    private fun sendText(endpointId: String) {
+        val t = outText?.takeIf { it.isNotBlank() } ?: return fail("There's no text to send.")
+        val body = JSONObject().put("v", 1).put("from", myName).put("text", t).put("secret", outSecret).toString().toByteArray(Charsets.UTF_8)
+        if (body.size > ConnectionsClient.MAX_BYTES_DATA_SIZE) return fail("That text is too long to send.")
+        val payload = Payload.fromBytes(body)
+        textPayloadId = payload.id
+        text = t
+        secret = outSecret
+        client.sendPayload(endpointId, payload).addOnFailureListener { e -> fail(friendly(e)) }
+    }
+
+    /** Receiver: the text arrived — that's the whole transfer. */
+    private fun readText(bytes: ByteArray) {
+        val o = runCatching { JSONObject(String(bytes, Charsets.UTF_8)) }.getOrNull() ?: return
+        if (!o.has("text")) return
+        text = o.optString("text").take(MAX_TEXT)
+        secret = o.optBoolean("secret", secret)
+        finish()
     }
 
     /** Receiver: the sender's list of what's coming. Fills in names on files that already started. */
@@ -626,7 +716,9 @@ object QuickShare {
         // Give the other phone a moment to see the last bytes, then hang up.
         val id = peerId
         main.postDelayed({ id?.let { runCatching { client.disconnectFromEndpoint(it) } } }, 1_500)
-        if (role == QsRole.RECEIVE && !screenVisible) QuickShareService.notifyReceived(app, from, count)
+        if (role == QsRole.RECEIVE && !screenVisible) {
+            if (textMode) QuickShareService.notifyText(app, from, secret) else QuickShareService.notifyReceived(app, from, count)
+        }
     }
 
     private fun tick() {
@@ -649,13 +741,29 @@ object QuickShare {
 
     // ------------------------------------------------------------------ history
     private fun record(ok: Boolean) {
-        if (files.isEmpty() || peerName.isBlank()) return
-        val r = QsRecord(role == QsRole.RECEIVE, peerName, files.size, totalBytes, System.currentTimeMillis(), ok)
+        if (peerName.isBlank()) return
+        val incoming = role == QsRole.RECEIVE
+        val now = System.currentTimeMillis()
+        val r = if (textMode) {
+            // A text that didn't get there isn't worth a row; a secret's words are never kept.
+            if (!ok || text.isEmpty()) return
+            QsRecord(incoming, peerName, 0, 0, now, true, isText = true, text = if (secret) null else text, secret = secret)
+        } else {
+            if (files.isEmpty()) return
+            QsRecord(incoming, peerName, files.size, totalBytes, now, ok)
+        }
         history.add(0, r)
+        val oldTexts = history.filter { it.isText }.drop(MAX_TEXTS)
+        if (oldTexts.isNotEmpty()) history.removeAll(oldTexts)
         while (history.size > MAX_HISTORY) history.removeAt(history.lastIndex)
         val a = JSONArray()
         history.forEach {
-            a.put(JSONObject().put("in", it.incoming).put("peer", it.peer).put("n", it.count).put("b", it.bytes).put("at", it.at).put("ok", it.ok))
+            val o = JSONObject().put("in", it.incoming).put("peer", it.peer).put("n", it.count).put("b", it.bytes).put("at", it.at).put("ok", it.ok)
+            if (it.isText) {
+                o.put("k", "text").put("s", it.secret)
+                it.text?.let { t -> o.put("x", t) }
+            }
+            a.put(o)
         }
         app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("history", a.toString()).commit()
     }
@@ -664,7 +772,10 @@ object QuickShare {
         val a = JSONArray(app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("history", "[]"))
         (0 until a.length()).map { i ->
             val o = a.getJSONObject(i)
-            QsRecord(o.optBoolean("in"), o.optString("peer"), o.optInt("n"), o.optLong("b"), o.optLong("at"), o.optBoolean("ok", true))
+            QsRecord(
+                o.optBoolean("in"), o.optString("peer"), o.optInt("n"), o.optLong("b"), o.optLong("at"), o.optBoolean("ok", true),
+                isText = o.optString("k") == "text", text = if (o.has("x")) o.optString("x") else null, secret = o.optBoolean("s"),
+            )
         }
     }.getOrDefault(emptyList())
 

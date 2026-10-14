@@ -11,8 +11,9 @@ import com.agani.syncup.MainActivity
 
 /**
  * "Share → SyncUp Share" from any app (gallery, file manager…): hands the shared files to
- * SyncUp Share, ready to send, and gets out of the way. Kept separate so a share never opens a second
- * copy of the browser inside the other app (same reason as ShareToDownloadActivity).
+ * SyncUp Share, ready to send, and gets out of the way. Shared text (a PNR, an address, a link) opens
+ * Send text with it filled in. Kept separate so a share never opens a second copy of the browser
+ * inside the other app (same reason as ShareToDownloadActivity).
  */
 class QuickShareTargetActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -21,6 +22,21 @@ class QuickShareTargetActivity : Activity() {
             Intent.ACTION_SEND -> listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
             Intent.ACTION_SEND_MULTIPLE -> IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
             else -> emptyList()
+        }
+        val text = intent?.takeIf { it.action == Intent.ACTION_SEND && uris.isEmpty() }
+            ?.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()?.trim()
+        if (!text.isNullOrEmpty()) {
+            if (text.length > QuickShare.MAX_TEXT) {
+                Toast.makeText(this, "Only the first 5,000 characters will be sent", Toast.LENGTH_SHORT).show()
+            }
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .putExtra(MainActivity.EXTRA_QUICK_SHARE, true)
+                    .putExtra(MainActivity.EXTRA_QUICK_SHARE_TEXT, text.take(QuickShare.MAX_TEXT))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            )
+            finish()
+            return
         }
         // Only files we can really open: passing on a grant we were never given throws and would
         // crash SyncUp (some apps share links to files without letting the receiver read them).

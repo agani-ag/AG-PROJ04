@@ -121,6 +121,9 @@ class MainActivity : FragmentActivity() {
 
     // Set by "Share → SyncUp Share" from another app or a SyncUp Share notification tap — open SyncUp Share.
     private val openQuickShareRequest = mutableStateOf(false)
+    /** A Calendar reminder was tapped: open that to-do ("" = just the Calendar). */
+    private val openCalendarRequest = mutableStateOf<String?>(null)
+    private val openForestRequest = mutableStateOf(false)
 
     // A tapped push's Push Log id: marked read on the Notifications page once the server address is set.
     private val pushReadId = mutableStateOf<String?>(null)
@@ -145,6 +148,13 @@ class MainActivity : FragmentActivity() {
         com.agani.syncup.walkie.Walkie.init(this)
         com.agani.syncup.watchparty.WatchParty.init(this)
         com.agani.syncup.group.GroupLink.init(this)
+        // Tools → Calendar: its to-dos and their reminders (re-set on every start).
+        com.agani.syncup.calendar.CalendarStore.init(this)
+        com.agani.syncup.calendar.CalendarReminders.reschedule(this)
+        // Tools → Forest: its trees, any calm time still running, the gentle reminder.
+        com.agani.syncup.forest.ForestStore.init(this)
+        com.agani.syncup.forest.CalmSession.init(this)
+        com.agani.syncup.forest.ForestReminder.schedule(this)
         com.agani.syncup.browser.SitePermissions.init(this)
         com.agani.syncup.browser.AdBlocker.init(this) // loads the filter lists; refreshes them weekly
         // The home page's shortcut catalogue (backend; refreshed once the server address is known) and the sites' icons.
@@ -209,6 +219,7 @@ class MainActivity : FragmentActivity() {
                                 appPrefs.setBiometricEnabled(false)
                                 com.agani.syncup.data.TokenStore(this@MainActivity).clear()
                                 BrowserSync.onSignedOut()
+                                com.agani.syncup.sync.ItemSync.signedOutAll()
                                 tabManager.wipeWork()
                                 lockedState.value = false
                                 recreate()
@@ -247,12 +258,19 @@ class MainActivity : FragmentActivity() {
 
     override fun onStart() {
         super.onStart()  // runs ProcessLifecycleOwner.onStart → AppLock.onForeground() first
+        com.agani.syncup.forest.CalmSession.onAppStarted(this)
         // Re-lock only when the app was away longer than the grace (AppLock decides), never on
         // rotation or a quick round-trip to a picker/camera/external link.
         if (AppLock.pendingLock) {
             AppLock.pendingLock = false
             if (security.hasPin()) lockedState.value = true
         }
+    }
+
+    override fun onStop() {
+        // Calm time pauses when SyncUp is left with the screen on (not when the screen goes off).
+        com.agani.syncup.forest.CalmSession.onAppStopped(this)
+        super.onStop()
     }
 
     override fun onPause() {
@@ -319,6 +337,14 @@ class MainActivity : FragmentActivity() {
             openWalkieRequest.value = true
             intent.removeExtra(EXTRA_OPEN_WALKIE)
         }
+        intent?.getStringExtra(EXTRA_OPEN_CALENDAR)?.let {
+            openCalendarRequest.value = it
+            intent.removeExtra(EXTRA_OPEN_CALENDAR)
+        }
+        if (intent?.getBooleanExtra(EXTRA_OPEN_FOREST, false) == true) {
+            openForestRequest.value = true
+            intent.removeExtra(EXTRA_OPEN_FOREST)
+        }
         if (intent?.getBooleanExtra(EXTRA_GROUP_SWITCH, false) == true) {
             // The group's notification: Switch (host).
             com.agani.syncup.group.GroupLink.requestSwitch()
@@ -357,11 +383,14 @@ class MainActivity : FragmentActivity() {
             val clip = intent.clipData
             val uris = if (clip == null) emptyList() else (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }
             if (uris.isNotEmpty()) com.agani.syncup.quickshare.QuickShare.sharedIn = uris
+            // Text shared in: Send text, filled in.
+            intent.getStringExtra(EXTRA_QUICK_SHARE_TEXT)?.let { com.agani.syncup.quickshare.QuickShare.sharedText = it }
             // The Quick Settings tile: go straight to Receive.
             if (intent.getBooleanExtra(EXTRA_QUICK_SHARE_RECEIVE, false)) com.agani.syncup.quickshare.QuickShare.receiveRequested = true
             openQuickShareRequest.value = true
             intent.removeExtra(EXTRA_QUICK_SHARE)
             intent.removeExtra(EXTRA_QUICK_SHARE_RECEIVE)
+            intent.removeExtra(EXTRA_QUICK_SHARE_TEXT)
             intent.clipData = null
         }
         // EXTRA_OPEN_CHAT = our own foreground path (SyncUpMessagingService / bubble).
@@ -389,6 +418,16 @@ class MainActivity : FragmentActivity() {
         val vm: AuthViewModel = viewModel()
         // The Music player's state (songs + Radio), shared by every screen through LocalPlayer.
         val player = rememberPlayerHandle()
+        // Tools → Sensors → Wave to control: a wave over the phone pauses / skips songs (when switched on).
+        com.agani.syncup.sensors.WaveEffect { action ->
+            if (player.item == null) return@WaveEffect
+            when (action) {
+                com.agani.syncup.sensors.WaveControl.Action.PLAY_PAUSE -> player.toggle()
+                com.agani.syncup.sensors.WaveControl.Action.NEXT -> player.next()
+                com.agani.syncup.sensors.WaveControl.Action.PREVIOUS -> player.previous()
+                com.agani.syncup.sensors.WaveControl.Action.NOTHING -> Unit
+            }
+        }
 
         var booted by remember { mutableStateOf(false) }
         var forceUpdate by remember { mutableStateOf(false) }
@@ -431,6 +470,7 @@ class MainActivity : FragmentActivity() {
             vm.syncAll(silent = silent) { cfg -> applyConfig(cfg) }                          // GET /sync
             lifecycleScope.launch(Dispatchers.IO) { ReminderSync.sync(applicationContext) }  // GET /reminders
             BrowserSync.syncNow()                                                            // POST /browser/sync
+            com.agani.syncup.sync.ItemSync.syncAllNow()                                      // Calendar, Forest
         }
 
         LaunchedEffect(Unit) {
@@ -486,6 +526,9 @@ class MainActivity : FragmentActivity() {
             if (booted && id != null) {
                 if (BrowserSync.onSignedIn(id)) tabManager.resetNormalForNewAccount()
                 BrowserSync.syncNow()
+                // Calendar and Forest sync on their own (same account, same switches).
+                com.agani.syncup.sync.ItemSync.signedInAll(id)
+                com.agani.syncup.sync.ItemSync.syncAllNow()
             }
         }
 
@@ -668,6 +711,35 @@ class MainActivity : FragmentActivity() {
                 showNotifications = false
                 showProfile = false
                 libraryPage = LibraryPage.DOWNLOADS
+            }
+        }
+
+        // A Calendar reminder: Tools → Calendar, at that to-do.
+        var calendarTask by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(openCalendarRequest.value) {
+            val id = openCalendarRequest.value ?: return@LaunchedEffect
+            openCalendarRequest.value = null
+            showMusic = false
+            showRadio = false
+            showPartners = false
+            showNotifications = false
+            showProfile = false
+            libraryPage = null
+            calendarTask = id.ifBlank { null }
+            toolsPage = com.agani.syncup.tools.ToolsPage.CALENDAR
+        }
+
+        // Forest's notifications (calm time, its end, the gentle reminder): Tools → Forest.
+        LaunchedEffect(openForestRequest.value) {
+            if (openForestRequest.value) {
+                openForestRequest.value = false
+                showMusic = false
+                showRadio = false
+                showPartners = false
+                showNotifications = false
+                showProfile = false
+                libraryPage = null
+                toolsPage = com.agani.syncup.tools.ToolsPage.FOREST
             }
         }
 
@@ -928,9 +1000,31 @@ class MainActivity : FragmentActivity() {
                         com.agani.syncup.tools.ToolsPage.WALKIE -> com.agani.syncup.walkie.WalkieScreen(
                             onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
                         )
+                        com.agani.syncup.tools.ToolsPage.SENSORS -> com.agani.syncup.sensors.SensorsScreen(
+                            onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
+                        )
+                        com.agani.syncup.tools.ToolsPage.CALENDAR -> com.agani.syncup.calendar.CalendarScreen(
+                            signedIn = loggedIn,
+                            onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
+                            onSignIn = {
+                                toolsPage = null
+                                showLogin = true
+                            },
+                            openTaskId = calendarTask,
+                            onOpenTaskUsed = { calendarTask = null },
+                        )
+                        com.agani.syncup.tools.ToolsPage.FOREST -> com.agani.syncup.forest.ForestScreen(
+                            signedIn = loggedIn,
+                            onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
+                        )
                         com.agani.syncup.tools.ToolsPage.QUICK_SHARE -> com.agani.syncup.quickshare.QuickShareScreen(
                             onBack = { toolsPage = com.agani.syncup.tools.ToolsPage.HOME },
                             onOpenDownloads = { libraryPage = LibraryPage.DOWNLOADS },
+                            onOpenLink = { url ->
+                                // A link that arrived as text: a new Normal tab.
+                                toolsPage = null
+                                tabManager.newTab(Section.NORMAL, url)
+                            },
                         )
                         else -> com.agani.syncup.tools.ToolsScreen(
                             radioAvailable = radioAvailable,
@@ -944,6 +1038,9 @@ class MainActivity : FragmentActivity() {
                             onChannels = { toolsPage = com.agani.syncup.tools.ToolsPage.CHANNELS },
                             onQuickShare = { toolsPage = com.agani.syncup.tools.ToolsPage.QUICK_SHARE },
                             onWalkie = { toolsPage = com.agani.syncup.tools.ToolsPage.WALKIE },
+                            onSensors = { toolsPage = com.agani.syncup.tools.ToolsPage.SENSORS },
+                            onCalendar = { toolsPage = com.agani.syncup.tools.ToolsPage.CALENDAR },
+                            onForest = { toolsPage = com.agani.syncup.tools.ToolsPage.FOREST },
                             onGroup = { com.agani.syncup.group.GroupLink.requestOpen() },
                             onBack = { toolsPage = null },
                         )
@@ -1047,6 +1144,10 @@ class MainActivity : FragmentActivity() {
         /** Intent extra: when true, MainActivity opens Tools → Walkie Talkie (its notification tap). */
         const val EXTRA_OPEN_WALKIE = "extra_open_walkie"
 
+        /** A Calendar reminder's tap: the to-do's id. */
+        const val EXTRA_OPEN_CALENDAR = "extra_open_calendar"
+        const val EXTRA_OPEN_FOREST = "extra_open_forest"
+
         /** Intent extra: when true, MainActivity opens what the group is doing now (the group's notification). */
         const val EXTRA_OPEN_GROUP = "extra_open_group"
 
@@ -1087,5 +1188,7 @@ class MainActivity : FragmentActivity() {
 
         /** With [EXTRA_QUICK_SHARE], from the Quick Settings tile: start Receive right away. */
         const val EXTRA_QUICK_SHARE_RECEIVE = "extra_quick_share_receive"
+        /** With [EXTRA_QUICK_SHARE]: text shared in from another app — open Send text with it. */
+        const val EXTRA_QUICK_SHARE_TEXT = "extra_quick_share_text"
     }
 }

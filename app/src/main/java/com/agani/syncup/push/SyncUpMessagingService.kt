@@ -22,6 +22,11 @@ class SyncUpMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
+        // Silent "sync": another of the user's phones changed their to-dos — fetch them, show nothing.
+        if (message.data["type"] == "sync") {
+            com.agani.syncup.sync.SyncPingWorker.enqueue(applicationContext)
+            return
+        }
         val notif = message.notification
         val title = notif?.title ?: message.data["title"] ?: "SyncUp"
         val body = notif?.body ?: message.data["body"] ?: ""

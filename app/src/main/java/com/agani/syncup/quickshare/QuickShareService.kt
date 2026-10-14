@@ -83,6 +83,20 @@ class QuickShareService : Service() {
             runCatching { NotificationManagerCompat.from(context).notify(DONE_ID, n) }
         }
 
+        /** A text arrived while the SyncUp Share page wasn't on screen. Never shows the words (it may be a password). */
+        fun notifyText(context: Context, from: String, secret: Boolean) {
+            if (!canNotify(context)) return
+            channels(context)
+            val n = NotificationCompat.Builder(context, CHANNEL_DONE)
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setContentTitle(if (secret) "A secret from $from" else "Text from $from")
+                .setContentText("Tap to see it in SyncUp Share")
+                .setAutoCancel(true)
+                .setContentIntent(open(context))
+                .build()
+            runCatching { NotificationManagerCompat.from(context).notify(DONE_ID, n) }
+        }
+
         private fun progress(context: Context): Notification {
             channels(context)
             val sending = QuickShare.role == QsRole.SEND
@@ -93,6 +107,7 @@ class QuickShareService : Service() {
             val connecting = QuickShare.phase == QsPhase.CONNECTING
             val text = when {
                 connecting -> "Connecting…"
+                QuickShare.textMode -> "Text"
                 total > 0 -> "${Files.size(done)} of ${Files.size(total)}" +
                     (if (QuickShare.speed > 0) " · ${Files.size(QuickShare.speed)}/s" else "")
                 else -> "${QuickShare.files.size} files"
