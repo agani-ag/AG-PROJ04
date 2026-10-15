@@ -1,0 +1,180 @@
+package com.agani.syncup.home
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Bookmarks
+import androidx.compose.material.icons.automirrored.rounded.Chat
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Handshake
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.agani.syncup.browser.LibraryPage
+import com.agani.syncup.data.User
+
+/**
+ * You: the user's own things in one place — the account (or "Sign in"), notifications, chat and
+ * partners, bookmarks / history / downloads, Home's cards, and Settings.
+ */
+@Composable
+fun YouScreen(
+    user: User?,
+    chatEnabled: Boolean,
+    chatUnread: Int,
+    hasPartners: Boolean,
+    partnersWaiting: Int,
+    appVersion: String,
+    onSignIn: () -> Unit,
+    onNotifications: () -> Unit,
+    onChat: () -> Unit,
+    onPartners: () -> Unit,
+    onLibrary: (LibraryPage) -> Unit,
+    onCustomise: () -> Unit,
+    onSettings: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(60.dp)) {
+                Text("You", fontSize = 22.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.padding(start = 4.dp))
+            }
+        }
+        item {
+            Group {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().clickable(onClick = if (user == null) onSignIn else onSettings).padding(16.dp),
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(52.dp).clip(CircleShape).background(if (user != null) cs.primary else cs.surfaceContainerHigh),
+                    ) {
+                        if (user != null) Text(user.name.trim().take(1).uppercase().ifBlank { "?" }, color = cs.onPrimary, fontSize = 20.sp, fontWeight = FontWeight.Medium)
+                        else Icon(Icons.Rounded.Person, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(28.dp))
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        if (user != null) {
+                            Text(user.name, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(user.loginLabel, fontSize = 13.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        } else {
+                            Text("Sign in to SyncUp", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = cs.primary)
+                            Text("Optional — your tabs, to-dos and forest on every phone", fontSize = 13.sp, color = cs.onSurfaceVariant)
+                        }
+                    }
+                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = cs.onSurfaceVariant)
+                }
+            }
+        }
+        item {
+            Spacer(Modifier.height(12.dp))
+            Group {
+                val n = com.agani.syncup.notifications.Inbox.newCount
+                Item(Icons.Rounded.Notifications, "Notifications", badge = if (n > 0) "$n new" else null, onClick = onNotifications)
+                if (user != null && chatEnabled) {
+                    Line()
+                    Item(Icons.AutoMirrored.Rounded.Chat, "Chat", badge = if (chatUnread > 0) "$chatUnread" else null, onClick = onChat)
+                }
+                if (user != null && hasPartners) {
+                    Line()
+                    Item(Icons.Rounded.Handshake, "Partners", badge = if (partnersWaiting > 0) "$partnersWaiting new" else null, onClick = onPartners)
+                }
+            }
+        }
+        item {
+            Spacer(Modifier.height(12.dp))
+            Group {
+                Item(Icons.Rounded.Bookmarks, "Bookmarks") { onLibrary(LibraryPage.BOOKMARKS) }
+                Line()
+                Item(Icons.Rounded.History, "History") { onLibrary(LibraryPage.HISTORY) }
+                Line()
+                val running = com.agani.syncup.downloads.Downloads.tasks.count { it.state == com.agani.syncup.downloads.DlState.RUNNING }
+                Item(Icons.Rounded.Download, "Downloads", subtitle = if (running > 0) "$running downloading" else null) { onLibrary(LibraryPage.DOWNLOADS) }
+            }
+        }
+        item {
+            Spacer(Modifier.height(12.dp))
+            Group {
+                Item(Icons.Rounded.Tune, "Customise Home", subtitle = "Open to Home or Browse · which cards show", onClick = onCustomise)
+                Line()
+                Item(Icons.Rounded.Settings, "Settings", subtitle = "Sync, app lock, appearance, browser, notifications", onClick = onSettings)
+            }
+        }
+        item {
+            Text("SyncUp $appVersion", fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(top = 16.dp, start = 4.dp))
+        }
+    }
+}
+
+@Composable
+private fun Group(content: @Composable () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cs.surfaceContainerLowest)
+            .border(1.dp, cs.outlineVariant, RoundedCornerShape(20.dp)),
+    ) { content() }
+}
+
+@Composable
+private fun Line() {
+    Box(Modifier.fillMaxWidth().padding(start = 54.dp).height(1.dp).background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f)))
+}
+
+@Composable
+private fun Item(icon: ImageVector, title: String, subtitle: String? = null, badge: String? = null, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 13.dp)) {
+        Icon(icon, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 15.sp, color = cs.onSurface)
+            if (subtitle != null) Text(subtitle, fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (badge != null) {
+            Text(
+                badge, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = cs.onError,
+                modifier = Modifier.padding(end = 6.dp).clip(RoundedCornerShape(11.dp)).background(cs.error).padding(horizontal = 8.dp, vertical = 2.dp),
+            )
+        }
+        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = cs.onSurfaceVariant)
+    }
+}

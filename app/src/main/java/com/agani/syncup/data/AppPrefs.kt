@@ -8,9 +8,10 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK, BLACK }
 class AppPrefs(context: Context) {
     private val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
 
+    /** Light unless the user picked System, Dark or Black (Settings → Appearance). */
     fun themeMode(): ThemeMode = runCatching {
-        ThemeMode.valueOf(prefs.getString(KEY_THEME, ThemeMode.SYSTEM.name)!!)
-    }.getOrDefault(ThemeMode.SYSTEM)
+        ThemeMode.valueOf(prefs.getString(KEY_THEME, ThemeMode.LIGHT.name)!!)
+    }.getOrDefault(ThemeMode.LIGHT)
 
     fun setThemeMode(mode: ThemeMode) = prefs.edit().putString(KEY_THEME, mode.name).apply()
 

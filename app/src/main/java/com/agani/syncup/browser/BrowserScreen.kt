@@ -115,6 +115,10 @@ class BrowserActions(
     val onOpenTools: () -> Unit,
     val onOpenLibrary: (LibraryPage) -> Unit,
     val onRefreshLinks: () -> Unit,
+    /** SyncUp Home and You (the ⋮ menu's top row); [backToHome]: Back from the first page goes Home. */
+    val onHome: () -> Unit = {},
+    val onOpenYou: () -> Unit = {},
+    val backToHome: Boolean = false,
 )
 
 // ============================================================================ screen
@@ -187,6 +191,15 @@ fun BrowserScreen(
         editing = true
     }
 
+    // Home's search box: straight into typing, on a new tab page in Normal.
+    LaunchedEffect(tabs.focusAddressBar) {
+        if (!tabs.focusAddressBar) return@LaunchedEffect
+        tabs.focusAddressBar = false
+        if (tabs.section != Section.NORMAL) switchSection(Section.NORMAL)
+        if (tabs.activeTab(Section.NORMAL)?.isHome != true) tabs.newTab(Section.NORMAL)
+        startEditing("")
+    }
+
     fun openInCurrent(url: String) {
         val t = tabs.activeTab() ?: tabs.ensureTab(tabs.section)
         if (t.isWork) tabs.newTab(Section.NORMAL, url) else tabs.load(t, url)
@@ -254,6 +267,7 @@ fun BrowserScreen(
             showTabs -> showTabs = false
             tabs.back() -> Unit
             section != Section.NORMAL -> switchSection(Section.NORMAL)
+            actions.backToHome -> actions.onHome()
             else -> {
                 val now = SystemClock.elapsedRealtime()
                 if (now - lastBackAt < 2_000) {
@@ -619,6 +633,8 @@ fun BrowserScreen(
                             MenuAction.OPEN_IN_CHROME -> openInBrowserApp(context, tab.url)
                             MenuAction.MUSIC -> actions.onOpenMusic()
                             MenuAction.TOOLS -> actions.onOpenTools()
+                            MenuAction.HOME -> actions.onHome()
+                            MenuAction.YOU -> actions.onOpenYou()
                             MenuAction.WORK -> switchSection(Section.WORK)
                             MenuAction.WORK_INFO -> showWorkInfo = true
                             MenuAction.BOOKMARKS -> actions.onOpenLibrary(LibraryPage.BOOKMARKS)

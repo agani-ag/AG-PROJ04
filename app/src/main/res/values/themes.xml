@@ -1,7 +1,15 @@
 <resources>
     <style name="Theme.AGHub" parent="android:Theme.Material.Light.NoActionBar">
-        <!-- Android 12+ system splash background — adapts to light/dark (see values-night). -->
+        <!-- Android 12+ system splash background: light, like the app's default theme. -->
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+    </style>
+
+    <!-- Android 13+: the splash for someone who picked Dark / Black, or System (MainActivity sets it). -->
+    <style name="Theme.AGHub.SplashDark" parent="Theme.AGHub">
+        <item name="android:windowSplashScreenBackground">@color/splash_background_dark</item>
+    </style>
+    <style name="Theme.AGHub.SplashSystem" parent="Theme.AGHub">
+        <item name="android:windowSplashScreenBackground">@color/splash_background_system</item>
     </style>
 
     <!-- The video player: black, full screen, no flash of the app's light background. -->

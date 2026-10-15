@@ -57,6 +57,9 @@ class TabManager(
      */
     var directLink by mutableStateOf<DirectLink?>(null)
 
+    /** Home's search box asks the browser to open on the address bar, ready to type. */
+    var focusAddressBar by mutableStateOf(false)
+
     fun tabsIn(s: Section): List<BrowserTab> = tabs.filter { it.section == s }
 
     /** What the tab switcher and the tab count show: one entry per SyncUp link (its latest page), one per tab elsewhere. */

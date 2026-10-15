@@ -3,4 +3,13 @@
     <string name="share_to_download">Download with SyncUp</string>
     <string name="quick_share_target">SyncUp Share</string>
     <string name="syncup_share_tile">SyncUp Share</string>
+    <!-- Launcher shortcuts (long-press the app icon) -->
+    <string name="shortcut_new_tab">New tab</string>
+    <string name="shortcut_new_tab_long">New tab</string>
+    <string name="shortcut_incognito">Incognito</string>
+    <string name="shortcut_incognito_long">New incognito tab</string>
+    <string name="shortcut_calendar">Calendar</string>
+    <string name="shortcut_calendar_long">Calendar</string>
+    <string name="shortcut_walkie">Walkie Talkie</string>
+    <string name="shortcut_walkie_long">Walkie Talkie</string>
 </resources>

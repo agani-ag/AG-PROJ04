@@ -397,7 +397,7 @@ object BrowserSync {
             val nonDefault = when (id) {
                 "setting/search_engine" -> BrowserSettings.searchEngine.name != "GOOGLE"
                 "setting/block_popups" -> !BrowserSettings.blockPopups
-                "setting/theme" -> AppPrefs(app).themeMode() != ThemeMode.SYSTEM
+                "setting/theme" -> AppPrefs(app).themeMode() != ThemeMode.LIGHT
                 else -> false
             }
             if (ms > 0L || nonDefault) {

@@ -22,9 +22,9 @@ class SyncUpMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
-        // Silent "sync": another of the user's phones changed their to-dos — fetch them, show nothing.
+        // Silent "sync": the to-dos changed on another phone, or trees were added from the server — fetch them, show nothing.
         if (message.data["type"] == "sync") {
-            com.agani.syncup.sync.SyncPingWorker.enqueue(applicationContext)
+            com.agani.syncup.sync.SyncPingWorker.enqueue(applicationContext, message.data["what"])
             return
         }
         val notif = message.notification

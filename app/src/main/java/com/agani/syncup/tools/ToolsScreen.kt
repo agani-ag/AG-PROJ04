@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -105,6 +107,8 @@ fun ToolsScreen(
     onForest: () -> Unit = {},
     onGroup: () -> Unit = {},
     onBack: () -> Unit,
+    /** Shown as the Tools tab (the bar below it): no back arrow, the bar takes the bottom inset. */
+    inTabs: Boolean = false,
 ) {
     val cs = MaterialTheme.colorScheme
     val light = cs.isLight
@@ -192,11 +196,12 @@ fun ToolsScreen(
         )
     }
 
-    Box(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
+    val insets = if (inTabs) WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal) else WindowInsets.safeDrawing
+    Box(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(insets)) {
         Column(Modifier.fillMaxSize()) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
-                BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
-                Text("Tools", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
+                if (!inTabs) BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
+                Text("Tools", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = if (inTabs) 16.dp else 4.dp))
             }
             LazyColumn(contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // In a group: the way back to it from anywhere.

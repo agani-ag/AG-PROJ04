@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press SyncUp's icon: straight to a new tab, Incognito, Calendar or Walkie Talkie (MainActivity.EXTRA_SHORTCUT). -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="new_tab"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_tab"
+        android:shortcutShortLabel="@string/shortcut_new_tab"
+        android:shortcutLongLabel="@string/shortcut_new_tab_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.agani.syncup"
+            android:targetClass="com.agani.syncup.MainActivity">
+            <extra android:name="extra_shortcut" android:value="new_tab" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="incognito"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_incognito"
+        android:shortcutShortLabel="@string/shortcut_incognito"
+        android:shortcutLongLabel="@string/shortcut_incognito_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.agani.syncup"
+            android:targetClass="com.agani.syncup.MainActivity">
+            <extra android:name="extra_shortcut" android:value="incognito" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="calendar"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_calendar"
+        android:shortcutShortLabel="@string/shortcut_calendar"
+        android:shortcutLongLabel="@string/shortcut_calendar_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.agani.syncup"
+            android:targetClass="com.agani.syncup.MainActivity">
+            <extra android:name="extra_shortcut" android:value="calendar" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="walkie"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_walkie"
+        android:shortcutShortLabel="@string/shortcut_walkie"
+        android:shortcutLongLabel="@string/shortcut_walkie_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.agani.syncup"
+            android:targetClass="com.agani.syncup.MainActivity">
+            <extra android:name="extra_shortcut" android:value="walkie" />
+        </intent>
+    </shortcut>
+</shortcuts>

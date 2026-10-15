@@ -198,6 +198,12 @@ abstract class ItemSync(private val name: String, val type: SyncType, val kinds:
 class SyncPingWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val ctx = applicationContext
+        // "forest": trees added to the account from the server (manage.py forest_trees).
+        if (inputData.getString(KEY_WHAT) == "forest") {
+            com.agani.syncup.forest.ForestStore.init(ctx)
+            val ok = com.agani.syncup.forest.ForestSync.syncBlocking()
+            return if (ok || !com.agani.syncup.forest.ForestSync.active) Result.success() else Result.retry()
+        }
         com.agani.syncup.calendar.CalendarStore.init(ctx)
         val ok = com.agani.syncup.calendar.CalendarSync.syncBlocking()
         com.agani.syncup.calendar.CalendarReminders.reschedule(ctx)
@@ -205,10 +211,15 @@ class SyncPingWorker(context: Context, params: WorkerParameters) : CoroutineWork
     }
 
     companion object {
-        fun enqueue(context: Context) {
+        private const val KEY_WHAT = "what"
+
+        /** [what]: "calendar" (the default) or "forest" — the push's "what". */
+        fun enqueue(context: Context, what: String? = null) {
+            val forest = what == "forest"
             WorkManager.getInstance(context).enqueueUniqueWork(
-                "sync_ping", ExistingWorkPolicy.REPLACE,
+                if (forest) "sync_ping_forest" else "sync_ping", ExistingWorkPolicy.REPLACE,
                 OneTimeWorkRequestBuilder<SyncPingWorker>()
+                    .setInputData(androidx.work.workDataOf(KEY_WHAT to (if (forest) "forest" else "calendar")))
                     .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                     .build(),
             )

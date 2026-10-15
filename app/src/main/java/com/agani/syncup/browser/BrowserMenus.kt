@@ -1,5 +1,9 @@
 package com.agani.syncup.browser
 
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Arrangement
 import com.agani.syncup.browser.ui.SyncUpMark
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -168,6 +172,7 @@ private fun SectionChoice(section: Section, subtitle: String, count: Int, select
 internal enum class MenuAction {
     NEW_TAB, NEW_INCOGNITO, FORWARD, RELOAD, BOOKMARK, SHARE, FIND, DESKTOP, OPEN_IN_CHROME, ADS,
     MUSIC, TOOLS, WORK, WORK_INFO, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, SIGN_IN, PARTNERS, NOTIFICATIONS,
+    HOME, YOU,
 }
 
 @Composable
@@ -184,6 +189,12 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
     val chromeInstalled = remember { runCatching { context.packageManager.getPackageInfo(CHROME_PACKAGE, 0) }.isSuccess }
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 12.dp)) {
+        // SyncUp's other places, from anywhere in the browser.
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            HubButton(Icons.Rounded.Home, "Home", Modifier.weight(1f)) { onAction(MenuAction.HOME) }
+            HubButton(Icons.Rounded.GridView, "Tools", Modifier.weight(1f), busy = com.agani.syncup.tools.toolsStatus() != null) { onAction(MenuAction.TOOLS) }
+            HubButton(Icons.Rounded.Person, "You", Modifier.weight(1f)) { onAction(MenuAction.YOU) }
+        }
         // Quick actions that apply to what's on screen — none on a home page, so no row at all.
         if (page || tab.canGoForward) {
             Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp)) {
@@ -244,8 +255,6 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
         MenuRow(Icons.Rounded.History, "History") { onAction(MenuAction.HISTORY) }
         val running = com.agani.syncup.downloads.Downloads.tasks.count { it.state == com.agani.syncup.downloads.DlState.RUNNING }
         MenuRow(Icons.Rounded.Download, "Downloads", trailing = if (running > 0) "$running running" else null) { onAction(MenuAction.DOWNLOADS) }
-        // Tools: Music, Video player, Downloads … — the row says what's going on inside.
-        MenuRow(Icons.Rounded.GridView, "Tools", trailing = com.agani.syncup.tools.toolsStatus()) { onAction(MenuAction.TOOLS) }
         // SyncUp pages can't be shared, so the row simply isn't there.
         if (page && !tab.isWork) MenuRow(Icons.Rounded.Share, "Share page") { onAction(MenuAction.SHARE) }
         // For the rare page that won't work inside an app (Google sign-in). Never a SyncUp page (its
@@ -347,5 +356,22 @@ internal fun ErrorPage(message: String, onRetry: () -> Unit) {
             Icons.Rounded.CloudOff, "Can't load this page", message,
             action = "Retry", actionIcon = Icons.Rounded.Refresh, onAction = onRetry,
         )
+    }
+}
+
+/** Home, Tools or You: a big tonal button at the top of the browser's ⋮ menu. [busy]: something runs inside. */
+@Composable
+private fun HubButton(icon: ImageVector, label: String, modifier: Modifier, busy: Boolean = false, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = modifier.height(64.dp).clip(RoundedCornerShape(18.dp)).background(cs.secondaryContainer).clickable(onClick = onClick),
+    ) {
+        Box {
+            Icon(icon, null, tint = cs.onSecondaryContainer, modifier = Modifier.size(22.dp))
+            if (busy) Box(Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-2).dp).size(8.dp).clip(CircleShape).background(cs.primary))
+        }
+        Text(label, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = cs.onSecondaryContainer, modifier = Modifier.padding(top = 4.dp))
     }
 }

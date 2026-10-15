@@ -591,6 +591,17 @@ fun ProfileScreen(
                 }
 
                 SettingsSection(
+                    icon = Icons.Rounded.Home,
+                    title = "Home",
+                    summary = "Opens to ${if (com.agani.syncup.home.HomePrefs.startOnHome) "Home" else "Browse"} · " +
+                        "${com.agani.syncup.home.HomeCard.entries.count { com.agani.syncup.home.HomePrefs.shows(it) }} of ${com.agani.syncup.home.HomeCard.entries.size} cards shown",
+                    expanded = open == "home",
+                    onToggle = { open = if (open == "home") null else "home" },
+                ) {
+                    com.agani.syncup.home.HomeSettings(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
+                }
+
+                SettingsSection(
                     icon = Icons.Rounded.NotificationsActive,
                     title = "Notifications",
                     summary = "SyncUp updates ${if (updatesOn) "on" else "off"} · notifications ${if (notificationsAllowed) "allowed" else "blocked"}",

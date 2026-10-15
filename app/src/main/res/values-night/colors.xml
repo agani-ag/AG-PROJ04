@@ -1,4 +1,5 @@
 <resources>
-    <!-- System (Android 12+) splash background — dark value (device in dark mode). -->
-    <color name="splash_background">#0B0F17</color>
+    <!-- System (Android 12+) splash for the System theme, with the device in dark mode. The app's
+         default is Light, so the plain splash_background stays light here. -->
+    <color name="splash_background_system">#0B0F17</color>
 </resources>
