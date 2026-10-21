@@ -14,8 +14,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Handshake
+import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Layers
@@ -37,29 +39,37 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.ui.Avatar
+import com.agani.syncup.browser.ui.BarIcon
 import com.agani.syncup.browser.ui.EmptyState
 import com.agani.syncup.browser.ui.GroupHeader
-import com.agani.syncup.browser.ui.IconTile
 import com.agani.syncup.browser.ui.PillButton
 import com.agani.syncup.browser.ui.StatusChip
 import com.agani.syncup.browser.ui.SyncPill
 import com.agani.syncup.browser.ui.TonalRow
 import com.agani.syncup.data.UrlItem
 
-/** Links grouped by where they come from: each partner first, then "Apps For You" (the admin). */
-private class LinkGroup(val name: String, val partner: Boolean, val items: List<UrlItem>)
+/**
+ * Links grouped by where they come from: each partner first, then "Apps For You" (the admin's for
+ * this user), then "For everyone" (the admin's general links — all a signed-out phone has).
+ */
+private class LinkGroup(val name: String, val partner: Boolean, val items: List<UrlItem>, val general: Boolean = false)
 
 private fun groupLinks(links: List<UrlItem>): List<LinkGroup> {
-    val partner = links.filter { it.source == "partner" && !it.sourceName.isNullOrBlank() }
-    val admin = links - partner.toSet()
+    val general = links.filter { it.general }
+    val partner = links.filter { !it.general && it.source == "partner" && !it.sourceName.isNullOrBlank() }
+    val admin = links - partner.toSet() - general.toSet()
     return partner.groupBy { it.sourceName!! }.toSortedMap(String.CASE_INSENSITIVE_ORDER)
         .map { (name, items) -> LinkGroup(name, true, items) } +
-        listOfNotNull(admin.takeIf { it.isNotEmpty() }?.let { LinkGroup("Apps For You", false, it) })
+        listOfNotNull(
+            admin.takeIf { it.isNotEmpty() }?.let { LinkGroup("Apps For You", false, it) },
+            general.takeIf { it.isNotEmpty() }?.let { LinkGroup("For everyone", false, it, general = true) },
+        )
 }
 
 /**
  * Work home: no address bar and no way to add links — every link comes from the admin or a
- * partner. Search filters names; pull down to fetch the latest links.
+ * partner. Search filters names; pull down to fetch the latest links. Signed out, it shows the
+ * admin's links for everyone, with the sign-in icon where the avatar goes.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,7 +82,7 @@ internal fun WorkHome(
     onNotifications: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    val user = account.user ?: return
+    val user = account.user
     var query by remember { mutableStateOf("") }
     val filtered = account.links.filter { query.isBlank() || it.title.contains(query.trim(), ignoreCase = true) }
     val groups = groupLinks(filtered)
@@ -96,7 +106,10 @@ internal fun WorkHome(
                     )
                 }
                 Box(Modifier.offset(x = 4.dp)) { com.agani.syncup.notifications.NotificationBell(onNotifications) }
-                Box(Modifier.offset(x = 4.dp)) { Avatar(user, unread = account.chatUnread > 0, onClick = onAvatar) }
+                Box(Modifier.offset(x = 4.dp)) {
+                    if (user != null) Avatar(user, unread = account.chatUnread > 0, onClick = onAvatar)
+                    else BarIcon(Icons.Rounded.AccountCircle, "Sign in to SyncUp", tint = cs.onSurfaceVariant, onClick = onAvatar)
+                }
             }
             SyncPill(modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp), height = 48.dp, focused = query.isNotEmpty()) {
                 Icon(Icons.Rounded.Search, null, tint = cs.onSurfaceVariant)
@@ -135,14 +148,18 @@ internal fun WorkHome(
                 GroupHeader(
                     g.name,
                     count = "${if (g.partner) "Partner" else "Admin"} · ${g.items.size} link${if (g.items.size == 1) "" else "s"}",
-                    mark = if (g.partner) Icons.Rounded.Handshake else Icons.Rounded.Sync,
+                    mark = when {
+                        g.partner -> Icons.Rounded.Handshake
+                        g.general -> Icons.Rounded.Public
+                        else -> Icons.Rounded.Sync
+                    },
                 )
                 g.items.forEach { item ->
                     val open = openCount(item)
                     TonalRow(
                         title = item.title,
                         subtitle = item.description?.takeIf { it.isNotBlank() },
-                        leading = { IconTile(iconFor(item)) },
+                        leading = { LinkIcon(item) },
                         trailing = when {
                             open > 1 -> ({ StatusChip("$open pages", Icons.Rounded.Layers) })
                             open == 1 -> ({ StatusChip("Open", Icons.Rounded.Tab) })

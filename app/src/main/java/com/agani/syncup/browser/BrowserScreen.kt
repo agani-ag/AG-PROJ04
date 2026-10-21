@@ -158,11 +158,13 @@ fun BrowserScreen(
     LaunchedEffect(account.user?.id) { if (account.user != null) authForm.clear() }
 
     val signedIn = account.user != null
-    // Work exists only for signed-in users the admin/partners gave links to (or who still have work tabs open).
-    val hasWork = signedIn && (account.links.isNotEmpty() || tabs.tabsIn(Section.WORK).any { !it.isHome })
+    // SyncUp exists when there are links — the user's own and partners', or the admin's links for
+    // everyone (all a signed-out phone has) — or SyncUp tabs are still open.
+    val hasWork = account.links.isNotEmpty() || tabs.tabsIn(Section.WORK).any { !it.isHome }
+    LaunchedEffect(account.links) { KnownLinks.byId = account.links.associateBy { it.id } }
 
-    LaunchedEffect(signedIn, hasWork, section) {
-        if (section == Section.WORK && (!signedIn || !hasWork)) tabs.switchTo(Section.NORMAL)
+    LaunchedEffect(hasWork, section) {
+        if (section == Section.WORK && !hasWork) tabs.switchTo(Section.NORMAL)
     }
 
     // Incognito: block screenshots / recents previews while it's on screen.
@@ -177,8 +179,9 @@ fun BrowserScreen(
         tabs.switchTo(s)
     }
 
-    // A user with exactly one SyncUp link goes straight to it wherever SyncUp is opened (TabManager.directLink).
-    val singleLink = account.links.singleOrNull()?.takeIf { signedIn }
+    // Exactly one SyncUp link (signed out: one link for everyone) → straight to it wherever SyncUp is
+    // opened (TabManager.directLink).
+    val singleLink = account.links.singleOrNull()
     val direct = singleLink?.let { TabManager.DirectLink(it.title, it.url, it.id) }
     LaunchedEffect(direct) {
         tabs.directLink = direct
@@ -391,7 +394,7 @@ fun BrowserScreen(
                                     account = account,
                                     openCount = { tabs.linkPageCount(it.id) },
                                     onOpen = { openWorkLink(it) },
-                                    onAvatar = { showAccount = true },
+                                    onAvatar = { if (!signedIn) actions.onSignIn() else showAccount = true },
                                     onRefresh = actions.onRefreshLinks,
                                     onNotifications = actions.onOpenNotifications,
                                 )

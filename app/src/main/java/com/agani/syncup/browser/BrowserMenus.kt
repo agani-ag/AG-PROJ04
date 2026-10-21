@@ -82,7 +82,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 // ============================================================================ switch section
-/** Tap the section key → pick Normal / Work / Incognito. Work is locked when signed out. */
+/** Tap the section key → pick Normal / Work / Incognito. Work is locked when signed out with no links for everyone. */
 @Composable
 internal fun SectionSheet(
     current: Section,
@@ -101,7 +101,7 @@ internal fun SectionSheet(
             if (signedIn) "Your browsing · synced to your account" else "Your browsing on this phone",
             tabs.tabsIn(Section.NORMAL).size, current == Section.NORMAL, locked = false,
         ) { onPick(Section.NORMAL) }
-        if (!signedIn) {
+        if (!signedIn && !hasWork) {
             SectionChoice(Section.WORK, "Sign in to use your SyncUp links", 0, false, locked = true) { onSignIn() }
         } else if (hasWork) {
             val open = tabs.tabsIn(Section.WORK).count { !it.isHome }
@@ -227,7 +227,7 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
         if (workPage) MenuRow(Icons.Rounded.Info, "About this SyncUp link", tint = cs.primary, textColor = cs.primary) { onAction(MenuAction.WORK_INFO) }
         MenuRow(Icons.Rounded.Add, if (tab.isWork) "New Normal tab" else "New tab") { onAction(MenuAction.NEW_TAB) }
         MenuRow(Icons.Rounded.VisibilityOff, "New incognito tab") { onAction(MenuAction.NEW_INCOGNITO) }
-        if (signedIn && !incognito && (hasWork || account.hasPartners)) {
+        if (!incognito && (hasWork || account.hasPartners)) {
             SheetDivider()
             if (hasWork && !tab.isWork) {
                 SectionTheme(Section.WORK) {

@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.os.SystemClock
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.enableEdgeToEdge
@@ -51,7 +50,6 @@ import com.agani.syncup.ui.ConnectivityBanner
 import com.agani.syncup.ui.ForceUpdateScreen
 import com.agani.syncup.ui.LockScreen
 import com.agani.syncup.ui.ProfileScreen
-import com.agani.syncup.ui.SplashScreen
 import com.agani.syncup.ui.theme.AgHubTheme
 import com.agani.syncup.web.WebViewActivity
 import com.agani.syncup.browser.BrowserAccount
@@ -74,7 +72,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-private enum class AppScreen { Splash, ForceUpdate, Announcement, Home, Browser, ToolsHome, You, Profile, SiteSettings, Music, Radio, Library, Partners, Notifications, Tools }
+private enum class AppScreen { ForceUpdate, Announcement, Home, Browser, ToolsHome, You, Profile, SiteSettings, Music, Radio, Library, Partners, Notifications, Tools }
 
 class MainActivity : FragmentActivity() {
 
@@ -124,6 +122,8 @@ class MainActivity : FragmentActivity() {
     /** A Calendar reminder was tapped: open that to-do ("" = just the Calendar). */
     private val openCalendarRequest = mutableStateOf<String?>(null)
     private val openForestRequest = mutableStateOf(false)
+    /** A Wellbeing notification: (ToolsPage name, its argument — "eye", "morning", "checkin"…). */
+    private val openToolRequest = mutableStateOf<Pair<String, String?>?>(null)
 
     // A launcher shortcut (long-press the app icon): "new_tab", "incognito".
     private val shortcutRequest = mutableStateOf<String?>(null)
@@ -135,6 +135,8 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         // The websites that get a SyncUp page token, saved from the last sync — before any tab loads.
         com.agani.syncup.browser.PageTokens.init(applicationContext)
+        // The server address known already, so the first screen's calls go to the right place.
+        AppBootstrap.applyKnownBaseUrl()
         // Draw behind the status and navigation bars on every Android version (15+ already does),
         // so each screen paints its own bars — Incognito dark, a page's theme colour, and so on —
         // instead of the window's fixed colour. No grey contrast scrim over the button nav bar.
@@ -158,10 +160,14 @@ class MainActivity : FragmentActivity() {
         com.agani.syncup.forest.ForestStore.init(this)
         com.agani.syncup.forest.CalmSession.init(this)
         com.agani.syncup.forest.ForestReminder.schedule(this)
+        // Tools → Wellbeing: Water, Steps, Breaks, Sleep, Habits, Mood (their reminders re-set on every start).
+        com.agani.syncup.wellbeing.Wellbeing.init(this)
         com.agani.syncup.browser.SitePermissions.init(this)
         com.agani.syncup.browser.AdBlocker.init(this) // loads the filter lists; refreshes them weekly
         // The home page's shortcut catalogue (backend; refreshed once the server address is known) and the sites' icons.
         com.agani.syncup.browser.ShortcutCatalog.init(this)
+        // The admin's links for everyone — a signed-out phone's SyncUp section (kept on the phone).
+        com.agani.syncup.browser.GeneralLinks.init(this)
         com.agani.syncup.browser.SiteIcons.init(this)
         tabManager = TabManager(this, webPlatform, browserDb).also { it.restore() }
         // SyncUp Home: what the app opens to, its cards; someone with tabs already used SyncUp before Home.
@@ -187,7 +193,7 @@ class MainActivity : FragmentActivity() {
                 ThemeMode.DARK, ThemeMode.BLACK -> true
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
             }
-            // Android 13+: the next launch's splash matches the theme (light by default).
+            // Android 13+: the system's launch screen (blank, no icon) matches the theme (light by default).
             LaunchedEffect(themeMode) {
                 if (Build.VERSION.SDK_INT >= 33) {
                     runCatching {
@@ -372,6 +378,11 @@ class MainActivity : FragmentActivity() {
             openForestRequest.value = true
             intent.removeExtra(EXTRA_OPEN_FOREST)
         }
+        intent?.getStringExtra(EXTRA_OPEN_TOOL)?.let {
+            openToolRequest.value = it to intent.getStringExtra(EXTRA_TOOL_ARG)
+            intent.removeExtra(EXTRA_OPEN_TOOL)
+            intent.removeExtra(EXTRA_TOOL_ARG)
+        }
         if (intent?.getBooleanExtra(EXTRA_GROUP_SWITCH, false) == true) {
             // The group's notification: Switch (host).
             com.agani.syncup.group.GroupLink.requestSwitch()
@@ -505,9 +516,9 @@ class MainActivity : FragmentActivity() {
             com.agani.syncup.sync.ItemSync.syncAllNow()                                      // Calendar, Forest
         }
 
+        // The app shows its first screen at once (no splash); this sets up the server side behind it.
         LaunchedEffect(Unit) {
-            val started = SystemClock.elapsedRealtime()
-            // Base URL is needed before any API call — bound it so startup never hangs.
+            // The fresh base URL from Remote Config — bounded so startup never hangs.
             withTimeoutOrNull(2500) { withContext(Dispatchers.IO) { AppBootstrap.applyBaseUrl() } }
             // A debug build made for a test server says so — on any other phone it can't reach anything.
             if (BuildConfig.DEBUG_API_BASE_URL.isNotBlank()) {
@@ -517,14 +528,14 @@ class MainActivity : FragmentActivity() {
             }
             // Every install checks in (signed in or not) so SyncUp can reach it.
             DeviceRegistrar.hello(applicationContext)
-            val elapsed = SystemClock.elapsedRealtime() - started
-            if (elapsed < 600) delay(600 - elapsed)
             booted = true
-            // Server config (announcement + force-update + support contacts) — after the splash, non-blocking.
+            // Server config (announcement + force-update + support contacts) — non-blocking.
             val cfg = withContext(Dispatchers.IO) { AppBootstrap.fetchConfig() }
             if (cfg != null) applyConfig(cfg)
             // The home page's shortcuts from the backend (the server address is known now).
             com.agani.syncup.browser.ShortcutCatalog.refresh(force = true)
+            // The links for everyone (signed in they come with /sync; kept fresh for after sign-out).
+            com.agani.syncup.browser.GeneralLinks.refresh()
         }
 
         val state = vm.state
@@ -574,9 +585,10 @@ class MainActivity : FragmentActivity() {
                 if (event == Lifecycle.Event.ON_START && bootedNow && loggedInNow) {
                     runFullRefresh(silent = true)
                 }
-                // Signed out: the Notifications bell (signed in, the /sync above brings it).
+                // Signed out: the Notifications bell and the links for everyone (signed in, the /sync above brings both).
                 if (event == Lifecycle.Event.ON_START && bootedNow && !loggedInNow) {
                     com.agani.syncup.notifications.Inbox.refreshCount(this@MainActivity)
+                    lifecycleScope.launch { com.agani.syncup.browser.GeneralLinks.refresh() }
                 }
                 // Leaving the app: publish the open tabs to the user's other devices now.
                 if (event == Lifecycle.Event.ON_STOP && loggedInNow) BrowserSync.requestSync(0)
@@ -630,9 +642,15 @@ class MainActivity : FragmentActivity() {
         // Login is optional: close the sign-in screen once it succeeds.
         LaunchedEffect(state.isLoggedIn) { if (state.isLoggedIn) showLogin = false }
 
-        // Signed out (logout, account deleted, or the session ended server-side) → close every Work
-        // tab and wipe the Work session. Normal browsing is kept.
-        LaunchedEffect(state.isLoggedIn) { if (!state.isLoggedIn) tabManager.wipeWork() }
+        // Signing out (logout, account deleted, or the session ended server-side) → close every Work
+        // tab and wipe the Work session. Normal browsing is kept. Only on the change itself: a
+        // signed-out phone's SyncUp logins (links for everyone) stay across launches, and its SyncUp
+        // tabs stay open at sign-in.
+        var wasLoggedIn by remember { mutableStateOf(state.isLoggedIn) }
+        LaunchedEffect(state.isLoggedIn) {
+            if (wasLoggedIn && !state.isLoggedIn) tabManager.wipeWork()
+            wasLoggedIn = state.isLoggedIn
+        }
 
         // A failed links refresh (e.g. Work pull-to-refresh while offline) — tell the user once.
         LaunchedEffect(state.message) {
@@ -779,6 +797,22 @@ class MainActivity : FragmentActivity() {
             }
         }
 
+        // A Wellbeing notification (Water, Steps, Breaks, Sleep, Habits, Mood): that tool, with its argument.
+        var toolArg by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(openToolRequest.value) {
+            val (name, arg) = openToolRequest.value ?: return@LaunchedEffect
+            openToolRequest.value = null
+            val page = runCatching { com.agani.syncup.tools.ToolsPage.valueOf(name) }.getOrNull() ?: return@LaunchedEffect
+            showMusic = false
+            showRadio = false
+            showPartners = false
+            showNotifications = false
+            showProfile = false
+            libraryPage = null
+            toolArg = arg
+            toolsPage = page
+        }
+
         // "Share → SyncUp Share" from another app, or the SyncUp Share notification: Tools → SyncUp Share.
         LaunchedEffect(openQuickShareRequest.value) {
             if (openQuickShareRequest.value) {
@@ -866,7 +900,6 @@ class MainActivity : FragmentActivity() {
             radioWasAvailable = radioAvailable
         }
         val screen = when {
-            !booted -> AppScreen.Splash
             forceUpdate -> AppScreen.ForceUpdate
             loggedIn && showAnnouncement -> AppScreen.Announcement
             showMusic -> AppScreen.Music
@@ -914,13 +947,18 @@ class MainActivity : FragmentActivity() {
                     showRadio = true
                 }
                 com.agani.syncup.home.HomeTool.GROUP -> com.agani.syncup.group.GroupLink.requestOpen()
+                com.agani.syncup.home.HomeTool.WATER -> toolsPage = com.agani.syncup.tools.ToolsPage.WATER
+                com.agani.syncup.home.HomeTool.STEPS -> toolsPage = com.agani.syncup.tools.ToolsPage.STEPS
+                com.agani.syncup.home.HomeTool.HABITS -> toolsPage = com.agani.syncup.tools.ToolsPage.HABITS
+                com.agani.syncup.home.HomeTool.SLEEP -> toolsPage = com.agani.syncup.tools.ToolsPage.SLEEP
+                com.agani.syncup.home.HomeTool.BREAKS -> toolsPage = com.agani.syncup.tools.ToolsPage.BREAKS
+                com.agani.syncup.home.HomeTool.MOOD -> toolsPage = com.agani.syncup.tools.ToolsPage.MOOD
             }
         }
 
         CompositionLocalProvider(LocalPlayer provides player) {
             Crossfade(targetState = screen, animationSpec = tween(300), label = "screen") { target ->
                 when (target) {
-                    AppScreen.Splash -> SplashScreen()
                     AppScreen.ForceUpdate -> ForceUpdateScreen()
                     AppScreen.Announcement -> AnnouncementScreen(
                         title = ann?.title ?: "",
@@ -1030,7 +1068,7 @@ class MainActivity : FragmentActivity() {
                             com.agani.syncup.home.HomeScreen(
                                 signedIn = loggedIn,
                                 userInitial = state.user?.name?.trim()?.take(1)?.uppercase(),
-                                links = state.urls,
+                                links = if (loggedIn) state.urls else com.agani.syncup.browser.GeneralLinks.links,
                                 onSearch = {
                                     tabManager.focusAddressBar = true
                                     mainTab = com.agani.syncup.home.MainTab.BROWSE
@@ -1064,6 +1102,7 @@ class MainActivity : FragmentActivity() {
                             onCalendar = { toolsPage = com.agani.syncup.tools.ToolsPage.CALENDAR },
                             onForest = { toolsPage = com.agani.syncup.tools.ToolsPage.FOREST },
                             onGroup = { com.agani.syncup.group.GroupLink.requestOpen() },
+                            onTool = { toolsPage = it },
                             onBack = { mainTab = com.agani.syncup.home.HomePrefs.startTab },
                             inTabs = true,
                         )
@@ -1103,6 +1142,9 @@ class MainActivity : FragmentActivity() {
                                 chatEnabled = chatEnabled,
                                 chatUnread = state.chatUnread,
                             ) else BrowserAccount(
+                                // Signed out, SyncUp shows the admin's links for everyone.
+                                links = com.agani.syncup.browser.GeneralLinks.links,
+                                refreshing = com.agani.syncup.browser.GeneralLinks.refreshing,
                                 loginLoading = state.loading,
                                 loginError = state.error,
                                 supportEmail = supportEmail,
@@ -1137,7 +1179,10 @@ class MainActivity : FragmentActivity() {
                                 onHome = { mainTab = com.agani.syncup.home.MainTab.HOME },
                                 onOpenYou = { mainTab = com.agani.syncup.home.MainTab.YOU },
                                 onOpenLibrary = { libraryPage = it },
-                                onRefreshLinks = { runFullRefresh(silent = false) },
+                                onRefreshLinks = {
+                                    if (loggedIn) runFullRefresh(silent = false)
+                                    else lifecycleScope.launch { com.agani.syncup.browser.GeneralLinks.refresh(spinner = true) }
+                                },
                                 backToHome = com.agani.syncup.home.HomePrefs.startOnHome,
                             ),
                         )
@@ -1178,6 +1223,18 @@ class MainActivity : FragmentActivity() {
                             signedIn = loggedIn,
                             onBack = { toolsPage = null },
                         )
+                        com.agani.syncup.tools.ToolsPage.WATER -> com.agani.syncup.wellbeing.WaterScreen(onBack = { toolsPage = null })
+                        com.agani.syncup.tools.ToolsPage.STEPS -> com.agani.syncup.wellbeing.StepsScreen(onBack = { toolsPage = null })
+                        com.agani.syncup.tools.ToolsPage.HABITS -> com.agani.syncup.wellbeing.HabitsScreen(onBack = { toolsPage = null })
+                        com.agani.syncup.tools.ToolsPage.BREAKS -> com.agani.syncup.wellbeing.BreaksScreen(
+                            onBack = { toolsPage = null }, start = toolArg, onStartUsed = { toolArg = null },
+                        )
+                        com.agani.syncup.tools.ToolsPage.SLEEP -> com.agani.syncup.wellbeing.SleepScreen(
+                            onBack = { toolsPage = null }, start = toolArg, onStartUsed = { toolArg = null },
+                        )
+                        com.agani.syncup.tools.ToolsPage.MOOD -> com.agani.syncup.wellbeing.MoodScreen(
+                            onBack = { toolsPage = null }, start = toolArg, onStartUsed = { toolArg = null },
+                        )
                         com.agani.syncup.tools.ToolsPage.QUICK_SHARE -> com.agani.syncup.quickshare.QuickShareScreen(
                             onBack = { toolsPage = null },
                             onOpenDownloads = { libraryPage = LibraryPage.DOWNLOADS },
@@ -1204,6 +1261,7 @@ class MainActivity : FragmentActivity() {
                             onCalendar = { toolsPage = com.agani.syncup.tools.ToolsPage.CALENDAR },
                             onForest = { toolsPage = com.agani.syncup.tools.ToolsPage.FOREST },
                             onGroup = { com.agani.syncup.group.GroupLink.requestOpen() },
+                            onTool = { toolsPage = it },
                             onBack = { toolsPage = null },
                         )
                     }
@@ -1334,6 +1392,9 @@ class MainActivity : FragmentActivity() {
         /** A Calendar reminder's tap: the to-do's id. */
         const val EXTRA_OPEN_CALENDAR = "extra_open_calendar"
         const val EXTRA_OPEN_FOREST = "extra_open_forest"
+        /** Open a tool from its notification: a ToolsPage name, plus [EXTRA_TOOL_ARG] for it. */
+        const val EXTRA_OPEN_TOOL = "extra_open_tool"
+        const val EXTRA_TOOL_ARG = "extra_tool_arg"
         const val EXTRA_SHORTCUT = "extra_shortcut"
 
         /** Intent extra: when true, MainActivity opens what the group is doing now (the group's notification). */

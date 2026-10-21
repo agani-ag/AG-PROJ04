@@ -193,6 +193,10 @@ data class UrlItem(
     // and the partner's display name ("GSTSync"). Optional until the backend sends them.
     val source: String? = null,
     @SerializedName("source_name") val sourceName: String? = null,
+    // One of the admin's general links — for everyone, signed in or not; grouped as "For everyone".
+    val general: Boolean = false,
+    // The picked icon's colour (blank = blue). With no icon the app shows the website's own icon.
+    val color: String? = null,
 )
 
 data class LoginResponse(
@@ -326,6 +330,12 @@ data class ReminderDto(
 )
 
 /** The home page's shortcut catalogue (GET shortcuts, no sign-in). [version] unchanged → 304. */
+/** GET general-links: the admin's links for everyone (a signed-out phone's SyncUp section). */
+data class GeneralLinksResponse(
+    val version: String = "",
+    val links: List<UrlItem> = emptyList(),
+)
+
 data class ShortcutCatalogResponse(
     val version: String = "",
     val categories: List<ShortcutCategoryDto> = emptyList(),

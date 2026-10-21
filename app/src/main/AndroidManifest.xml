@@ -35,6 +35,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Tools → Sensors → Steps: the phone's own step counter (Android 10+ asks once). -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <!-- Sleep's "Set wake-up alarm" hands a time to the phone's Clock app (a normal permission). -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <!-- Re-arm reminder alarms after a device reboot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Tools → SyncUp Share (Google Nearby Connections): Bluetooth finds the other phone, a direct
@@ -290,6 +292,15 @@
             android:exported="false" />
         <service
             android:name=".forest.CalmSoundService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Tools → Wellbeing: every reminder and notification button; Sleep's sounds with the screen off. -->
+        <receiver
+            android:name=".wellbeing.WellbeingReceiver"
+            android:exported="false" />
+        <service
+            android:name=".wellbeing.SleepSoundService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
     </application>

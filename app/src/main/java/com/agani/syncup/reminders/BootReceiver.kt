@@ -17,6 +17,8 @@ class BootReceiver : BroadcastReceiver() {
             // Tools → Forest: the gentle daily reminder, and calm time's end if one was running.
             com.agani.syncup.forest.ForestReminder.schedule(context)
             com.agani.syncup.forest.CalmSession.rescheduleAfterBoot(context)
+            // Tools → Wellbeing: Water, Steps, Breaks, Sleep, Habits and Mood reminders.
+            com.agani.syncup.wellbeing.Wellbeing.init(context)
         }
     }
 }

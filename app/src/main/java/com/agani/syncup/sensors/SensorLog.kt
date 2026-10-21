@@ -187,6 +187,8 @@ class SensorLogWorker(context: Context, params: WorkerParameters) : CoroutineWor
         }
         if (SensorLog.stepsOn(context) && SensorLog.stepsAllowed(context)) {
             SensorLog.readOnce(context, Sensor.TYPE_STEP_COUNTER)?.let { SensorLog.addSteps(context, it) }
+            // Tools → Steps: today's total (synced) and "goal reached".
+            com.agani.syncup.wellbeing.Steps.afterReading(context)
         }
         return Result.success()
     }

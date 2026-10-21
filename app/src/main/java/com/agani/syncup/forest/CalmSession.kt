@@ -90,6 +90,7 @@ object CalmSession {
     fun init(context: Context) {
         if (::app.isInitialized) return
         app = context.applicationContext
+        SoundBank.init(app)
         if (!ForestStore.ready) ForestStore.init(app)
         val p = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         active = p.getBoolean("active", false)

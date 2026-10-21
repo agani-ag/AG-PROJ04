@@ -198,7 +198,15 @@ abstract class ItemSync(private val name: String, val type: SyncType, val kinds:
 class SyncPingWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
         val ctx = applicationContext
-        // "forest": trees added to the account from the server (manage.py forest_trees).
+        // "wellbeing": Water, Habits, Sleep or Mood changed on another phone — reminders follow.
+        if (inputData.getString(KEY_WHAT) == "wellbeing") {
+            com.agani.syncup.wellbeing.Wellbeing.init(ctx)
+            val syncs = listOf(SyncType.WATER, SyncType.HABITS, SyncType.SLEEP, SyncType.MOOD, SyncType.STEPS).mapNotNull { ItemSync.forType(it) }
+            val ok = syncs.map { !it.active || it.syncBlocking() }.all { it }
+            com.agani.syncup.wellbeing.Wellbeing.rescheduleAll(ctx)
+            return if (ok) Result.success() else Result.retry()
+        }
+        // "forest": trees added to the account from the admin's Forests page.
         if (inputData.getString(KEY_WHAT) == "forest") {
             com.agani.syncup.forest.ForestStore.init(ctx)
             val ok = com.agani.syncup.forest.ForestSync.syncBlocking()
@@ -213,13 +221,13 @@ class SyncPingWorker(context: Context, params: WorkerParameters) : CoroutineWork
     companion object {
         private const val KEY_WHAT = "what"
 
-        /** [what]: "calendar" (the default) or "forest" — the push's "what". */
+        /** [what]: "calendar" (the default), "forest" or "wellbeing" — the push's "what". */
         fun enqueue(context: Context, what: String? = null) {
-            val forest = what == "forest"
+            val kind = what?.takeIf { it == "forest" || it == "wellbeing" } ?: "calendar"
             WorkManager.getInstance(context).enqueueUniqueWork(
-                if (forest) "sync_ping_forest" else "sync_ping", ExistingWorkPolicy.REPLACE,
+                if (kind == "calendar") "sync_ping" else "sync_ping_$kind", ExistingWorkPolicy.REPLACE,
                 OneTimeWorkRequestBuilder<SyncPingWorker>()
-                    .setInputData(androidx.work.workDataOf(KEY_WHAT to (if (forest) "forest" else "calendar")))
+                    .setInputData(androidx.work.workDataOf(KEY_WHAT to kind))
                     .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                     .build(),
             )

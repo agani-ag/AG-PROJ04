@@ -40,6 +40,12 @@ enum class SyncType(val pref: String, val label: String) {
     // Tools features with their own sync (see ItemSync), under the same switches.
     CALENDAR("calendar", "Calendar"),
     FOREST("forest", "Forest"),
+    // Tools → Wellbeing (Breaks stays on each phone, so it has no switch).
+    WATER("water", "Water"),
+    STEPS("steps", "Steps"),
+    HABITS("habits", "Habits"),
+    SLEEP("sleep", "Sleep"),
+    MOOD("mood", "Mood"),
 }
 
 /**
@@ -228,7 +234,7 @@ object BrowserSync {
                 when (type) {
                     SyncType.BOOKMARKS, SyncType.HISTORY -> db.markAllDirty()
                     SyncType.SETTINGS -> markExistingSettingsDirty()
-                    SyncType.TABS, SyncType.CALENDAR, SyncType.FOREST -> Unit
+                    else -> Unit
                 }
                 prefs.edit().putString("cursor", "").apply()
                 syncNow()

@@ -1,5 +1,24 @@
 package com.agani.syncup.home
 
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
+import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.SentimentSatisfied
+import androidx.compose.material.icons.rounded.TaskAlt
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.WaterDrop
+import androidx.compose.ui.platform.LocalContext
+import com.agani.syncup.wellbeing.Breaks
+import com.agani.syncup.wellbeing.Habits
+import com.agani.syncup.wellbeing.Mood
+import com.agani.syncup.wellbeing.Sleep
+import com.agani.syncup.wellbeing.Steps
+import com.agani.syncup.wellbeing.Water
+import com.agani.syncup.wellbeing.Wellbeing
+import com.agani.syncup.wellbeing.clockText
+import com.agani.syncup.wellbeing.hoursText
+import com.agani.syncup.wellbeing.timeText
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -104,7 +123,7 @@ import kotlinx.coroutines.delay
 import java.util.Calendar
 
 /** What Home can open; MainActivity knows where each one lives. */
-enum class HomeTool { CALENDAR, FOREST, SHARE, WALKIE, MUSIC, VIDEO, RADIO, SENSORS, PARTY, WATCH_PARTY, GROUP }
+enum class HomeTool { CALENDAR, FOREST, SHARE, WALKIE, MUSIC, VIDEO, RADIO, SENSORS, PARTY, WATCH_PARTY, GROUP, WATER, STEPS, HABITS, SLEEP, BREAKS, MOOD }
 
 // ============================================================================ the bottom bar
 /** Home · Browse · Tools · You — on Home, Tools and You (the browser keeps its own bar). */
@@ -209,9 +228,14 @@ fun HomeScreen(
             item {
                 Header("Today · ${todayText()}")
                 Card {
-                    CalendarRow { onTool(HomeTool.CALENDAR) }
-                    Divider()
-                    ForestRow { onTool(HomeTool.FOREST) }
+                    val rows = todayRows(onTool)
+                    if (rows.isEmpty()) {
+                        Text("Nothing to show — turn rows back on in Customise Home", fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(14.dp))
+                    }
+                    rows.forEachIndexed { i, row ->
+                        if (i > 0) Divider()
+                        row()
+                    }
                 }
             }
         }
@@ -276,7 +300,7 @@ fun HomeScreen(
                 }
             }
         }
-        if (HomePrefs.shows(HomeCard.LINKS) && signedIn && links.isNotEmpty()) {
+        if (HomePrefs.shows(HomeCard.LINKS) && links.isNotEmpty()) {
             item {
                 Header("SyncUp links", action = if (links.size > 4) "All ${links.size}" else "All", onAction = onAllLinks)
                 Card {
@@ -284,14 +308,11 @@ fun HomeScreen(
                         if (i > 0) Divider()
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onOpenLink(l) }.padding(horizontal = 14.dp, vertical = 11.dp)) {
                             val from = l.sourceName?.takeIf { it.isNotBlank() } ?: "SyncUp"
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(if (cs.isLight) Color(0xFFCCFBF1) else Color(0xFF134E4A)),
-                            ) { Text(from.take(1).uppercase(), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (cs.isLight) Color(0xFF0F766E) else Color(0xFF5EEAD4)) }
+                            com.agani.syncup.browser.LinkIcon(l, 36.dp)
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(l.title, fontSize = 14.5.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(from, fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1)
+                                Text(if (l.general) "For everyone" else from, fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1)
                             }
                         }
                     }
@@ -436,6 +457,147 @@ private fun ForestRow(onClick: () -> Unit) {
     }
 }
 
+/** The Today card's rows: Calendar and Forest, then each Wellbeing tool in use — minus the hidden ones. */
+@Composable
+private fun todayRows(onTool: (HomeTool) -> Unit): List<@Composable () -> Unit> {
+    val ctx = LocalContext.current
+    remember { Wellbeing.init(ctx) }
+    // Redraw when a Wellbeing tool changes.
+    @Suppress("UNUSED_VARIABLE") val v = Water.version + Steps.version + Habits.version + Sleep.version + Mood.version + Breaks.version
+    val l = MaterialTheme.colorScheme.isLight
+    fun c(light: Long, dark: Long) = Color(if (l) light else dark)
+    val today = com.agani.syncup.forest.FDays.today()
+    return buildList<@Composable () -> Unit> {
+        if (HomePrefs.shows(TodayRow.CALENDAR)) add { CalendarRow { onTool(HomeTool.CALENDAR) } }
+        if (HomePrefs.shows(TodayRow.FOREST)) add { ForestRow { onTool(HomeTool.FOREST) } }
+        val ws = Water.settings
+        if (ws.setUp && HomePrefs.shows(TodayRow.WATER)) {
+            val total = Water.today()
+            val next = Water.nextReminder()
+            val cup = ws.cups[0]
+            add {
+                TodayLine(
+                    Icons.Rounded.WaterDrop, c(0xFF0E7490, 0xFF67E8F9), c(0xFFCFFAFE, 0xFF164E63), "${Water.fmt(total)} of ${Water.fmt(ws.goal)} water",
+                    when {
+                        total >= ws.goal -> "Goal met — well done"
+                        ws.remind && next != null && com.agani.syncup.forest.FDays.of(next) == today -> "Next reminder ${clockText(next)}"
+                        else -> "${Water.fmt(ws.goal - total)} to go"
+                    },
+                    action = "+ ${Water.fmt(cup.ml)}" to { Water.add(cup.ml, cup.name) },
+                ) { onTool(HomeTool.WATER) }
+            }
+        }
+        if (Steps.counting(ctx) && HomePrefs.shows(TodayRow.STEPS)) {
+            val st = Steps.today()
+            val goal = Steps.settings.goal
+            add {
+                TodayLine(
+                    Icons.AutoMirrored.Rounded.DirectionsWalk, c(0xFFB45309, 0xFFFCD34D), c(0xFFFEF3C7, 0xFF451A03), "${"%,d".format(st)} of ${"%,d".format(goal)} steps",
+                    if (st >= goal) "Goal reached — nice walking" else "${"%,d".format(goal - st)} to go",
+                ) { onTool(HomeTool.STEPS) }
+            }
+        }
+        val habits = Habits.active()
+        if (habits.isNotEmpty() && HomePrefs.shows(TodayRow.HABITS)) {
+            val (done, due) = Habits.todayProgress()
+            val left = habits.filter { it.dueOn(today) && it.freq != "week" && !Habits.done(it, today) && !Habits.isRest(it, today) }.map { it.name }
+            add {
+                TodayLine(
+                    Icons.Rounded.TaskAlt, c(0xFFBE185D, 0xFFF9A8D4), c(0xFFFCE7F3, 0xFF500724),
+                    if (due == 0) "No habits due today" else "$done of $due habit${if (due == 1) "" else "s"} done",
+                    when {
+                        due == 0 -> "Tap to see your habits"
+                        left.isEmpty() -> "All done today"
+                        else -> left.take(2).joinToString(" and ") + if (left.size > 2) " and ${left.size - 2} more left" else " left"
+                    },
+                ) { onTool(HomeTool.HABITS) }
+            }
+        }
+        val night = Sleep.current()
+        val lastNight = Sleep.lastNight()
+        if ((night != null || Sleep.settings.remind || lastNight != null) && HomePrefs.shows(TodayRow.SLEEP)) {
+            add {
+                TodayLine(
+                    Icons.Rounded.Bedtime, c(0xFF4338CA, 0xFFA5B4FC), c(0xFFE0E7FF, 0xFF312E81),
+                    when {
+                        night != null -> "Sleeping since ${clockText(night.start)}"
+                        Sleep.settings.remind -> "Bedtime ${timeText(Sleep.settings.bedtime)}"
+                        else -> "Sleep"
+                    },
+                    when {
+                        night != null -> "Tap for Good morning"
+                        lastNight != null -> "Last night ${hoursText(lastNight.hours)}"
+                        else -> "Sounds and your sleep log"
+                    },
+                ) { onTool(HomeTool.SLEEP) }
+            }
+        }
+        if (Breaks.settings.setUp && HomePrefs.shows(TodayRow.BREAKS)) {
+            val shown = Breaks.shownToday()
+            val taken = Breaks.takenToday()
+            val next = Breaks.next()
+            add {
+                TodayLine(
+                    Icons.Rounded.Visibility, c(0xFF0F766E, 0xFF5EEAD4), c(0xFFCCFBF1, 0xFF134E4A),
+                    if (maxOf(shown, taken) == 0) "No breaks yet today" else "$taken of ${maxOf(shown, taken)} breaks taken",
+                    next?.takeIf { com.agani.syncup.forest.FDays.of(it.first) == today }?.let { "Next ${if (it.second == "eye") "eye" else "move"} break ${clockText(it.first)}" } ?: "Done for today",
+                ) { onTool(HomeTool.BREAKS) }
+            }
+        }
+        if (Mood.entries().isNotEmpty() && HomePrefs.shows(TodayRow.MOOD)) {
+            val n = Mood.countToday()
+            val mood = Mood.lastToday()
+            add {
+                TodayLine(
+                    Icons.Rounded.SentimentSatisfied, c(0xFF4D7C0F, 0xFFBEF264), c(0xFFECFCCB, 0xFF1A2E05),
+                    if (mood != null) "Feeling ${listOf("bad", "low", "okay", "good", "great")[mood - 1]} · $n check-in${if (n == 1) "" else "s"}" else "How are you today?",
+                    if (mood != null) "Tap to check in again" else "One tap to check in",
+                ) { onTool(HomeTool.MOOD) }
+            }
+        }
+    }
+}
+
+/** One Today row: icon, two lines, an optional small action, else a chevron. */
+@Composable
+private fun TodayLine(icon: ImageVector, accent: Color, tint: Color, title: String, sub: String, action: Pair<String, () -> Unit>? = null, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp)) {
+        ToolIcon(icon, accent, tint, 36)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 14.5.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(sub, fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (action != null) {
+            Text(
+                action.first, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = accent,
+                modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(tint).clickable(onClick = action.second).padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+        } else {
+            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = cs.onSurfaceVariant)
+        }
+    }
+}
+
+/** Switches for the Today card's rows. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TodayRowChips() {
+    val cs = MaterialTheme.colorScheme
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        TodayRow.entries.forEach { r ->
+            val on = HomePrefs.shows(r)
+            Text(
+                r.title, fontSize = 13.5.sp, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, color = if (on) cs.onPrimaryContainer else cs.onSurfaceVariant,
+                modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(if (on) cs.primaryContainer else Color.Transparent)
+                    .border(1.dp, if (on) Color.Transparent else cs.outline, RoundedCornerShape(16.dp))
+                    .clickable { HomePrefs.changeRow(r, !on) }.padding(horizontal = 14.dp, vertical = 7.dp),
+            )
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------- tools and nearby
 private class ToolSpec(val tool: HomeTool, val icon: ImageVector, val title: String, val accent: Color, val tint: Color)
 
@@ -445,6 +607,8 @@ private fun homeTools(): List<ToolSpec> {
     fun c(light: Long, dark: Long) = Color(if (l) light else dark)
     return listOf(
         ToolSpec(HomeTool.CALENDAR, Icons.Rounded.CalendarMonth, "Calendar", c(0xFF4F46E5, 0xFFA5B4FC), c(0xFFE0E7FF, 0xFF312E81)),
+        ToolSpec(HomeTool.WATER, Icons.Rounded.WaterDrop, "Water", c(0xFF0E7490, 0xFF67E8F9), c(0xFFCFFAFE, 0xFF164E63)),
+        ToolSpec(HomeTool.HABITS, Icons.Rounded.TaskAlt, "Habits", c(0xFFBE185D, 0xFFF9A8D4), c(0xFFFCE7F3, 0xFF500724)),
         ToolSpec(HomeTool.FOREST, Icons.Rounded.Eco, "Forest", c(0xFF4D7C0F, 0xFFBEF264), c(0xFFECFCCB, 0xFF1A2E05)),
         ToolSpec(HomeTool.SHARE, Icons.Rounded.SwapHoriz, "Share", c(0xFF1D4ED8, 0xFF93C5FD), c(0xFFDBEAFE, 0xFF1E3A8A)),
         ToolSpec(HomeTool.WALKIE, Icons.Rounded.RecordVoiceOver, "Walkie", c(0xFF0F766E, 0xFF5EEAD4), c(0xFFCCFBF1, 0xFF134E4A)),
@@ -452,6 +616,8 @@ private fun homeTools(): List<ToolSpec> {
         ToolSpec(HomeTool.VIDEO, Icons.Rounded.SmartDisplay, "Videos", c(0xFFBE123C, 0xFFFDA4AF), c(0xFFFFE4E6, 0xFF4C0519)),
         ToolSpec(HomeTool.RADIO, Icons.Rounded.Radio, "Radio", c(0xFFC2410C, 0xFFFDBA74), c(0xFFFFEDD5, 0xFF431407)),
         ToolSpec(HomeTool.SENSORS, Icons.Rounded.Explore, "Sensors", c(0xFF0369A1, 0xFF7DD3FC), c(0xFFE0F2FE, 0xFF0C4A6E)),
+        ToolSpec(HomeTool.SLEEP, Icons.Rounded.Bedtime, "Sleep", c(0xFF4338CA, 0xFFA5B4FC), c(0xFFE0E7FF, 0xFF312E81)),
+        ToolSpec(HomeTool.MOOD, Icons.Rounded.SentimentSatisfied, "Mood", c(0xFF4D7C0F, 0xFFBEF264), c(0xFFECFCCB, 0xFF1A2E05)),
     )
 }
 
@@ -555,7 +721,11 @@ fun HomeSettings(modifier: Modifier = Modifier) {
                 Switch(checked = HomePrefs.shows(card), onCheckedChange = { HomePrefs.changeCard(card, it) })
             }
         }
-        Text("A card shows only when it has something to say.", fontSize = 12.5.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+        if (HomePrefs.shows(HomeCard.TODAY)) {
+            Text("Rows in Today", fontSize = 14.sp, color = cs.onSurface, modifier = Modifier.padding(top = 12.dp, bottom = 8.dp))
+            TodayRowChips()
+        }
+        Text("A card shows only when it has something to say; a Wellbeing row once you use that tool.", fontSize = 12.5.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
     }
 }
 

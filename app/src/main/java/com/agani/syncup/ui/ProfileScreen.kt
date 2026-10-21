@@ -25,6 +25,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
+import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.SentimentSatisfied
+import androidx.compose.material.icons.rounded.TaskAlt
+import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Block
@@ -368,6 +373,11 @@ fun ProfileScreen(
                                         SyncType.SETTINGS -> Icons.Rounded.Tune
                                         SyncType.CALENDAR -> Icons.Rounded.CalendarMonth
                                         SyncType.FOREST -> Icons.Rounded.Park
+                                        SyncType.WATER -> Icons.Rounded.WaterDrop
+                                        SyncType.STEPS -> Icons.AutoMirrored.Rounded.DirectionsWalk
+                                        SyncType.HABITS -> Icons.Rounded.TaskAlt
+                                        SyncType.SLEEP -> Icons.Rounded.Bedtime
+                                        SyncType.MOOD -> Icons.Rounded.SentimentSatisfied
                                     },
                                     title = t.label,
                                     subtitle = when (t) {
@@ -377,6 +387,11 @@ fun ProfileScreen(
                                         SyncType.SETTINGS -> "Search engine, pop-ups, theme"
                                         SyncType.CALENDAR -> "To-dos and lists — their reminders on every phone"
                                         SyncType.FOREST -> "Your trees and calm minutes"
+                                        SyncType.WATER -> "What you drank, your goal and reminders"
+                                        SyncType.STEPS -> "Each day's steps (the higher phone counts)"
+                                        SyncType.HABITS -> "Your habits, ticks and streaks"
+                                        SyncType.SLEEP -> "Your nights, bedtime and sounds"
+                                        SyncType.MOOD -> "Your check-ins — private, never shown to the admin"
                                     },
                                     checked = BrowserSync.isOn(t),
                                     enabled = true,

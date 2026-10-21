@@ -146,7 +146,9 @@ internal fun TabSwitcher(
         val i = sections.indexOf(shown)
         if (i >= 0 && i != pager.targetPage) pager.animateScrollToPage(i)
     }
-    val lockedWork = shown == Section.WORK && !signedIn
+    // Signed out with no links for everyone: SyncUp is there, locked (sign in to use it).
+    val workLocked = !signedIn && !hasWork
+    val lockedWork = shown == Section.WORK && workLocked
     SectionTheme(shown) {
         val cs = MaterialTheme.colorScheme
         Surface(color = cs.surface, modifier = Modifier.fillMaxSize()) {
@@ -159,7 +161,7 @@ internal fun TabSwitcher(
                         sections = sections,
                         shown = shown,
                         count = { s -> tabCount(tabs, s) },
-                        locked = { s -> s == Section.WORK && !signedIn },
+                        locked = { s -> s == Section.WORK && workLocked },
                         onPick = onShow,
                         modifier = Modifier.weight(1f),
                     )
@@ -174,7 +176,7 @@ internal fun TabSwitcher(
                     SectionPage(
                         section = sections[page],
                         tabs = tabs,
-                        signedIn = signedIn,
+                        workLocked = workLocked,
                         otherDevices = otherDevices,
                         onOpenOther = onOpenOther,
                         onSignIn = onSignIn,
@@ -253,7 +255,7 @@ private fun tabCount(tabs: TabManager, s: Section): Int {
 private fun SectionPage(
     section: Section,
     tabs: TabManager,
-    signedIn: Boolean,
+    workLocked: Boolean,
     otherDevices: List<OtherDevice>,
     onOpenOther: (url: String) -> Unit,
     onSignIn: () -> Unit,
@@ -264,7 +266,7 @@ private fun SectionPage(
     SectionTheme(section) {
         val cs = MaterialTheme.colorScheme
         Box(Modifier.fillMaxSize().background(cs.surface)) {
-            if (section == Section.WORK && !signedIn) {
+            if (section == Section.WORK && workLocked) {
                 EmptyState(
                     SyncUpMark, "SyncUp links",
                     "Sign in to open the links your admin and partners give you.",
@@ -386,7 +388,8 @@ private fun LinkPagesSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 12.dp)) {
-                IconTile(SyncUpMark, size = 48.dp)
+                val link = head.workLinkId?.let { KnownLinks.byId[it] }
+                if (link != null) LinkIcon(link, 48.dp) else IconTile(SyncUpMark, size = 48.dp)
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     Text(name, fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -501,7 +504,10 @@ private fun TabCard(
                 .background(if (current) cs.primaryContainer else Color.Transparent)
                 .padding(start = 12.dp, end = 4.dp),
         ) {
-            if (t.isWork) {
+            val link = if (t.isWork) t.workLinkId?.let { KnownLinks.byId[it] } else null
+            if (link != null) {
+                LinkIcon(link, 20.dp)
+            } else if (t.isWork) {
                 Icon(SyncUpMark, null, tint = cs.primary, modifier = Modifier.size(18.dp))
             } else {
                 Box(Modifier.size(18.dp).clip(RoundedCornerShape(5.dp)).background(color), contentAlignment = Alignment.Center) {

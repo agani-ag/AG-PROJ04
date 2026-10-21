@@ -134,7 +134,7 @@ class ForestAlarmReceiver : BroadcastReceiver() {
                         if (!ForestStore.ready) ForestStore.init(context)
                         CalmSession.init(context)
                         CalmSession.checkEnd(context)
-                        Thread.sleep(4_000) // let the bowl ring out
+                        Thread.sleep(8_000) // let the bowl ring out (the real one rings ~14 s; most of it fits)
                     } finally {
                         done.finish()
                     }

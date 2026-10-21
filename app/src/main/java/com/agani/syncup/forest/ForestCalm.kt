@@ -5,6 +5,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -109,8 +112,13 @@ internal fun QuietScreen() {
         Text(if (tree != null) "left · it's growing" else "left", fontSize = 14.sp, color = Color(0xFFBFD8B4))
         Spacer(Modifier.weight(1f))
         Column(Modifier.padding(start = 18.dp, end = 18.dp, bottom = 22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (s in NatureSound.entries) {
+            // Ten sounds: one row that scrolls sideways (starting at the one playing), so the clearing keeps its room.
+            val playing = remember { NatureSound.entries.indexOf(CalmSession.sound).coerceAtLeast(0) }
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth(),
+                state = rememberLazyListState(initialFirstVisibleItemIndex = (playing - 1).coerceAtLeast(0)),
+            ) {
+                items(NatureSound.entries) { s ->
                     FChip(s.title, CalmSession.sound == s, icon = soundIcon(s), dark = true) {
                         CalmSession.changeSound(ctx, if (CalmSession.sound == s) null else s)
                     }

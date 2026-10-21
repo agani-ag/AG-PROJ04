@@ -18,4 +18,7 @@ object RemoteConfigManager {
         runCatching { rc.fetchAndActivate().awaitResult() }
         return rc.getString(KEY_BASE_URL).ifBlank { null }
     }
+
+    /** The address Remote Config gave last time (kept on the phone) — no network. */
+    fun lastBaseUrl(): String? = runCatching { FirebaseRemoteConfig.getInstance().getString(KEY_BASE_URL) }.getOrNull()?.ifBlank { null }
 }

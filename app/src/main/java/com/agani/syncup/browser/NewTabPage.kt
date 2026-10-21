@@ -163,7 +163,7 @@ internal fun NormalHome(
                 }
             }
 
-            if (user != null && hasWork) {
+            if (hasWork) {
                 Spacer(Modifier.height(12.dp))
                 SectionTheme(Section.WORK) {
                     val w = MaterialTheme.colorScheme
@@ -176,8 +176,12 @@ internal fun NormalHome(
                             .clickable(onClick = onOpenWork)
                             .padding(16.dp),
                     ) {
-                        Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(w.primary), contentAlignment = Alignment.Center) {
-                            Icon(SyncUpMark, null, tint = w.onPrimary)
+                        if (singleLink != null) {
+                            LinkIcon(singleLink, 44.dp)
+                        } else {
+                            Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(w.primary), contentAlignment = Alignment.Center) {
+                                Icon(SyncUpMark, null, tint = w.onPrimary)
+                            }
                         }
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {

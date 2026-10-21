@@ -1,7 +1,10 @@
 <resources>
     <style name="Theme.AGHub" parent="android:Theme.Material.Light.NoActionBar">
-        <!-- Android 12+ system splash background: light, like the app's default theme. -->
+        <!-- No splash: Android 12+ always shows a launch screen, so it's a blank one (no icon) in the
+             app's background colour — light, like the default theme. Older phones: the same plain colour. -->
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/launch_blank</item>
+        <item name="android:windowBackground">@color/splash_background</item>
     </style>
 
     <!-- Android 13+: the splash for someone who picked Dark / Black, or System (MainActivity sets it). -->

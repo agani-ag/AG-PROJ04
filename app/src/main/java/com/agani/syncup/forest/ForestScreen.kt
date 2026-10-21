@@ -29,11 +29,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Air
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.Cyclone
 import androidx.compose.material.icons.rounded.Eco
 import androidx.compose.material.icons.rounded.FlutterDash
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.Spa
+import androidx.compose.material.icons.rounded.Thunderstorm
 import androidx.compose.material.icons.rounded.Umbrella
+import androidx.compose.material.icons.rounded.Water
 import androidx.compose.material.icons.rounded.Waves
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -477,9 +483,15 @@ private fun CalmSheet(preset: Preset, onDismiss: () -> Unit) {
 
 internal fun soundIcon(s: NatureSound): ImageVector = when (s) {
     NatureSound.RAIN -> Icons.Rounded.Umbrella
+    NatureSound.STORM -> Icons.Rounded.Thunderstorm
     NatureSound.RIVER -> Icons.Rounded.Waves
-    NatureSound.WIND -> Icons.Rounded.Air
+    NatureSound.OCEAN -> Icons.Rounded.Water
     NatureSound.BIRDS -> Icons.Rounded.FlutterDash
+    NatureSound.NIGHT -> Icons.Rounded.NightsStay
+    NatureSound.WIND -> Icons.Rounded.Air
+    NatureSound.FIRE -> Icons.Rounded.LocalFireDepartment
+    NatureSound.FAN -> Icons.Rounded.Cyclone
+    NatureSound.NOISE -> Icons.Rounded.GraphicEq
 }
 
 /** A paper seed packet showing the tree it becomes. */

@@ -86,6 +86,10 @@ interface ApiService {
     @GET("shortcuts")
     suspend fun shortcuts(@Query("v") version: String?): retrofit2.Response<ShortcutCatalogResponse>
 
+    /** The admin's general links, for everyone (signed out: the SyncUp section). Sending the version we have → 304. */
+    @GET("general-links")
+    suspend fun generalLinks(@Query("v") version: String?): retrofit2.Response<GeneralLinksResponse>
+
     /** Live radio channels (empty when the admin has Radio off). */
     @GET("radio/channels")
     suspend fun radioChannels(@Header("Authorization") auth: String): RadioChannelsResponse
