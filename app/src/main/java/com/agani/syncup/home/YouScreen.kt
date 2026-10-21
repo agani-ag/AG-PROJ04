@@ -33,10 +33,15 @@ import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,6 +74,8 @@ fun YouScreen(
     onSettings: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
+    var showSites by remember { mutableStateOf(false) }
+    if (showSites) com.agani.syncup.sso.SignedInSitesSheet(onDismiss = { showSites = false })
     LazyColumn(
         modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
@@ -117,6 +124,12 @@ fun YouScreen(
                 if (user != null && hasPartners) {
                     Line()
                     Item(Icons.Rounded.Handshake, "Partners", badge = if (partnersWaiting > 0) "$partnersWaiting new" else null, onClick = onPartners)
+                }
+                // Sites SyncUp signs this person in to (SyncHub's tools), once there are any.
+                val signIn = com.agani.syncup.sso.SyncUpSignIn
+                if (user != null && (signIn.connected || signIn.hosts.isNotEmpty())) {
+                    Line()
+                    Item(Icons.Rounded.VerifiedUser, "Signed-in sites", subtitle = if (signIn.connected) "SyncHub" else null) { showSites = true }
                 }
             }
         }

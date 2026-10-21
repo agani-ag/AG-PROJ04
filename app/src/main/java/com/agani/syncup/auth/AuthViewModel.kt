@@ -150,6 +150,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                     // The websites that get this user's page token, and the Notifications bell.
                     val app = getApplication<Application>()
                     com.agani.syncup.browser.PageTokens.update(app, s.tokenSites)
+                    com.agani.syncup.sso.SyncUpSignIn.update(app, s.sso)
                     com.agani.syncup.notifications.Inbox.setCount(s.notificationsNew)
                     onConfig(s.config)
                 },
@@ -228,6 +229,7 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
     /** Signed out: no page tokens or count of the user's any more — the phone's own come with its next check-in. */
     private fun signedOutTokensAndBell(app: Application) {
         com.agani.syncup.browser.PageTokens.clear(app)
+        com.agani.syncup.sso.SyncUpSignIn.signedOut(app)
         com.agani.syncup.notifications.Inbox.setCount(0)
     }
 

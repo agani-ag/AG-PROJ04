@@ -47,6 +47,16 @@ interface ApiService {
     @POST("device/hello")
     suspend fun deviceHello(@Header("Authorization") auth: String?, @Body body: DeviceHelloRequest): DeviceHelloResponse
 
+    // Sign in with SyncUp: a one-time code for a page that asked, and You → Signed-in sites.
+    @POST("sso/code")
+    suspend fun ssoCode(@Header("Authorization") auth: String, @Body body: SsoCodeRequest): SsoCodeResponse
+
+    @GET("sso/sites")
+    suspend fun ssoSites(@Header("Authorization") auth: String): SsoSitesResponse
+
+    @POST("sso/disconnect")
+    suspend fun ssoDisconnect(@Header("Authorization") auth: String): SimpleOk
+
     /** Sign-out: detach the account from this install (it keeps public broadcasts). */
     @POST("devices/unregister")
     suspend fun deviceUnregister(@Header("Authorization") auth: String, @Body body: DeviceUnregisterRequest): SimpleOk

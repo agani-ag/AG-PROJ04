@@ -135,6 +135,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         // The websites that get a SyncUp page token, saved from the last sync — before any tab loads.
         com.agani.syncup.browser.PageTokens.init(applicationContext)
+        com.agani.syncup.sso.SyncUpSignIn.init(applicationContext)
         // The server address known already, so the first screen's calls go to the right place.
         AppBootstrap.applyKnownBaseUrl()
         // Draw behind the status and navigation bars on every Android version (15+ already does),
@@ -1287,6 +1288,8 @@ class MainActivity : FragmentActivity() {
             }
             // The group, whatever screen is open: join requests, "switched to…", ended, notes.
             com.agani.syncup.group.GroupOverlays()
+            // "Sign in to SyncHub" — SyncUp's own sheet when a SyncHub page asks the first time.
+            com.agani.syncup.sso.SignInConsentHost(state.user.takeIf { loggedIn })
             // Sign-in from Home, You or a tool (the browser shows its own sheet).
             if (showLogin && !loggedIn && booted && screen != AppScreen.Browser) {
                 androidx.compose.material3.ModalBottomSheet(
