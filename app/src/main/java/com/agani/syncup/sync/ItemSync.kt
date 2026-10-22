@@ -28,7 +28,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
- * Sync for one app feature (Calendar, Forest) through the same account sync as the browser, but
+ * Sync for one app feature (Calendar, Shopping) through the same account sync as the browser, but
  * with its own item kinds and its own cursor — so it can run on its own: from a silent "sync" push
  * in the background, or when the feature changes something.
  *
@@ -206,12 +206,6 @@ class SyncPingWorker(context: Context, params: WorkerParameters) : CoroutineWork
             com.agani.syncup.wellbeing.Wellbeing.rescheduleAll(ctx)
             return if (ok) Result.success() else Result.retry()
         }
-        // "forest": trees added to the account from the admin's Forests page.
-        if (inputData.getString(KEY_WHAT) == "forest") {
-            com.agani.syncup.forest.ForestStore.init(ctx)
-            val ok = com.agani.syncup.forest.ForestSync.syncBlocking()
-            return if (ok || !com.agani.syncup.forest.ForestSync.active) Result.success() else Result.retry()
-        }
         // "shopping": a shopping list changed on another phone.
         if (inputData.getString(KEY_WHAT) == "shopping") {
             com.agani.syncup.shopping.ShoppingStore.init(ctx)
@@ -227,9 +221,9 @@ class SyncPingWorker(context: Context, params: WorkerParameters) : CoroutineWork
     companion object {
         private const val KEY_WHAT = "what"
 
-        /** [what]: "calendar" (the default), "forest", "wellbeing" or "shopping" — the push's "what". */
+        /** [what]: "calendar" (the default), "wellbeing" or "shopping" — the push's "what". */
         fun enqueue(context: Context, what: String? = null) {
-            val kind = what?.takeIf { it == "forest" || it == "wellbeing" || it == "shopping" } ?: "calendar"
+            val kind = what?.takeIf { it == "wellbeing" || it == "shopping" } ?: "calendar"
             WorkManager.getInstance(context).enqueueUniqueWork(
                 if (kind == "calendar") "sync_ping" else "sync_ping_$kind", ExistingWorkPolicy.REPLACE,
                 OneTimeWorkRequestBuilder<SyncPingWorker>()

@@ -286,15 +286,6 @@
             android:name=".calendar.CalendarAlarmReceiver"
             android:exported="false" />
 
-        <!-- Tools → Forest: the gentle daily reminder and calm time's end; a calm sound playing on with the screen off. -->
-        <receiver
-            android:name=".forest.ForestAlarmReceiver"
-            android:exported="false" />
-        <service
-            android:name=".forest.CalmSoundService"
-            android:exported="false"
-            android:foregroundServiceType="mediaPlayback" />
-
         <!-- Tools → Wellbeing: every reminder and notification button; Sleep's sounds with the screen off. -->
         <receiver
             android:name=".wellbeing.WellbeingReceiver"

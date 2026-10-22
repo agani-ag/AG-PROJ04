@@ -11,7 +11,7 @@ enum class MainTab { HOME, BROWSE, TOOLS, YOU }
 
 /** The cards on Home, each one the user can hide (Settings → Home, or "Customise Home"). */
 enum class HomeCard(val title: String, val hint: String) {
-    TODAY("Today", "To-dos, calm minutes, water, steps, habits…"),
+    TODAY("Today", "To-dos, your forest, water, steps, habits…"),
     PLAYING("Now playing", "Music or a radio station, while one plays"),
     NEARBY("Nearby", "A group, party, walkie talkie or share in progress"),
     TOOLS("Your tools", "Quick ways into Calendar, Forest, Share and more"),

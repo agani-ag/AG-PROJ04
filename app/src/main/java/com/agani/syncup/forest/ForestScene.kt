@@ -1,693 +1,779 @@
 package com.agani.syncup.forest
 
+import android.content.Context
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.ProduceStateScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.Random
 import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.floor
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-/** One tree's place in the scene (scene pixels; the foot of the trunk at [x], [base]). */
-internal class Placed(val tree: Tree, val stage: Stage, val x: Float, val base: Float, val w: Float, val row: Int) {
-    val top: Float get() = base - w * topOf(stage)
+/*
+ * The Forest (v2) scene: the approved mockup (scene() in docs/mockup/forest-art/forest_v2_page.py) drawn live.
+ * ForestRules works out what is where; this file draws it, depth-sorted, with gentle motion, and reports taps.
+ * The 360 × 734 design space is scaled to the width; the ground sits on the bottom edge, so a taller screen shows
+ * more sky and a shorter one cuts the sky's top.
+ */
+
+private const val W = ForestRules.W
+private const val H = ForestRules.H
+private const val TAU = (2 * PI).toFloat()
+
+/** What a tap on the scene hit. */
+internal sealed interface ForestTap {
+    data class TreeTap(val tree: ForestTree) : ForestTap
+    data class ThingTap(val thing: ForestThing) : ForestTap
+    data object MoonTap : ForestTap
 }
-
-private fun topOf(s: Stage) = when (s) {
-    Stage.SEED -> .2f
-    Stage.SPROUT -> .32f
-    Stage.SAPLING -> .5f
-    Stage.YOUNG -> .82f
-    Stage.GROWN -> .98f
-}
-
-private fun speciesScale(s: Species) = when (s) {
-    Species.BANYAN -> 1.18f
-    Species.GULMOHAR -> 1.12f
-    Species.MANGO -> 1.05f
-    Species.NEEM -> .98f
-    Species.PEEPAL -> .88f
-    Species.COCONUT -> .84f
-    Species.BAMBOO -> .72f
-    Species.JASMINE -> .82f
-}
-
-private fun stageScale(s: Stage) = when (s) {
-    Stage.SEED -> .42f
-    Stage.SPROUT -> .5f
-    Stage.SAPLING -> .66f
-    Stage.YOUNG -> .82f
-    Stage.GROWN -> 1f
-}
-
-/** Who visits: butterflies by day near trees in their season, fireflies at night, birds on big trees. */
-internal data class Visitors(val butterflies: Int, val fireflies: Int, val birds: Int)
-
-internal fun visitors(trees: List<Tree>, now: Long = System.currentTimeMillis(), month: Int = FDays.month()): Visitors {
-    val grown = trees.filter { it.stage(now) == Stage.GROWN }
-    val inSeason = grown.count { month in it.species.season }
-    val big = grown.count { it.species == Species.BANYAN || it.species == Species.PEEPAL }
-    return Visitors(
-        butterflies = minOf(6, if (inSeason == 0 && grown.isNotEmpty()) 1 else inSeason),
-        fireflies = minOf(20, grown.size),
-        birds = if (grown.isEmpty()) 0 else minOf(5, 1 + big * 2),
-    )
-}
-
-/** Grown trees at the back (fading into mist), growing ones in front; more trees → the forest scrolls sideways. */
-private class Geo(val w: Float, val gb: Float, val sceneW: Float, val placed: List<Placed>, val pondX: Float, val pondBase: Float, val pondW: Float, val pond: Boolean)
-
-private val ROW_Y = floatArrayOf(.58f, .70f, .82f, .935f)
-private val ROW_SCALE = floatArrayOf(.6f, .74f, .87f, 1f)
-private val ROW_CAP = intArrayOf(4, 4, 4, 5)
-
-private fun layout(trees: List<Tree>, now: Long, w: Float, gb: Float, pond: Boolean): Geo {
-    val unit = minOf(w, gb * .8f)
-    val grown = trees.filter { it.stage(now) == Stage.GROWN }.sortedBy { it.plantedMs }
-    val growing = trees.filter { it.stage(now) != Stage.GROWN }.sortedBy { it.plantedMs }
-    var pages = 1
-    var rows: List<List<Tree>>
-    while (true) {
-        val r = List(4) { ArrayList<Tree>() }
-        val cap = IntArray(4) { ROW_CAP[it] * pages }
-        if (pond) cap[3] -= 2
-        fun put(t: Tree, order: IntArray): Boolean {
-            for (i in order) if (r[i].size < cap[i]) {
-                r[i].add(t)
-                return true
-            }
-            return false
-        }
-        val ok = growing.all { put(it, intArrayOf(3, 2, 1)) } && grown.all { put(it, intArrayOf(1, 0, 2, 3)) }
-        if (ok || pages >= 15) {
-            rows = r
-            break
-        }
-        pages++
-    }
-    val sceneW = w * pages
-    val placed = ArrayList<Placed>()
-    rows.forEachIndexed { ri, list ->
-        val usable = if (ri == 3 && pond) sceneW - w * .42f else sceneW
-        val n = list.size
-        list.forEachIndexed { i, t ->
-            val rnd = Random(t.variant.toLong() * 31 + 7)
-            val slot = usable / n
-            val st = t.stage(now)
-            val size = (if (st == Stage.GROWN) unit * .42f * speciesScale(t.species) else unit * .30f * stageScale(st)) * ROW_SCALE[ri]
-            val x = (i + .5f) * slot + (rnd.nextFloat() - .5f) * slot * .28f + if (ri % 2 == 1) slot * .06f else 0f
-            val base = gb * ROW_Y[ri] + (rnd.nextFloat() - .5f) * gb * .022f
-            placed.add(Placed(t, st, x.coerceIn(size * .3f, sceneW - size * .3f), base, size.coerceAtMost(w * .5f), ri))
-        }
-    }
-    placed.sortBy { it.base }
-    return Geo(w, gb, sceneW, placed, sceneW - w * .2f, gb * .975f, w * .4f, pond)
-}
-
-// ------------------------------------------------------------------ light and weather
-private class Look(
-    val part: DayPart,
-    val season: Season,
-    val rainy: Boolean,
-    val resting: Boolean,
-) {
-    val night = part == DayPart.NIGHT
-    val sky: List<Color>
-    val hill: Color
-    val treeline: Color
-    val mist: Color
-    val haze: Color
-    val mead: List<Color>
-
-    init {
-        fun c(v: Long) = Color(v.toInt())
-        when {
-            night -> {
-                sky = listOf(c(0xFF0B1626), c(0xFF16304A), c(0xFF1E4052)); hill = c(0xFF203C48); treeline = c(0xFF1B3442); mist = c(0xFF9FB8C9); haze = c(0xFF20384A)
-            }
-            rainy -> {
-                sky = listOf(c(0xFF8FA6B2), c(0xFFB9C7CC), c(0xFFDCE2DD)); hill = c(0xFF9CB2AE); treeline = c(0xFF7E9E8C); mist = c(0xFFE3E8E4); haze = c(0xFFD5E0DE)
-            }
-            part == DayPart.DAWN -> {
-                sky = listOf(c(0xFFF2B8A2), c(0xFFF7D9C4), c(0xFFF6EDD6)); hill = c(0xFFB8B9C2); treeline = c(0xFF93A79A); mist = c(0xFFFBE9DC); haze = c(0xFFF1E2DA)
-            }
-            part == DayPart.EVENING -> {
-                sky = listOf(c(0xFFE79A74), c(0xFFF4C89C), c(0xFFF7E5C6)); hill = c(0xFFB2A6A2); treeline = c(0xFF899A82); mist = c(0xFFF7E2C4); haze = c(0xFFF2DCC4)
-            }
-            else -> {
-                sky = listOf(c(0xFF9FD3E6), c(0xFFD7EEE9), c(0xFFF6EDD6)); hill = c(0xFFA9C7BC); treeline = c(0xFF86AE95); mist = c(0xFFF6EDD6); haze = c(0xFFDCEFEA)
-            }
-        }
-        mead = if (night) {
-            listOf(c(0xFF1D3B2C), c(0xFF16301F), c(0xFF0E2218))
-        } else {
-            when (season) {
-                Season.SUMMER -> listOf(c(0xFFBCCB74), c(0xFF9FBB5E), c(0xFF6F9447))
-                Season.MONSOON -> listOf(c(0xFF8CC867), c(0xFF6CAE52), c(0xFF4A8A3E))
-                Season.AUTUMN -> listOf(c(0xFFB9C26A), c(0xFF9BAE58), c(0xFF6F9046))
-                Season.WINTER -> listOf(c(0xFFA4CB86), c(0xFF86B46F), c(0xFF5F9455))
-            }
-        }
-    }
-}
-
-/** Is it raining in the forest today? Most monsoon days, not all. */
-internal fun rainyToday(): Boolean = Season.of(FDays.month()) == Season.MONSOON && (FDays.today() * 7 + 3) % 3 != 0
-
-// ------------------------------------------------------------------ things drawn the same every frame
-private class Statics(geo: Geo, vis: Visitors, look: Look) {
-    val k = geo.w / 390f
-    val hills = Path()
-    val treeline = Path()
-    val tufts = List(3) { List(4) { Path() } }
-    val flowers = List(4) { Path() }
-    val meadow = Path()
-    val trail = Path()
-    class Star(val x: Float, val y: Float, val r: Float, val period: Float, val phase: Float)
-    val stars = ArrayList<Star>()
-    class Fly(val x: Float, val y: Float, val dx: Float, val dy: Float, val r: Float, val dur: Float, val begin: Float)
-    val flies = ArrayList<Fly>()
-    class Bfly(val kind: Int, val cx: Float, val cy: Float, val rx: Float, val ry: Float, val speed: Float, val p1: Float, val p2: Float, val p3: Float, val size: Float)
-    val bflies = ArrayList<Bfly>()
-    class Bird(val y: Float, val speed: Float, val offset: Float, val s: Float)
-    val birds = ArrayList<Bird>()
-    class Drop(val x: Float, val y: Float, val speed: Float)
-    val drops = ArrayList<Drop>()
-    class Leaf(val x: Float, val y: Float, val ph: Float, val color: Color)
-    val leaves = ArrayList<Leaf>()
-
-    init {
-        val rnd = Random(7)
-        val gb = geo.gb
-        val sw = geo.sceneW
-        fun Y(y: Float) = y / 560f * gb
-        // Far hills (they scroll slower: 0.3) and the tree line (0.5).
-        val hw = geo.w + (sw - geo.w) * .3f + 80
-        hills.moveTo(-40f, Y(262f))
-        var x = -40f
-        var y = Y(262f)
-        while (x < hw) {
-            val nx = x + geo.w / 3.2f
-            val ny = Y(220f + rnd.nextFloat() * 36)
-            hills.quadraticTo(x + (nx - x) / 2, y + (ny - y) * .2f - Y(14f), nx, ny)
-            x = nx
-            y = ny
-        }
-        hills.lineTo(hw, Y(320f)); hills.lineTo(-40f, Y(320f)); hills.close()
-        val tw = geo.w + (sw - geo.w) * .5f + 60
-        var tx = -20f
-        while (tx < tw) {
-            val r = (6 + rnd.nextFloat() * 5) * k
-            val cy = Y(268f + (rnd.nextFloat() - .5f) * 8)
-            treeline.addOval(Rect(tx - r, cy - r, tx + r, cy + r))
-            tx += 9 * k
-        }
-        treeline.addRect(Rect(-20f, Y(268f), tw, Y(300f)))
-        // The meadow's soft edge, one wave per screen.
-        meadow.moveTo(0f, Y(296f))
-        var px = 0f
-        while (px < sw) {
-            meadow.cubicTo(px + 70 * k, Y(278f), px + 140 * k, Y(284f), px + 206 * k, Y(292f))
-            meadow.cubicTo(px + 270 * k, Y(300f), px + 330 * k, Y(282f), px + 390 * k, Y(290f))
-            px += 390 * k
-        }
-        meadow.lineTo(sw, 4000f); meadow.lineTo(0f, 4000f); meadow.close()
-        // A path winding into the forest.
-        trail.moveTo(168 * k, Y(600f))
-        trail.cubicTo(176 * k, Y(470f), 236 * k, Y(430f), 214 * k, Y(380f))
-        trail.cubicTo(192 * k, Y(330f), 196 * k, Y(320f), 220 * k, Y(296f))
-        trail.lineTo(230 * k, Y(296f))
-        trail.cubicTo(214 * k, Y(322f), 236 * k, Y(350f), 236 * k, Y(384f))
-        trail.cubicTo(236 * k, Y(418f), 206 * k, Y(470f), 232 * k, Y(600f))
-        trail.close()
-        // Grass tufts in three bands (behind the middle row, behind the front, in front) and wildflowers.
-        val pages = sw / geo.w
-        fun tuftBand(band: Int, n: Int, y0: Float, y1: Float, h0: Float, h1: Float) {
-            repeat((n * pages).toInt()) {
-                val tx2 = rnd.nextFloat() * sw
-                val ty = y0 + rnd.nextFloat() * (y1 - y0)
-                val depth = (ty - y0) / (y1 - y0).coerceAtLeast(1f)
-                val hh = (h0 + rnd.nextFloat() * (h1 - h0)) * (.6f + .8f * depth) * k
-                val p = tufts[band][rnd.nextInt(4)]
-                p.moveTo(tx2, ty); p.quadraticTo(tx2 - 1.5f * k, ty - hh * .6f, tx2 - 3 * k, ty - hh)
-                p.moveTo(tx2, ty); p.quadraticTo(tx2 + .5f * k, ty - hh * .7f, tx2 + 1 * k, ty - hh * 1.1f)
-                p.moveTo(tx2, ty); p.quadraticTo(tx2 + 2 * k, ty - hh * .5f, tx2 + 4 * k, ty - hh * .8f)
-            }
-        }
-        tuftBand(0, 70, Y(300f), Y(360f), 3f, 6f)
-        tuftBand(1, 90, Y(380f), Y(460f), 4f, 8f)
-        tuftBand(2, 70, Y(470f), Y(575f), 6f, 12f)
-        repeat((70 * pages).toInt()) {
-            val fx = rnd.nextFloat() * sw
-            val fy = Y(330f + rnd.nextFloat() * 240)
-            val r = (1 + rnd.nextFloat()) * k
-            flowers[rnd.nextInt(4)].addOval(Rect(fx - r, fy - r, fx + r, fy + r))
-        }
-        repeat(46) { stars.add(Star(rnd.nextFloat() * geo.w, rnd.nextFloat() * Y(250f), (.5f + rnd.nextFloat()) * k, 2 + rnd.nextFloat() * 4, rnd.nextFloat() * 6)) }
-        repeat(vis.fireflies) {
-            flies.add(Fly(rnd.nextFloat() * sw, Y(330f + rnd.nextFloat() * 240), (rnd.nextFloat() - .5f) * 28 * k, (rnd.nextFloat() * 16 - 10) * k, (7 + rnd.nextFloat() * 5) * k, 2.2f + rnd.nextFloat() * 2.4f, rnd.nextFloat() * 3))
-        }
-        // Butterflies stay near trees in their season (or any grown tree, or the middle of the meadow).
-        val month = FDays.month()
-        val near = geo.placed.filter { it.stage == Stage.GROWN && month in it.tree.species.season }.ifEmpty { geo.placed.filter { it.stage == Stage.GROWN } }
-        repeat(vis.butterflies) { i ->
-            val p = near.getOrNull(i % near.size.coerceAtLeast(1))
-            val cx = p?.x ?: (geo.w * .5f)
-            val cy = p?.let { it.base - it.w * .55f } ?: Y(420f)
-            bflies.add(Bfly(i % 3, cx, cy, (24 + rnd.nextFloat() * 24) * k, (14 + rnd.nextFloat() * 12) * k, .5f + rnd.nextFloat() * .3f, rnd.nextFloat() * 6, rnd.nextFloat() * 6, rnd.nextFloat() * 6, (18 + rnd.nextFloat() * 8) * k))
-        }
-        repeat(if (look.night) 0 else vis.birds.coerceAtLeast(1)) {
-            birds.add(Bird(Y(100f + rnd.nextFloat() * 60), (10 + rnd.nextFloat() * 8) * k, rnd.nextFloat() * 1000, .7f + rnd.nextFloat() * .4f))
-        }
-        if (look.rainy) repeat(90) { drops.add(Drop(rnd.nextFloat() * 2000, rnd.nextFloat() * 3000, (260 + rnd.nextFloat() * 120) * k)) }
-        if (look.season == Season.AUTUMN || look.resting) {
-            repeat(4) { leaves.add(Leaf(rnd.nextFloat() * geo.w, rnd.nextFloat() * 1000, rnd.nextFloat() * 6, listOf(Color(0xFFD9A441), Color(0xFFC58A2C), Color(0xFFC99B45))[it % 3])) }
-        } else if (!look.night) {
-            leaves.add(Leaf(geo.w * .5f, rnd.nextFloat() * 1000, 1f, Color(0xFF7DB352)))
-        }
-    }
-}
-
-// ------------------------------------------------------------------ butterflies
-private object Wings {
-    val upper = Path().apply { moveTo(0f, -1f); cubicTo(4f, -10f, 14f, -15f, 19f, -11f); cubicTo(22f, -7f, 17f, 1f, 2f, 2f); close() }
-    val lower = Path().apply { moveTo(1f, 2f); cubicTo(9f, 3f, 15f, 8f, 12f, 13f); cubicTo(9f, 16f, 3f, 12f, 0f, 4f); close() }
-    val antennae = Path().apply { moveTo(-.5f, -5f); quadraticTo(-2.5f, -10f, -4.5f, -11f); moveTo(.5f, -5f); quadraticTo(2.5f, -10f, 4.5f, -11f) }
-    val kinds = listOf(
-        Triple(listOf(Color(0xFFFDBA4D), Color(0xFFE8641F)), Color(0xFF1F1712), Color.White),
-        Triple(listOf(Color(0xFF7CC4FF), Color(0xFF2563EB)), Color(0xFF0F1E3D), Color(0xFFDCEBFF)),
-        Triple(listOf(Color(0xFFFFF08A), Color(0xFFF2C21D)), Color(0xFF5A4510), Color(0xFFFFF9DB)),
-    )
-}
-
-/** Wings open, then a quick close and open again — a butterfly's flap. */
-private fun flap(t: Float, phase: Float): Float {
-    val f = ((t / .7f + phase) % 1f + 1f) % 1f
-    return when {
-        f < .55f -> 1f
-        f < .78f -> 1f - (f - .55f) / .23f * .7f
-        else -> .3f + (f - .78f) / .22f * .7f
-    }
-}
-
-internal fun DrawScope.butterfly(kind: Int, x: Float, y: Float, size: Float, t: Float, phase: Float) {
-    val (fill, edge, dot) = Wings.kinds[kind % 3]
-    val s = size / 44f
-    val f = flap(t, phase)
-    val brush = Brush.linearGradient(fill, start = Offset(0f, -15f), end = Offset(19f, 13f))
-    translate(x, y) {
-        for (side in intArrayOf(1, -1)) {
-            scale(s * f * side, s, pivot = Offset.Zero) {
-                drawPath(Wings.upper, brush)
-                drawPath(Wings.upper, edge, style = Stroke(1f))
-                drawPath(Wings.lower, brush)
-                drawPath(Wings.lower, edge, style = Stroke(1f))
-                drawCircle(dot, .9f, Offset(16f, -9f))
-                drawCircle(dot, .8f, Offset(18f, -6f))
-                drawCircle(dot, .8f, Offset(11f, 12f))
-            }
-        }
-        scale(s, s, pivot = Offset.Zero) {
-            drawOval(edge, Offset(-1.3f, -5f), Size(2.6f, 12f))
-            drawPath(Wings.antennae, edge, style = Stroke(.7f))
-        }
-    }
-}
-
-internal fun DrawScope.firefly(x: Float, y: Float, r: Float, alpha: Float, core: Float) {
-    drawCircle(
-        Brush.radialGradient(0f to Color(0xF2FFF6B0), .35f to Color(0x73FFE47A), 1f to Color(0x00FFE47A), center = Offset(x, y), radius = r),
-        r, Offset(x, y), alpha = alpha.coerceIn(0f, 1f),
-    )
-    drawCircle(Color(0xFFFFF8C8), core, Offset(x, y))
-}
-
-private fun twinkle(t: Float, dur: Float, begin: Float): Float {
-    val v = floatArrayOf(.15f, 1f, .35f, .9f, .15f)
-    val f = (((t - begin) / dur) % 1f + 1f) % 1f * 4
-    val i = f.toInt().coerceIn(0, 3)
-    return v[i] + (v[i + 1] - v[i]) * (f - i)
-}
-
-// ------------------------------------------------------------------ the scene
-private fun DrawScope.drawForest(g: Geo, look: Look, s: Statics, t: Float, scroll: Float, images: Map<String, ImageBitmap>, pond: ImageBitmap?) {
-    val w = size.width
-    val gb = g.gb
-    val k = s.k
-    fun Y(y: Float) = y / 560f * gb
-    // Sky.
-    drawRect(Brush.verticalGradient(0f to look.sky[0], .45f to look.sky[1], 1f to look.sky[2], startY = 0f, endY = Y(340f)))
-    if (look.night) {
-        for (st in s.stars) drawCircle(Color(0xFFF3F6FF), st.r, Offset(st.x, st.y), alpha = .3f + .7f * (.5f + .5f * sin((t / st.period + st.phase) * 2 * PI.toFloat())))
-        val mc = Offset(w * .77f, Y(104f))
-        drawCircle(Brush.radialGradient(listOf(Color(0x8CF7F1DC), Color(0x00F7F1DC)), center = mc, radius = 80 * k), 80 * k, mc)
-        drawCircle(Color(0xFFF4ECD2), 22 * k, mc)
-        drawCircle(Color(0xB3E2D7B6), 4 * k, mc + Offset(-8 * k, -6 * k))
-        drawCircle(Color(0x99E2D7B6), 3 * k, mc + Offset(6 * k, 8 * k))
-    } else {
-        val (sc, glow, core) = when (look.part) {
-            DayPart.DAWN -> Triple(Offset(w * .16f, Y(210f)), Color(0xFFFFC48A), Color(0xFFFFE6C8))
-            DayPart.EVENING -> Triple(Offset(w * .84f, Y(200f)), Color(0xFFFFB46A), Color(0xFFFFE3B0))
-            else -> Triple(Offset(w * .2f, Y(118f)), Color(0xFFFFE7A3), Color(0xFFFFF7DC))
-        }
-        val a = if (look.rainy) .45f else 1f
-        drawCircle(Brush.radialGradient(0f to Color(0xFFFFF6D8), .25f to glow.copy(alpha = .9f), 1f to glow.copy(alpha = 0f), center = sc, radius = 120 * k), 120 * k, sc, alpha = a)
-        if (!look.rainy) {
-            drawCircle(core, 24 * k, sc)
-            if (look.part == DayPart.DAY) {
-                for ((ex, ey) in listOf(330f to 40f, 360f to 160f, 250f to 330f)) {
-                    val p = Path().apply { moveTo(sc.x, sc.y); lineTo(ex * k, Y(ey)); lineTo(ex * k + 10 * k, Y(ey + 30)); close() }
-                    drawPath(p, Color(0xFFFFF7DC), alpha = .08f)
-                }
-            }
-        }
-        // Clouds drift a little.
-        val cloud = if (look.rainy) Color(0xFFE6EBED) else Color.White
-        val clouds = if (look.rainy) listOf(Triple(230f, 92f, 1.3f), Triple(320f, 150f, .9f), Triple(150f, 60f, 1f), Triple(60f, 120f, 1.1f), Triple(380f, 70f, .8f))
-        else listOf(Triple(230f, 92f, 1.1f), Triple(320f, 150f, .7f), Triple(150f, 60f, .6f))
-        clouds.forEachIndexed { i, (cx, cy, sz) ->
-            val dx = 24 * k * (.5f - .5f * kotlin.math.cos(t / 60f * 2 * PI.toFloat() + i)) - scroll * .05f
-            val x = cx * k + dx
-            val y = Y(cy)
-            val sk = sz * k
-            val al = if (i == 0) .9f else .75f
-            drawOval(cloud, Offset(x - 30 * sk, y - 9 * sk), Size(60 * sk, 18 * sk), alpha = al)
-            drawOval(cloud, Offset(x + 14 * sk - 17 * sk, y - 7 * sk - 11 * sk), Size(34 * sk, 22 * sk), alpha = al)
-            drawOval(cloud, Offset(x - 12 * sk - 13 * sk, y - 4 * sk - 8 * sk), Size(26 * sk, 16 * sk), alpha = al)
-        }
-        // Birds crossing the sky, slowly.
-        for (b in s.birds) {
-            val span = w + 80 * k
-            val bx = ((b.offset + t * b.speed) % span) - 40 * k
-            val by = b.y + sin(t * .5f + b.offset) * 6 * k
-            val wing = 3 * b.s * k * (.4f + .6f * (.5f + .5f * sin(t * 7f + b.offset)))
-            val u = 3 * b.s * k
-            val p = Path().apply { moveTo(bx, by); quadraticTo(bx + u, by - wing, bx + 2 * u, by); quadraticTo(bx + 3 * u, by - wing, bx + 4 * u, by) }
-            drawPath(p, Color(0xFF3B4A3A), style = Stroke(1.3f * k, cap = StrokeCap.Round))
-        }
-    }
-    // Far hills, the tree line, the mist between.
-    translate(-scroll * .3f, 0f) { drawPath(s.hills, look.hill) }
-    translate(-scroll * .5f, 0f) { drawPath(s.treeline, look.treeline) }
-    drawRect(
-        Brush.verticalGradient(listOf(look.mist.copy(alpha = 0f), look.mist.copy(alpha = if (look.night) .22f else .75f), look.mist.copy(alpha = 0f)), startY = Y(246f), endY = Y(306f)),
-        Offset(0f, Y(246f)), Size(w, Y(60f)),
-    )
-    translate(-scroll, 0f) {
-        drawPath(s.meadow, Brush.verticalGradient(listOf(look.mead[0], look.mead[1], look.mead[2]), startY = Y(290f), endY = size.height))
-        drawPath(s.trail, Brush.verticalGradient(listOf(Color(0xFFF2E6C6), Color(0xFFE9D7AE)), startY = Y(296f), endY = Y(560f)), alpha = if (look.night) .35f else 1f)
-        for (row in 0..3) {
-            if (row == 3 && g.pond && pond != null) {
-                drawImage(pond, Offset(g.pondX - pond.width / 2f, g.pondBase - pond.height * 226f / 240f))
-            }
-            for (p in g.placed) {
-                if (p.row != row) continue
-                val img = images[p.tree.id] ?: continue
-                val v = p.tree.variant
-                val amp = if (p.stage == Stage.GROWN) 1f else 1.7f
-                val angle = amp * sin(t * 2 * PI.toFloat() / (5.5f + v % 3) + v % 7)
-                rotate(angle, pivot = Offset(p.x, p.base)) {
-                    drawImage(img, Offset(p.x - img.width / 2f, p.base - img.height * 226f / 240f))
-                }
-            }
-            when (row) {
-                0 -> {
-                    // The back row sits further away: a little haze and mist over it.
-                    drawRect(
-                        Brush.verticalGradient(listOf(look.haze.copy(alpha = 0f), look.haze.copy(alpha = if (look.night) .15f else .3f), look.haze.copy(alpha = 0f)), startY = Y(170f), endY = Y(340f)),
-                        Offset(scroll - 10, Y(170f)), Size(w + 20, Y(170f)),
-                    )
-                    drawRect(
-                        Brush.verticalGradient(listOf(look.mist.copy(alpha = 0f), look.mist.copy(alpha = if (look.night) .15f else .45f), look.mist.copy(alpha = 0f)), startY = Y(272f), endY = Y(332f)),
-                        Offset(scroll - 10, Y(272f)), Size(w + 20, Y(60f)),
-                    )
-                    s.tufts[0].forEachIndexed { i, p -> drawPath(p, TUFT[i], style = Stroke(1.2f * k, cap = StrokeCap.Round)) }
-                }
-                1 -> s.tufts[1].forEachIndexed { i, p -> drawPath(p, TUFT[i], style = Stroke(1.2f * k, cap = StrokeCap.Round)) }
-                3 -> {
-                    s.tufts[2].forEachIndexed { i, p -> drawPath(p, TUFT[i], style = Stroke(1.3f * k, cap = StrokeCap.Round)) }
-                    if (!look.night) s.flowers.forEachIndexed { i, p -> drawPath(p, FLOWER[i]) }
-                }
-            }
-        }
-        if (!look.night && !look.rainy) {
-            for ((i, b) in s.bflies.withIndex()) {
-                val a = t * b.speed + b.p1
-                val x = b.cx + b.rx * sin(a) + b.rx * .35f * sin(a * 2.1f + b.p2)
-                val y = b.cy + b.ry * sin(a * 1.4f + b.p3)
-                butterfly(b.kind, x, y, b.size, t, i * .37f)
-            }
-        }
-    }
-    if (look.night) {
-        drawRect(Color(0xFF0A1A2C), alpha = .42f)
-        for ((y0, h) in listOf(300f to 80f, 470f to 70f)) {
-            drawRect(
-                Brush.verticalGradient(listOf(look.mist.copy(alpha = 0f), look.mist.copy(alpha = .22f), look.mist.copy(alpha = 0f)), startY = Y(y0), endY = Y(y0 + h)),
-                Offset(0f, Y(y0)), Size(w, Y(h)),
-            )
-        }
-        translate(-scroll, 0f) {
-            for (f in s.flies) {
-                val m = .5f - .5f * kotlin.math.cos((t / (f.dur * 2.5f)) * 2 * PI.toFloat())
-                firefly(f.x + f.dx * m, f.y + f.dy * m, f.r, twinkle(t, f.dur, f.begin), 1.6f * k)
-            }
-        }
-    }
-    // Weather and the light's colour.
-    if (look.rainy) {
-        for (d in s.drops) {
-            val x = ((d.x + t * d.speed * .3f) % (w + 40)) - 20
-            val y = ((d.y + t * d.speed) % (size.height + 40)) - 20
-            drawLine(Color(0xFFE8F1F6), Offset(x, y), Offset(x - 3 * k, y + 9 * k), strokeWidth = 1f * k, alpha = .6f)
-        }
-    }
-    for (l in s.leaves) {
-        val span = gb * .75f
-        val y = gb * .28f + ((l.y + t * 16 * k) % span)
-        val x = l.x + sin(t * .7f + l.ph) * 14 * k
-        rotate((t * 120 + l.ph * 60) % 360, pivot = Offset(x + 4 * k, y)) {
-            val p = Path().apply { moveTo(x, y); quadraticTo(x + 4 * k, y - 3 * k, x + 8 * k, y); quadraticTo(x + 4 * k, y + 3 * k, x, y); close() }
-            drawPath(p, l.color)
-        }
-    }
-    when {
-        look.part == DayPart.EVENING -> drawRect(Color(0xFFF6B25C), alpha = .1f)
-        look.part == DayPart.DAWN -> drawRect(Color(0xFFF7B9A0), alpha = .06f)
-        look.season == Season.AUTUMN && !look.night -> drawRect(Color(0xFFF6B25C), alpha = .06f)
-    }
-    if (look.resting && !look.night) drawRect(Color(0xFFD9A441), alpha = .05f)
-}
-
-private val TUFT = listOf(Color(0xFF5F9A45), Color(0xFF6FA84E), Color(0xFF7FB55A), Color(0xFF4E8A3A))
-private val FLOWER = listOf(Color.White, Color(0xFFFDE68A), Color(0xFFF9A8D4), Color(0xFFC4B5FD))
 
 /**
- * The forest: the sky of this hour and season, hills in the mist, a meadow with a path, and every
- * tree — swaying a little, with its visitors. Tap a tree for a small card; tap the card to open it.
- * [groundBottom]: where the front row stands (the home card covers what's below).
+ * The living forest for `now`, filling `modifier`'s size. Taps report what was hit, and where (in this composable's px).
+ * A tap on nothing calls nothing. With [animate] off (or Android's Remove animations) it draws a still picture.
  */
 @Composable
-internal fun ForestScene(
-    trees: List<Tree>,
-    groundBottom: Dp,
-    selected: String?,
-    onSelect: (String?) -> Unit,
-    onOpenTree: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val animate = animationsOn()
+internal fun ForestScene(now: ForestNow, modifier: Modifier = Modifier, animate: Boolean = animationsOn(), onTap: (ForestTap, Offset) -> Unit = { _, _ -> }) {
+    val context = LocalContext.current.applicationContext
     val clock = rememberClock(animate)
-    val now by produceState(System.currentTimeMillis()) {
-        while (true) {
-            delay(60_000)
-            value = System.currentTimeMillis()
-        }
-    }
-    val minute = now / 60_000
-    val month = remember(minute) { FDays.month() }
-    val part = remember(minute) { DayPart.now() }
-    val rainy = remember(minute) { rainyToday() }
-    val resting = ForestStore.resting()
-    val lotus = ForestStore.lotusPond()
-    val look = remember(part, month, rainy, resting) { Look(part, Season.of(month), rainy, resting) }
-    BoxWithConstraints(modifier) {
-        val density = LocalDensity.current
-        val w = constraints.maxWidth.toFloat()
-        val h = constraints.maxHeight.toFloat()
-        val gb = with(density) { groundBottom.toPx() }.coerceAtMost(h)
-        val geo = remember(trees, w, gb, lotus, minute) { layout(trees, now, w, gb, lotus) }
-        val vis = remember(trees, minute) { visitors(trees, now, month) }
-        val statics = remember(geo, vis, look) { Statics(geo, vis, look) }
-        // Each tree shows as soon as it's drawn (front rows first), not all at once.
-        val images by produceState<Map<String, ImageBitmap>>(emptyMap(), geo, month, resting) {
-            val done = HashMap(value) // keep what is shown while redrawing (every minute)
-            for (p in geo.placed.sortedByDescending { it.row }) {
-                done[p.tree.id] = withContext(Dispatchers.Default) { TreeImages.get(p.tree.species, p.stage, p.tree.variant, month, resting, p.w.roundToInt()) }
-                if (done.size % 3 == 0 || done.size == geo.placed.size) value = HashMap(done)
+    val model = remember(now) { SceneModel(now) }
+    var px by remember { mutableStateOf(IntSize.Zero) }
+    val scale = px.width / W
+    val art = produceState(SceneArt.EMPTY, model, scale) { if (scale > 0f) loadSceneArt(context, model, scale) }
+    // ~25 MB of pictures: let them go when the forest closes.
+    DisposableEffect(Unit) { onDispose { SpriteImages.clear(); SpriteCrops.clear() } }
+    val modelNow by rememberUpdatedState(model)
+    val animateNow by rememberUpdatedState(animate)
+    val tapNow by rememberUpdatedState(onTap)
+    val description = remember(now) { sceneDescription(now) }
+    Canvas(
+        modifier
+            .onSizeChanged { px = it }
+            .semantics {
+                contentDescription = description
+                role = Role.Image
             }
-        }
-        val pond by produceState<ImageBitmap?>(null, geo) {
-            value = if (geo.pond) withContext(Dispatchers.Default) { TreeImages.pond(geo.pondW.roundToInt()) } else null
-        }
-        val scroll = rememberScrollState()
-        Canvas(Modifier.fillMaxSize()) { drawForest(geo, look, statics, clock.value, scroll.value.toFloat(), images, pond) }
-        Box(Modifier.fillMaxSize().horizontalScroll(scroll)) {
-            Spacer(
-                Modifier.width(with(density) { geo.sceneW.toDp() }).fillMaxHeight().pointerInput(geo) {
-                    detectTapGestures { o ->
-                        val min = 22.dp.toPx()
-                        val hit = geo.placed.asReversed().firstOrNull { p ->
-                            val half = maxOf(p.w * .32f, min)
-                            o.x in (p.x - half)..(p.x + half) && o.y in minOf(p.top, p.base - 2 * min)..(p.base + 8.dp.toPx())
-                        }
-                        onSelect(hit?.tree?.id)
-                    }
-                },
-            )
-        }
-        val sel = selected?.let { id -> geo.placed.firstOrNull { it.tree.id == id } }
-        if (sel != null) {
-            LaunchedEffect(sel.tree.id) {
-                delay(9_000)
-                onSelect(null)
-            }
-            TreeCard(sel, resting, scroll.value.toFloat(), w, onOpen = { onOpenTree(sel.tree.id) })
-        }
-    }
-}
-
-/** The little card over a tapped tree: its name, how far it has grown, what's next. */
-@Composable
-private fun TreeCard(p: Placed, resting: Boolean, scroll: Float, viewW: Float, onOpen: () -> Unit) {
-    val c = forestColors()
-    val density = LocalDensity.current
-    val cardW = with(density) { 200.dp.toPx() }
-    val cardH = with(density) { 54.dp.toPx() }
-    val gap = with(density) { 10.dp.toPx() }
-    val x = (p.x - scroll - cardW / 2).coerceIn(gap, (viewW - cardW - gap).coerceAtLeast(gap))
-    val above = p.top - cardH - gap
-    val y = if (above > with(density) { 90.dp.toPx() }) above else p.base + gap
-    Row(
-        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.offset { IntOffset(x.roundToInt(), y.roundToInt()) }.widthIn(max = 200.dp)
-            .shadow(6.dp, RoundedCornerShape(14.dp)).clip(RoundedCornerShape(14.dp)).background(c.card.copy(alpha = .97f))
-            .clickable(onClick = onOpen).padding(horizontal = 12.dp, vertical = 8.dp),
+            .pointerInput(Unit) {
+                detectTapGestures { o ->
+                    val t = if (animateNow) clock.value else 0f
+                    val tol = (6.dp.toPx() * W / size.width).coerceIn(2f, 9f)
+                    modelNow.hit(o, size.width.toFloat(), size.height.toFloat(), art.value, t, tol)?.let { tapNow(it, o) }
+                }
+            },
     ) {
-        Ring(p.tree.growth(), 26.dp, 3.dp, c.moss, c.line)
-        Column {
-            Text(p.tree.stageName(), fontSize = 14.sp, color = c.ink, maxLines = 1)
-            Text(p.tree.nextText(resting = resting), fontSize = 11.sp, lineHeight = 14.sp, color = c.muted, maxLines = 2)
+        drawScene(model, art.value, if (animate) clock.value else 0f, animate)
+    }
+}
+
+/** A small picture of one sprite, fitted into the box (for the This-month page and cards). Trees ("t-neem", "t-seed" …) too. */
+@Composable
+internal fun SpriteIcon(sprite: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current.applicationContext
+    var box by remember { mutableStateOf(IntSize.Zero) }
+    val pic by produceState<IconPicture?>(null, sprite, box) {
+        if (box.width <= 0 || box.height <= 0) return@produceState
+        value = withContext(Dispatchers.Default) { runCatching { iconPicture(context, sprite, box) }.getOrNull() }
+    }
+    Canvas(modifier.onSizeChanged { box = it }) {
+        val p = pic ?: return@Canvas
+        val c = p.crop
+        if (c.width <= 0 || c.height <= 0) return@Canvas
+        val k = min(size.width / c.width, size.height / c.height)
+        withTransform({
+            translate((size.width - c.width * k) / 2, (size.height - c.height * k) / 2)
+            scale(k, k, Offset.Zero)
+        }) {
+            drawImage(p.img, IntOffset(c.left, c.top), IntSize(c.width, c.height), IntOffset.Zero, IntSize(c.width, c.height), filterQuality = FilterQuality.Medium)
         }
     }
 }
 
-// ------------------------------------------------------------------ one tree, on its own
-/** Small stages are cropped closer, so a seed is still a seed at icon size. */
-internal fun cropFor(stage: Stage): Rect = when (stage) {
-    Stage.SEED -> Rect(40f, 168f, 160f, 234f)
-    Stage.SPROUT -> Rect(40f, 150f, 160f, 234f)
-    Stage.SAPLING -> Rect(40f, 110f, 160f, 234f)
-    else -> Rect(0f, 0f, 200f, 240f)
+/** "Forest, day 22 of 31, 22 trees, evening". */
+private fun sceneDescription(now: ForestNow): String {
+    val parts = arrayListOf("Forest", "day ${now.day} of ${now.monthLength}")
+    if (now.phase != ForestPhase.GREEN) parts += now.phase.title.lowercase()
+    if (now.leafy || now.phase == ForestPhase.DRY) parts += now.treeCount.let { if (it == 1) "1 tree" else "$it trees" }
+    parts += when (now.time) {
+        ForestTime.DAWN -> "dawn"
+        ForestTime.DAY -> "day"
+        ForestTime.DUSK -> "evening"
+        ForestTime.NIGHT -> "night"
+    }
+    return parts.joinToString(", ")
 }
 
-private val Faded = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
+// ------------------------------------------------------------------ what moves, and how
+private enum class ItemMotion { NONE, TREE, BREATH, HOP, DUCK, SWING, BEES, WALK, DANCE, TWISTER, LEAP, SURFACE, BOB }
+
+private val SPRITE_IDS: Map<String, Sprite> = Sprite.entries.associateBy { it.name.lowercase().replace('_', '-') }
+
+/** "a-elephant-calf" → [Sprite.A_ELEPHANT_CALF]. */
+private fun forestSprite(id: String): Sprite? = SPRITE_IDS[id]
+
+/** The mockup's dryF filter. SVG runs it in linear light; this is its best fit in sRGB (mean error under 3/255). */
+private val DRY_FILTER = ColorFilter.colorMatrix(
+    ColorMatrix(
+        floatArrayOf(
+            .495f, .272f, .050f, 0f, 60.2f,
+            .452f, .295f, .051f, 0f, 38.5f,
+            .293f, .179f, .128f, 0f, 21.7f,
+            0f, 0f, 0f, 1f, 0f,
+        ),
+    ),
+)
+
+/** A soft ground shadow: a unit circle, scaled to the thing's ellipse. */
+private val SOFT_SHADOW = Brush.radialGradient(
+    0f to Color(0x421A2414), .5f to Color(0x331A2414), .85f to Color(0x141A2414), 1f to Color(0x001A2414),
+    center = Offset.Zero, radius = 1f,
+)
+
+/** One tree or thing in the drawing list, with how it moves. */
+private class SceneItem(val thing: ForestThing) {
+    val tree: ForestTree? = thing.tree
+    val sprite: Sprite? = forestSprite(thing.sprite)
+
+    /** A living tree, drawn from a TreeArt picture (dead trees use the "o-dead-tree" sprite). */
+    val treeKey: String? = tree?.takeIf { !it.dead }?.let { "${it.kind.species}|${it.stage}|${it.variant}|${if (it.stage == Stage.GROWN) it.artMonth else 0}" }
+    val filter: ColorFilter? = if (tree?.dry == true) DRY_FILTER else null
+    val shadowAlpha = if (thing.sprite == "o-picnic") .85f else 1f
+
+    /** The tree it sits in (it sways with it). */
+    var host: SceneItem? = null
+
+    // Where it is now: the wanderers move (see [SceneModel.move]); everything else stays where it was put.
+    var x = thing.x
+    var y = thing.baseY
+    var w = thing.w
+    var flip = thing.flip
+    var key = thing.key
+    var moving = false
+
+    /** How high its steps or hops lift it this frame. */
+    var lift = 0f
+
+    /** How deep the flood is where it stands (0 = dry). A sea creature floats on top; anything else stands in it. */
+    var wade = 0f
+    val swimmer = thing.sprite in ForestRules.SWIMMERS
+    var roamer: Roamer? = null
+    var gait = Gait.WALK
+    var leader: SceneItem? = null
+    var lag = 0f
+
+    /** The thing where it stands now (for taps). */
+    fun now(): ForestThing = if (roamer == null) thing else thing.copy(x = x, baseY = y, w = w, flip = flip)
+
+    /** Moves a wanderer to where it is at [t]. */
+    fun move(t: Float) {
+        val r = roamer ?: return
+        val l = leader
+        if (l != null) l.roamer?.let { r.follow(it, t, lag, thing.x - l.thing.x, thing.baseY - l.thing.baseY) } else r.update(t)
+        x = r.x
+        y = r.y
+        flip = r.flip
+        moving = r.moving
+        w = thing.w * (ForestRules.depth(y.toDouble()) / ForestRules.depth(thing.baseY.toDouble())).toFloat()
+        key = thing.key + (y - thing.baseY)
+        lift = if (!moving) 0f else when (gait) {
+            Gait.WALK -> .02f * w * abs(sin(PI.toFloat() * r.travelled / max(1f, .22f * w)))
+            Gait.HOP -> .25f * w * abs(sin(PI.toFloat() * r.travelled / max(1f, .5f * w)))
+            Gait.SWIM -> 0f
+        }
+    }
+
+    val motion: ItemMotion
+    var amp = 0f
+    var period = 1f
+    val offset: Float = sceneFrac(sin(thing.x * 12.9898f + thing.baseY * 78.233f) * 43758.547f) * 10f
+
+    init {
+        val id = thing.sprite
+        motion = when {
+            treeKey != null -> ItemMotion.TREE
+            id == "a-duck" -> ItemMotion.DUCK
+            id == "o-swing" -> ItemMotion.SWING
+            id == "a-bees" -> ItemMotion.BEES
+            id == "a-peacock-dance" -> ItemMotion.DANCE
+            id.endsWith("-walk") -> ItemMotion.WALK
+            id == "a-nest-eggs" -> ItemMotion.NONE
+            id == "o-tornado" -> ItemMotion.TWISTER
+            id == "a-dolphin" || id == "a-fish" || id == "a-fish2" -> ItemMotion.LEAP
+            id == "a-whale" -> ItemMotion.SURFACE
+            id == "a-octopus" || id == "a-jellyfish" || id == "a-turtle" -> ItemMotion.BOB
+            id in HOPPERS -> ItemMotion.HOP
+            id.startsWith("a-") || id.startsWith("p-") -> ItemMotion.BREATH
+            else -> ItemMotion.NONE
+        }
+        val w = thing.w
+        when (motion) {
+            ItemMotion.TREE -> {
+                val v = tree!!.variant
+                amp = if (tree.stage == Stage.GROWN) .7f else 1.4f
+                period = 5.5f + Math.floorMod(v, 5) * .6f
+            }
+            ItemMotion.BREATH -> {
+                amp = (1.1f / max(w, 1f)).coerceAtMost(.018f) // the top moves about one unit
+                period = 3.4f + offset % 1.6f
+            }
+            ItemMotion.HOP -> {
+                val rabbit = id.startsWith("a-rabbit")
+                amp = min(if (rabbit) 2.2f else 1.8f, w * .14f)
+                period = (if (rabbit) 4.5f else 2.6f) + offset % 1.8f
+                if (id == "a-nest-chicks") { amp = .5f; period = 1.3f }
+            }
+            ItemMotion.BEES -> amp = max(.8f, w * .06f)
+            ItemMotion.LEAP -> period = (if (id == "a-dolphin") 5f else 3.6f) + offset % 1.4f
+            ItemMotion.BOB -> {
+                amp = if (id == "a-turtle") .5f else 1.2f
+                period = 2.8f + offset % 1.2f
+            }
+            else -> Unit
+        }
+    }
+
+    /** The tree's lean in degrees (a slow sway, with a little flutter on top). */
+    fun sway(t: Float, wind: Float): Float {
+        val a = TAU * (t + offset) / period
+        return amp * wind * (sin(a) + .3f * sin(a * 2.3f + 1.7f))
+    }
+
+    private companion object {
+        val HOPPERS = setOf("a-sparrow", "a-bulbul", "a-parrot", "a-hornbill", "a-rabbit", "a-rabbit2", "a-nest-chicks")
+    }
+}
+
+/** A quick hop every [period] seconds: up and down in 0.3 s. */
+private fun hopAt(t: Float, period: Float): Float {
+    val c = sceneFrac(t / period) * period
+    return if (c < .3f) sin(PI.toFloat() * c / .3f) else 0f
+}
+
+/** Everything for one moment: the sky's look and the depth-sorted list. */
+private class SceneModel(now: ForestNow) {
+    val look = SkyLook(now)
+    val items: List<SceneItem> = now.things.map { SceneItem(it) }
+
+    /** Drawing order, back to front: [items] by their key now (the wanderers' keys change as they move). */
+    val order = IntArray(items.size) { it }
+
+    // The storm's flood: the water starts at [floodLine] and is [floodDepth] deep at depth 1 (0 = no flood).
+    val floodLine = now.floodLine
+    private val floodDepth = if (ForestExtra.FLOOD in now.extras) ForestRules.FLOOD_DEPTH * now.flood.toFloat() else 0f
+
+    /** How deep the water is at ground line [y]: shallow at the water's edge, its full depth 30 units in. */
+    fun waterAt(y: Float): Float =
+        if (floodDepth <= 0f || y <= floodLine) 0f
+        else floodDepth * ForestRules.depth(y.toDouble()).toFloat() * min(1f, (y - floodLine) / 30f)
+
+    /** Living trees by their picture key, the nearest (biggest) first, so the front fills in first. */
+    val trees: LinkedHashMap<String, SceneItem> = LinkedHashMap<String, SceneItem>().also { m ->
+        for (it in items.filter { it.treeKey != null }.sortedByDescending { it.thing.w }) m.getOrPut(it.treeKey!!) { it }
+    }
+    val sprites: Set<Sprite> = buildSet {
+        for (it in items) if (it.treeKey == null) it.sprite?.let(::add)
+        val x = now.extras
+        if (ForestExtra.DRAGON_FLYING in x || ForestExtra.DRAGON_RESTING in x) add(Sprite.A_DRAGON)
+        if (ForestExtra.DRAGONFLY in x) add(Sprite.A_DRAGONFLY)
+        if (ForestExtra.LIGHT_RAIN in x || ForestExtra.RAINBOW in x) add(Sprite.O_PUDDLE)
+        if (ForestExtra.RAINBOW in x) add(Sprite.O_SHOOTS)
+        if (ForestExtra.VOLCANO in x) add(Sprite.O_VOLCANO)
+        if (ForestExtra.FLOOD in x) add(Sprite.O_FLOOD_WAVES)
+    }
+
+    init {
+        // Things up in a tree sway with it: find each one's host (its key is the host's ground y plus a little).
+        val living = items.filter { it.treeKey != null }
+        for (it in items) {
+            if (it.thing.kind != ForestThing.Kind.IN_TREE) continue
+            val y = floor(it.thing.key)
+            it.host = living.filter { h -> abs(h.thing.baseY - y) < .5f }.minByOrNull { h -> abs(h.thing.x - it.thing.x) }
+        }
+        // The wanderers: animals on the ground (and the two of you, walking), the ducks in the pond.
+        val area = RoamArea.of(now.things)
+        val pond = items.firstOrNull { it.thing.sprite == "o-pond" }?.thing
+        for (it in items) {
+            val th = it.thing
+            if (th.kind != ForestThing.Kind.GROUND && !it.swimmer) continue
+            val seed = th.sprite.hashCode() * 31 + (th.x * 7f + th.baseY * 13f).toInt()
+            val kind = if (th.sprite == "a-duck") ForestRoam.DUCK else ForestRoam.KINDS[th.sprite] ?: continue
+            val a = when {
+                th.sprite == "a-duck" -> {
+                    val p = pond ?: continue
+                    val k = p.w / 100f
+                    area.withInside(floatArrayOf(p.x, p.baseY - 11f * k, 38f * k, 7f * k))
+                }
+                it.swimmer -> area.from(floodLine + 18f)
+                else -> area
+            }
+            it.roamer = Roamer(th.x, th.baseY, kind, a, th.flip, seed)
+            it.gait = kind.gait
+        }
+        for (it in items) it.wade = waterAt(it.y)
+        for ((i, it) in items.withIndex()) {
+            val f = ForestRoam.FOLLOWS[it.thing.sprite] ?: continue
+            val lead = items.filter { l -> l.thing.sprite == f.leader && l.roamer != null }
+                .minByOrNull { l -> abs(l.thing.x - it.thing.x) + abs(l.thing.baseY - it.thing.baseY) } ?: continue
+            it.leader = lead
+            it.lag = f.lag * (1f + .4f * (i % 3))
+            it.roamer = Roamer(it.thing.x, it.thing.baseY, ForestRoam.KINDS.getValue(f.leader), area, it.thing.flip, 0)
+            it.gait = lead.gait
+        }
+    }
+
+    /** Moves the wanderers to [t] and puts the drawing order right (insertion sort: it is nearly sorted already). */
+    fun move(t: Float) {
+        for (it in items) {
+            if (it.roamer == null) continue
+            it.move(t)
+            if (floodDepth > 0f) it.wade = waterAt(it.y)
+        }
+        val o = order
+        for (i in 1 until o.size) {
+            val v = o[i]
+            val k = items[v].key
+            var j = i - 1
+            while (j >= 0 && (items[o[j]].key > k || (items[o[j]].key == k && o[j] > v))) {
+                o[j + 1] = o[j]
+                j--
+            }
+            o[j + 1] = v
+        }
+    }
+
+    // ------------------------------------------------------------------ taps
+    fun hit(o: Offset, wPx: Float, hPx: Float, art: SceneArt, t: Float, tol: Float): ForestTap? {
+        val s = wPx / W
+        if (s <= 0f) return null
+        val x = o.x / s
+        val y = (o.y - (hPx - H * s)) / s
+        val ex = look.extras
+        // Front to back: the dragon and the dragonfly fly over everything.
+        if (ForestExtra.DRAGON_FLYING in ex || ForestExtra.DRAGON_RESTING in ex) {
+            val th = if (ForestExtra.DRAGON_FLYING in ex) {
+                val p = if (t > 0f) look.dragonFlying(t) else Offset(150f, 170f)
+                ForestThing("a-dragon", p.x, p.y, 92f, false, H, ForestThing.Kind.GROUND)
+            } else ForestThing("a-dragon", 300f, 236f, 70f, true, 236f, ForestThing.Kind.GROUND)
+            if (spriteTapped(art.sprites[Sprite.A_DRAGON], Sprite.A_DRAGON, th, x, y, tol)) return ForestTap.ThingTap(th)
+        }
+        if (ForestExtra.DRAGONFLY in ex) {
+            val p = if (t > 0f) look.dragonflyAt(t) else Offset(290f, 556f)
+            val th = ForestThing("a-dragonfly", p.x, p.y, 22f, false, H, ForestThing.Kind.GROUND)
+            if (spriteTapped(art.sprites[Sprite.A_DRAGONFLY], Sprite.A_DRAGONFLY, th, x, y, tol)) return ForestTap.ThingTap(th)
+        }
+        if (t > 0f) move(t)
+        for (j in order.indices.reversed()) {
+            val it = items[order[j]]
+            val th = it.now().let { th -> if (it.swimmer && it.wade > 0f) th.copy(baseY = th.baseY - it.wade) else th }
+            val tree = it.tree
+            if (it.treeKey != null && tree != null) {
+                if (treeTapped(it, art.trees[it.treeKey], x, y, tol)) return ForestTap.TreeTap(tree)
+            } else {
+                val sp = it.sprite ?: continue
+                if (spriteTapped(art.sprites[sp], sp, th, x, y, tol)) return if (tree != null) ForestTap.TreeTap(tree) else ForestTap.ThingTap(th)
+            }
+        }
+        if (ForestExtra.VOLCANO in ex) {
+            val th = ForestThing("o-volcano", VOLCANO_X, VOLCANO_Y, VOLCANO_W, false, 0f, ForestThing.Kind.FLAT)
+            if (spriteTapped(art.sprites[Sprite.O_VOLCANO], Sprite.O_VOLCANO, th, x, y, tol)) return ForestTap.ThingTap(th)
+        }
+        if (look.moonHit(x, y, tol)) return ForestTap.MoonTap
+        return null
+    }
+}
+
+/** On a sprite's picture (its box, then a painted pixel within [tol] design units). */
+private fun spriteTapped(img: ImageBitmap?, sp: Sprite, th: ForestThing, x: Float, y: Float, tol: Float): Boolean {
+    val k = th.w / (if (sp.tree) 200f else 100f)
+    val bx = if (sp.tree) 100f else 50f
+    val by = if (sp.tree) 226f else 96f
+    val lx = if (th.flip) 2 * th.x - x else x
+    val left = th.x + (sp.x0 - bx) * k
+    val top = th.baseY + (sp.y0 - by) * k
+    val bw = (sp.x1 - sp.x0) * k
+    val bh = (sp.y1 - sp.y0) * k
+    if (bw <= 0f || bh <= 0f) return false
+    if (lx < left - tol || lx > left + bw + tol || y < top - tol || y > top + bh + tol) return false
+    if (img == null) return lx in (left + bw * .2f)..(left + bw * .8f) && y in (top + bh * .25f)..(top + bh)
+    return paintedNear(img, (lx - left) / bw, (y - top) / bh, tol / bw, tol / bh)
+}
+
+/** On a living tree: inside its rough canopy-and-trunk box, and on its picture. */
+private fun treeTapped(it: SceneItem, img: ImageBitmap?, x: Float, y: Float, tol: Float): Boolean {
+    val th = it.thing
+    val w = th.w
+    val reach = when (it.tree?.stage) {
+        Stage.SEED -> .16f
+        Stage.SPROUT -> .3f
+        Stage.SAPLING -> .5f
+        Stage.YOUNG -> .8f
+        else -> .98f
+    }
+    if (abs(x - th.x) > .46f * w + tol || y < th.baseY - reach * w - tol || y > th.baseY + 2f + tol) return false
+    if (img == null) return abs(x - th.x) <= max(.12f, reach * .42f) * w + tol
+    val h = w * 1.2f
+    return paintedNear(img, (x - (th.x - w / 2)) / w, (y - (th.baseY - h * 226f / 240f)) / h, tol / w, tol / h)
+}
+
+/** Is any pixel near (u, v) (0–1 across the picture) painted? Samples a 5 × 5 grid ±(ru, rv). Taps only. */
+private fun paintedNear(img: ImageBitmap, u: Float, v: Float, ru: Float, rv: Float): Boolean {
+    val bmp = img.asAndroidBitmap()
+    for (j in -2..2) for (i in -2..2) {
+        val px = ((u + ru * i / 2f) * bmp.width).toInt()
+        val py = ((v + rv * j / 2f) * bmp.height).toInt()
+        if (px in 0 until bmp.width && py in 0 until bmp.height && (bmp.getPixel(px, py) ushr 24) > 40) return true
+    }
+    return false
+}
+
+// ------------------------------------------------------------------ drawing
+private fun DrawScope.drawScene(st: SceneModel, art: SceneArt, t: Float, animate: Boolean) {
+    val s = size.width / W
+    if (s <= 0f) return
+    val offY = size.height - H * s
+    val top = -offY / s // the design y at the top edge
+    clipRect {
+        withTransform({
+            translate(0f, offY)
+            scale(s, s, Offset.Zero)
+        }) {
+            val look = st.look
+            with(look) { drawBack(t, top, animate, art.sprites) }
+            if (animate) st.move(t)
+            val items = st.items
+            val order = st.order
+            var hazed = false
+            var flooded = ForestExtra.FLOOD !in look.extras
+            for (j in order.indices) {
+                val it = items[order[j]]
+                // The air between here and the back rows: their feet fade into it, the nearer things stand in front.
+                if (!hazed && it.key >= FAR_HAZE_KEY) {
+                    with(look) { drawFarHaze() }
+                    hazed = true
+                }
+                // The flood lies over the meadow from its edge on; what stands in it is drawn after, up to the water.
+                if (!flooded && it.key >= st.floodLine) {
+                    with(look) { drawFlood(t, animate, art.sprites) }
+                    flooded = true
+                }
+                val h = it.host
+                if (h != null && animate) rotate(h.sway(t, look.wind), Offset(h.thing.x, h.thing.baseY)) { drawSceneItem(it, art, t, animate, look.wind) }
+                else drawSceneItem(it, art, t, animate, look.wind)
+            }
+            if (!hazed) with(look) { drawFarHaze() }
+            if (!flooded) with(look) { drawFlood(t, animate, art.sprites) }
+            with(look) { drawFront(t, top, animate, art.sprites) }
+        }
+    }
+}
+
+/** Things standing further back than this (their key) are seen through the far haze. */
+private const val FAR_HAZE_KEY = 350f
+
+private fun DrawScope.drawSceneItem(it: SceneItem, art: SceneArt, t: Float, animate: Boolean, wind: Float) {
+    val wade = it.wade
+    if (wade > .5f && !it.swimmer) {
+        // Standing in the flood: only what's above the water shows, with a ring where it meets the water.
+        clipRect(bottom = it.y - wade) { drawSceneItemDry(it, art, t, animate, wind, shadow = false) }
+        val r = if (it.tree != null) max(2.5f, it.w * .07f) else it.w * .3f
+        drawOval(WATER_RING, Offset(it.x - r, it.y - wade - r * .22f), Size(2 * r, r * .44f), alpha = .55f, style = RING_STROKE)
+        return
+    }
+    drawSceneItemDry(it, art, t, animate, wind, shadow = wade <= .5f)
+}
+
+private val WATER_RING = Color(0xFFE6F1F2)
+private val RING_STROKE = Stroke(.8f)
+
+private fun DrawScope.drawSceneItemDry(it: SceneItem, art: SceneArt, t: Float, animate: Boolean, wind: Float, shadow: Boolean) {
+    val th = it.thing
+    val key = it.treeKey
+    if (key != null) {
+        val img = art.trees[key] ?: return
+        val w = th.w
+        val h = w * 1.2f
+        if (animate) rotate(it.sway(t, wind), Offset(th.x, th.baseY)) { drawTreePicture(img, th.x - w / 2, th.baseY - h * 226f / 240f, w, h, it.filter) }
+        else drawTreePicture(img, th.x - w / 2, th.baseY - h * 226f / 240f, w, h, it.filter)
+        return
+    }
+    val x = it.x
+    // A sea creature floats with its waterline (its art's base) on the water.
+    val y = if (it.swimmer) it.y - it.wade else it.y
+    val w = it.w
+    val flip = it.flip
+    if (shadow && th.shadowRx > 0f) {
+        val k = w / th.w
+        withTransform({
+            translate(x, y - 1f)
+            scale(th.shadowRx * k, th.shadowRy * k, Offset.Zero)
+        }) { drawCircle(SOFT_SHADOW, 1f, Offset.Zero, alpha = it.shadowAlpha) }
+    }
+    val sp = it.sprite ?: return
+    val img = art.sprites[sp] ?: return
+    if (!animate) {
+        drawSprite(img, sp, x, y, w, flip)
+        return
+    }
+    val foot = Offset(x, y)
+    val a = TAU * (t + it.offset)
+    val by = y - it.lift
+    when (it.motion) {
+        ItemMotion.BREATH -> scale(1f, 1f + it.amp * sin(a / it.period), foot) { drawSprite(img, sp, x, by, w, flip) }
+        // Hops on the spot while resting; on the move the hops come from the walk (lift).
+        ItemMotion.HOP -> translate(0f, if (it.moving) 0f else -it.amp * hopAt(t + it.offset, it.period)) { drawSprite(img, sp, x, by, w, flip) }
+        ItemMotion.DUCK -> withTransform({
+            translate(0f, .6f * sin(a / 2.4f))
+            rotate(2.2f * sin(a / 3.6f), foot)
+        }) { drawSprite(img, sp, x, y, w, flip) }
+        // The swing hangs from its branch: it rocks about the ropes' top.
+        ItemMotion.SWING -> rotate(4f * sin(a / 3.4f), Offset(x, y - .96f * w)) { drawSprite(img, sp, x, y, w, flip) }
+        ItemMotion.BEES -> translate(it.amp * sin(t * 7.3f + it.offset), it.amp * .7f * sin(t * 9.7f + 2 * it.offset)) { drawSprite(img, sp, x, y, w, flip) }
+        // People walking: steps while they walk about, still while they stop to look.
+        ItemMotion.WALK -> translate(0f, if (it.roamer != null) 0f else -.8f * abs(sin(PI.toFloat() * (t + it.offset) / .6f))) { drawSprite(img, sp, x, by, w, flip) }
+        ItemMotion.DANCE -> rotate(1.6f * sin(a / 1.8f), foot) { drawSprite(img, sp, x, y, w, flip) }
+        ItemMotion.TWISTER -> drawTwister(img, sp, x, y, w, t + it.offset)
+        // Leapers show for their leap (out of the water, along, back in), then swim under for a while.
+        ItemMotion.LEAP -> {
+            val f = sceneFrac((t + it.offset) / it.period)
+            if (f < LEAP) {
+                val g = f / LEAP
+                val alpha = min(1f, min(g, 1f - g) / .12f)
+                translate((g - .5f) * .18f * w * (if (flip) -1f else 1f), -.06f * w * sin(PI.toFloat() * g)) { drawSprite(img, sp, x, y, w, flip, alpha = alpha) }
+            }
+        }
+        ItemMotion.SURFACE -> withTransform({
+            translate(0f, 1.6f * sin(a / 6.5f))
+            rotate(1.2f * sin(a / 6.5f + 1f), foot)
+        }) { drawSprite(img, sp, x, y, w, flip) }
+        ItemMotion.BOB -> translate(0f, it.amp * sin(a / it.period)) { drawSprite(img, sp, x, by, w, flip, alpha = if (th.sprite == "a-jellyfish") .92f else 1f) }
+        else -> drawSprite(img, sp, x, by, w, flip)
+    }
+}
+
+/** The part of a leaper's cycle it is out of the water. */
+private const val LEAP = .42f
+
+/** The tornado: its funnel twists about its foot, and dust and leaves whirl round it. */
+private fun DrawScope.drawTwister(img: ImageBitmap, sp: Sprite, x: Float, y: Float, w: Float, t: Float) {
+    val k = w / 100f
+    val h = (96f - sp.y0) * k
+    withTransform({
+        rotate(3f * sin(t * TAU / 1.4f), Offset(x, y))
+        scale(1f + .03f * sin(t * TAU / .7f), 1f, Offset(x, y))
+    }) { drawSprite(img, sp, x, y, w) }
+    for (i in 0 until 10) {
+        val hf = .12f + .085f * i
+        val ang = t * (2.6f + .25f * i) + i * 1.7f
+        val r = (8f + 30f * hf) * k
+        val c = kotlin.math.cos(ang)
+        val front = sin(ang)
+        val px = x + c * r + 3f * hf * sin(t * TAU / 1.4f) * k
+        val py = y - hf * h + front * r * .22f
+        drawCircle(if (i % 3 == 0) Color(0xFF9A6A28) else Color(0xFF6E5A44), (.9f + .5f * (i % 2)) * k, Offset(px, py), alpha = .55f + .3f * front)
+    }
+}
+
+/** A tree picture into the box ([left], [top], [w] × [h]) in design units. */
+private fun DrawScope.drawTreePicture(img: ImageBitmap, left: Float, top: Float, w: Float, h: Float, filter: ColorFilter?) {
+    withTransform({
+        translate(left, top)
+        scale(w / img.width, h / img.height, Offset.Zero)
+    }) {
+        drawImage(img, IntOffset.Zero, IntSize(img.width, img.height), IntOffset.Zero, IntSize(img.width, img.height), colorFilter = filter, filterQuality = FilterQuality.Medium)
+    }
+}
+
+// ------------------------------------------------------------------ pictures
+/** The loaded pictures: sprites, and living trees by their key (drawn at about their on-screen size). */
+private class SceneArt(val sprites: Map<Sprite, ImageBitmap>, val trees: Map<String, ImageBitmap>) {
+    companion object {
+        val EMPTY = SceneArt(emptyMap(), emptyMap())
+    }
+}
 
 /**
- * A drawn tree that fits its box, standing on the box's bottom edge. [faded] = not found yet
- * (pencil-grey). [sway] moves it gently.
+ * Loads what [st] needs off the main thread and shows pictures as they arrive: the things (quick to decode)
+ * alongside the trees (slower to draw), the nearest trees first. Pictures from the last minute that are still
+ * needed are kept, so nothing blinks; a tree is redrawn only when the screen's size changes a lot.
  */
-@Composable
-internal fun TreePicture(
-    species: Species,
-    stage: Stage,
-    variant: Int,
-    modifier: Modifier = Modifier,
-    month: Int = FDays.month(),
-    resting: Boolean = false,
-    crop: Rect = cropFor(stage),
-    faded: Boolean = false,
-    alpha: Float = 1f,
-    sway: Boolean = false,
-) {
-    var box by remember { mutableStateOf(IntSize.Zero) }
-    val bmp by produceState<ImageBitmap?>(null, box, species, stage, variant, month, resting) {
-        if (box.width == 0 || box.height == 0) return@produceState
-        val scale = minOf(box.width / crop.width, box.height / crop.height)
-        value = withContext(Dispatchers.Default) { TreeImages.get(species, stage, variant, month, resting, (200 * scale).roundToInt()) }
+private suspend fun ProduceStateScope<SceneArt>.loadSceneArt(context: Context, st: SceneModel, scale: Float) {
+    val old = value
+    val sprites = HashMap<Sprite, ImageBitmap>()
+    val trees = HashMap<String, ImageBitmap>()
+    for (sp in st.sprites) old.sprites[sp]?.let { sprites[sp] = it }
+    for (k in st.trees.keys) old.trees[k]?.let { trees[k] = it }
+    // The maps are only touched here, between suspensions, on the producer's (main) thread.
+    fun publish() {
+        value = SceneArt(HashMap(sprites), HashMap(trees))
     }
-    val clock = if (sway) rememberClock() else null
-    Canvas(modifier.onSizeChanged { box = it }) {
-        val b = bmp ?: return@Canvas
-        val sc = b.width / 200f
-        val sx = (crop.left * sc).roundToInt().coerceIn(0, b.width - 1)
-        val sy = (crop.top * sc).roundToInt().coerceIn(0, b.height - 1)
-        val sw = (crop.width * sc).roundToInt().coerceAtMost(b.width - sx)
-        val sh = (crop.height * sc).roundToInt().coerceAtMost(b.height - sy)
-        val dx = ((size.width - sw) / 2).roundToInt()
-        val dy = (size.height - sh).roundToInt()
-        val angle = clock?.let { 1.6f * sin(it.value * 2 * PI.toFloat() / 6f) } ?: 0f
-        rotate(angle, pivot = Offset(size.width / 2, dy + (226f - crop.top) * sc)) {
-            drawImage(
-                b, IntOffset(sx, sy), IntSize(sw, sh), IntOffset(dx, dy), IntSize(sw, sh),
-                alpha = if (faded) .42f * alpha else alpha, colorFilter = if (faded) Faded else null,
-            )
+    publish()
+    coroutineScope {
+        launch {
+            var fresh = 0
+            for (sp in st.sprites) {
+                if (sp in sprites) continue
+                val img = withContext(Dispatchers.IO) {
+                    ensureActive()
+                    runCatching { SpriteImages.get(context, sp) }.getOrNull()
+                } ?: continue
+                sprites[sp] = img
+                if (++fresh % 6 == 0) publish()
+            }
+            if (fresh > 0) publish()
+        }
+        launch {
+            var fresh = 0
+            for ((key, item) in st.trees) {
+                val want = (item.thing.w * scale).roundToInt().coerceIn(16, 900)
+                val have = trees[key]
+                if (have != null && abs(have.width - want) <= max(6, want / 10)) continue
+                val tree = item.tree ?: continue
+                trees[key] = withContext(Dispatchers.Default) {
+                    ensureActive()
+                    renderTree(tree.kind.species, tree.stage, tree.variant, tree.artMonth, want)
+                }
+                if (++fresh % 3 == 0) publish()
+            }
+            if (fresh > 0) publish()
         }
     }
+}
+
+/** One tree drawn by TreeArt into a picture [widthPx] wide (its 200 × 240 box). Kept only by the scene that asked. */
+private fun renderTree(species: Species, stage: Stage, variant: Int, month: Int, widthPx: Int): ImageBitmap {
+    val w = widthPx.coerceIn(16, 900)
+    val h = (w * 1.2f).roundToInt()
+    val bmp = ImageBitmap(w, h)
+    val parts = TreeArt.build(species, stage, variant, month, false)
+    CanvasDrawScope().draw(Density(1f), LayoutDirection.Ltr, Canvas(bmp), Size(w.toFloat(), h.toFloat())) {
+        with(TreeArt) { drawParts(parts) }
+    }
+    return bmp
+}
+
+// ------------------------------------------------------------------ icons
+private class IconPicture(val img: ImageBitmap, val crop: IntRect)
+
+/** Where each picture's painted part is (so a small sparrow fills its icon too). */
+private object SpriteCrops {
+    private val map = HashMap<String, IntRect>()
+
+    fun of(key: String, img: ImageBitmap): IntRect {
+        synchronized(map) { map[key]?.let { return it } }
+        val r = painted(img)
+        synchronized(map) { map[key] = r }
+        return r
+    }
+
+    fun clear() = synchronized(map) { map.clear() }
+
+    private fun painted(img: ImageBitmap): IntRect {
+        val bmp = img.asAndroidBitmap()
+        val w = bmp.width
+        val h = bmp.height
+        val px = IntArray(w * h)
+        bmp.getPixels(px, 0, w, 0, 0, w, h)
+        var x0 = w
+        var y0 = h
+        var x1 = -1
+        var y1 = -1
+        for (y in 0 until h) for (x in 0 until w) {
+            if ((px[y * w + x] ushr 24) > 12) {
+                if (x < x0) x0 = x
+                if (x > x1) x1 = x
+                if (y < y0) y0 = y
+                if (y > y1) y1 = y
+            }
+        }
+        if (x1 < x0) return IntRect(0, 0, w, h)
+        return IntRect(max(0, x0 - 1), max(0, y0 - 1), min(w, x1 + 2), min(h, y1 + 2))
+    }
+}
+
+private fun iconPicture(context: Context, id: String, box: IntSize): IconPicture? {
+    forestSprite(id)?.let { sp ->
+        val img = SpriteImages.get(context, sp)
+        return IconPicture(img, SpriteCrops.of(sp.name, img))
+    }
+    if (!id.startsWith("t-")) return null
+    val (species, stage, month) = treeIconLook(id) ?: return null
+    // A small picture finds where the tree is in its box; then one drawn big enough to fill the icon.
+    val probeW = 120
+    val probe = TreeImages.get(species, stage, 7, month, false, probeW)
+    val c = SpriteCrops.of("$id|probe", probe)
+    val k = min(box.width / c.width.toFloat(), box.height / c.height.toFloat())
+    val wPx = (probeW * k).roundToInt().coerceIn(16, 900)
+    val img = TreeImages.get(species, stage, 7, month, false, wPx)
+    val f = img.width / probeW.toFloat()
+    val crop = IntRect(
+        (c.left * f).toInt().coerceIn(0, img.width - 1), (c.top * f).toInt().coerceIn(0, img.height - 1),
+        (c.right * f).roundToInt().coerceIn(1, img.width), (c.bottom * f).roundToInt().coerceIn(1, img.height),
+    )
+    return IconPicture(img, if (crop.width > 0 && crop.height > 0) crop else IntRect(0, 0, img.width, img.height))
+}
+
+/** A tree symbol's species, stage and the month that gives its look ("t-mango-fruit" → Mango, grown, May). */
+private fun treeIconLook(id: String): Triple<Species, Stage, Int>? {
+    when (id) {
+        "t-seed" -> return Triple(Species.NEEM, Stage.SEED, 12)
+        "t-sprout" -> return Triple(Species.NEEM, Stage.SPROUT, 12)
+        "t-sapling" -> return Triple(Species.NEEM, Stage.SAPLING, 12)
+        "t-young" -> return Triple(Species.NEEM, Stage.YOUNG, 12)
+    }
+    val base = id.removeSuffix("-fruit").removeSuffix("-flower").removeSuffix("-green")
+    val kind = ForestKind.entries.firstOrNull { it.id == base } ?: return null
+    val month = when {
+        id.endsWith("-fruit") -> 5
+        id.endsWith("-flower") -> 2
+        id.endsWith("-green") -> 12
+        kind == ForestKind.GULMOHAR || kind == ForestKind.JASMINE -> 5
+        else -> 12
+    }
+    return Triple(kind.species, Stage.GROWN, month)
 }

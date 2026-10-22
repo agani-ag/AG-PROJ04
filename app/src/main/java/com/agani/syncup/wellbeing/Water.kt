@@ -92,6 +92,7 @@ internal data class WaterSettings(
     val end: Int = 22 * 60,
     val every: Int = 90,
     val stopAtGoal: Boolean = true,
+    /** No longer used (Forest's calm time is gone); kept so synced settings keep their shape. */
     val quietCalm: Boolean = true,
 ) {
     fun json(): JSONObject = JSONObject().put("set_up", setUp).put("goal", goal)
@@ -114,7 +115,7 @@ internal data class WaterSettings(
 
 /**
  * Tools → Water: drinks logged with one tap, a daily goal, and reminders inside the hours chosen —
- * every N minutes since the last drink, none once the goal is met, none during calm time or at night.
+ * every N minutes since the last drink, none once the goal is met, none at night.
  * Answer them from the notification (+ a cup, Later). Synced as kind "water".
  */
 object Water {
@@ -217,7 +218,7 @@ object Water {
         prefs().edit().putLong("last_remind", now).apply()
         val total = today()
         val inHours = Wellbeing.minuteNow(now) in s.start..s.end
-        val quiet = Sleep.isNight(now) || (s.quietCalm && Wellbeing.quietNow(ctx, now))
+        val quiet = Wellbeing.quietNow(ctx, now)
         if (s.setUp && s.remind && inHours && !quiet && !(s.stopAtGoal && total >= s.goal)) {
             val left = (s.goal - total).coerceAtLeast(0)
             Wellbeing.notify(
@@ -481,7 +482,6 @@ private fun WaterSettingsSheet() {
             TimeLine("To", s.end, { time = "end" })
             PlusMinusLine("Every", "${s.every} min", { Water.changeSettings(s.copy(every = (s.every - 15).coerceAtLeast(30))) }, { Water.changeSettings(s.copy(every = (s.every + 15).coerceAtMost(240))) })
             SwitchLine("Stop once the goal is reached", null, s.stopAtGoal, { Water.changeSettings(s.copy(stopAtGoal = it)) })
-            SwitchLine("Quiet during Forest calm time", null, s.quietCalm, { Water.changeSettings(s.copy(quietCalm = it)) })
         }
     }
     time?.let { which ->

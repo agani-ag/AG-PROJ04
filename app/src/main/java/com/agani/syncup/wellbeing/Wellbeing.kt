@@ -16,14 +16,13 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.agani.syncup.MainActivity
 import com.agani.syncup.R
-import com.agani.syncup.forest.CalmSession
 import java.util.Calendar
 
 /**
  * Tools → Wellbeing's shared parts: starting every tool, their notifications (each tool its own
- * channel, so any one can be muted in the phone's settings), their alarms (the same kind as Forest's —
+ * channel, so any one can be muted in the phone's settings), their alarms (setAndAllowWhileIdle —
  * no special permission; a sleeping phone may get them a few minutes late), and the quiet rule: no
- * nudges during a Forest calm session or at night (after bedtime, set in Sleep).
+ * nudges at night (after bedtime, set in Sleep).
  */
 object Wellbeing {
     const val CH_WATER = "wellbeing_water"
@@ -76,11 +75,9 @@ object Wellbeing {
         Breaks.schedule(ctx)
     }
 
-    /** A Forest calm session runs, or it's night (bedtime set in Sleep, or a night being logged). */
-    fun quietNow(context: Context, now: Long = System.currentTimeMillis()): Boolean {
-        CalmSession.init(context)
-        return CalmSession.active && !CalmSession.paused || Sleep.isNight(now)
-    }
+    /** It's night: bedtime set in Sleep, or a night being logged. */
+    @Suppress("UNUSED_PARAMETER")
+    fun quietNow(context: Context, now: Long = System.currentTimeMillis()): Boolean = Sleep.isNight(now)
 
     fun screenOn(context: Context): Boolean = context.getSystemService(PowerManager::class.java)?.isInteractive == true
 

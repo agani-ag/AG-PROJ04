@@ -14,9 +14,6 @@ class BootReceiver : BroadcastReceiver() {
         // Tools → Calendar's reminders: after a restart, and after SyncUp updates itself.
         if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
             com.agani.syncup.calendar.CalendarReminders.reschedule(context)
-            // Tools → Forest: the gentle daily reminder, and calm time's end if one was running.
-            com.agani.syncup.forest.ForestReminder.schedule(context)
-            com.agani.syncup.forest.CalmSession.rescheduleAfterBoot(context)
             // Tools → Wellbeing: Water, Steps, Breaks, Sleep, Habits and Mood reminders.
             com.agani.syncup.wellbeing.Wellbeing.init(context)
         }

@@ -39,7 +39,6 @@ enum class SyncType(val pref: String, val label: String) {
     SETTINGS("settings", "Settings"),
     // Tools features with their own sync (see ItemSync), under the same switches.
     CALENDAR("calendar", "Calendar"),
-    FOREST("forest", "Forest"),
     // Tools → Wellbeing (Breaks stays on each phone, so it has no switch).
     WATER("water", "Water"),
     STEPS("steps", "Steps"),
@@ -70,7 +69,7 @@ object BrowserSync {
     private const val MAX_ROUNDS = 12
     private const val DEBOUNCE_MS = 15_000L
     private const val SETTING_KEYS = "search_engine,block_popups,theme"
-    /** What the browser itself syncs (Calendar and Forest ask for theirs separately). */
+    /** What the browser itself syncs (Calendar, Shopping and Wellbeing ask for theirs separately). */
     private val BROWSER_KINDS = listOf("bookmark", "history", "shortcut", "setting")
 
     /** Settings → Sync on, and [type]'s own switch on — read straight from storage, so it works before [init] (background work). */

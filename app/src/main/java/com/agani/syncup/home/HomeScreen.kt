@@ -1,6 +1,5 @@
 package com.agani.syncup.home
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -77,21 +76,15 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -105,9 +98,8 @@ import com.agani.syncup.browser.ui.BadgeTextStyle
 import com.agani.syncup.calendar.CalendarStore
 import com.agani.syncup.calendar.Days
 import com.agani.syncup.data.UrlItem
-import com.agani.syncup.forest.CalmSession
-import com.agani.syncup.forest.ForestStore
-import com.agani.syncup.forest.stageName
+import com.agani.syncup.forest.ForestRules
+import com.agani.syncup.forest.rememberForestNow
 import com.agani.syncup.music.LocalPlayer
 import com.agani.syncup.ui.theme.CardShape
 import com.agani.syncup.ui.theme.PillTabs
@@ -122,7 +114,6 @@ import com.agani.syncup.wellbeing.Wellbeing
 import com.agani.syncup.wellbeing.clockText
 import com.agani.syncup.wellbeing.hoursText
 import com.agani.syncup.wellbeing.timeText
-import kotlinx.coroutines.delay
 import java.util.Calendar
 
 /** What Home can open; MainActivity knows where each one lives. */
@@ -184,7 +175,7 @@ fun TabFrame(current: MainTab, onSelect: (MainTab) -> Unit, content: @Composable
 // ============================================================================ Home
 /**
  * SyncUp's start: a greeting, search the web straight away, then what matters today — to-dos and
- * calm minutes, what's playing, what's happening nearby, favourite tools, SyncUp links. A card shows
+ * the forest's day, what's playing, what's happening nearby, favourite tools, SyncUp links. A card shows
  * only when it has something to say, and each can be hidden (Customise Home / Settings → Home).
  */
 @Composable
@@ -488,49 +479,12 @@ private fun CalendarRow(onClick: () -> Unit) {
     }
 }
 
+/** The forest's day and what came today ("Day 22 · 22 trees" · "A mongoose came today"). */
 @Composable
 private fun ForestRow(onClick: () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    val lime = ToolTint.LIME.icon
-    val track = cs.outlineVariant
-    val calm = CalmSession.active
-    var left by remember { mutableLongStateOf(0L) }
-    if (calm) {
-        LaunchedEffect(Unit) {
-            while (true) {
-                left = CalmSession.leftMs()
-                delay(1_000)
-            }
-        }
-    }
-    val goal = if (ForestStore.ready) ForestStore.goalMinutes else 20
-    val today = if (ForestStore.ready) ForestStore.minutesOn(com.agani.syncup.forest.FDays.today()) else 0
-    val tree = if (ForestStore.ready) ForestStore.growing().maxByOrNull { it.lastCareMs } else null
-    val title = when {
-        calm && CalmSession.paused -> "Calm time paused"
-        calm -> "Calm time · ${com.agani.syncup.forest.clock(left)} left"
-        today >= goal -> "Goal met · $today calm minutes"
-        else -> "$today of $goal calm minutes"
-    }
-    val sub = when {
-        calm -> "Tap to go back to it"
-        tree != null && today < goal -> "Your ${tree.stageName().lowercase()} would like ${goal - today} more"
-        ForestStore.ready && ForestStore.trees.isEmpty() -> "Plant a seed with a few calm minutes"
-        today < goal -> "A few calm minutes grow your forest"
-        else -> "Your forest is growing"
-    }
-    CardRow(title, sub, onClick = onClick) {
-        // Today's calm minutes as a ring around a leaf.
-        Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
-            Canvas(Modifier.size(34.dp)) {
-                val sw = 4.dp.toPx()
-                val d = size.minDimension - sw
-                drawArc(track, 0f, 360f, false, Offset(sw / 2, sw / 2), Size(d, d), style = Stroke(sw))
-                val p = (today / goal.toFloat()).coerceIn(0f, 1f)
-                if (p > 0) drawArc(lime, -90f, 360f * p, false, Offset(sw / 2, sw / 2), Size(d, d), style = Stroke(sw, cap = StrokeCap.Round))
-            }
-            Icon(Icons.Rounded.Eco, null, tint = lime, modifier = Modifier.size(15.dp))
-        }
+    val now = rememberForestNow()
+    CardRow(ForestRules.homeTitle(now), ForestRules.homeSubtitle(now), onClick = onClick) {
+        Tile(Icons.Rounded.Eco, ToolTint.LIME)
     }
 }
 

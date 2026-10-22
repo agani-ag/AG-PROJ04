@@ -63,7 +63,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.agani.syncup.forest.CalmSession
 import com.agani.syncup.ui.theme.isLight
 import com.agani.syncup.forest.FDays
 import com.agani.syncup.sync.SyncType
@@ -310,16 +309,11 @@ object Habits {
     internal fun remind(ctx: Context) {
         val now = System.currentTimeMillis()
         val today = FDays.today()
-        CalmSession.init(ctx)
         for (h in active()) {
             val due = nextFor(h, now - 3 * 60_000L) ?: continue
             if (due > now + 60_000L) continue
             prefs().edit().remove("snooze_${h.id}").apply()
             if (done(h, today) || isRest(h, today)) continue
-            if (CalmSession.active && !CalmSession.paused) {
-                prefs().edit().putLong("snooze_${h.id}", now + 15 * 60_000L).apply()
-                continue
-            }
             val s = streak(h)
             Wellbeing.notify(
                 ctx, Wellbeing.CH_HABITS, notificationId(h.id), "Time to ${h.name.lowercase()}",

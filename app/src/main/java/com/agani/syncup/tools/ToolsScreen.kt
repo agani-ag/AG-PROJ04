@@ -257,7 +257,7 @@ fun ToolsScreen(
         add(
             TileSpec(
                 Icons.Rounded.Eco, ToolTint.LIME,
-                "Forest", "Calm time grows trees",
+                "Forest", "A new forest every month",
                 status = com.agani.syncup.forest.forestStatus(),
                 onClick = onForest, tab = ToolsTab.WELLBEING,
             ),
@@ -338,7 +338,7 @@ fun ToolsScreen(
         ToolsTab.MEDIA to (player?.isPlaying == true || Party.active || watchPartyStatus() != null),
         ToolsTab.NEARBY to (QuickShare.busy || Walkie.active || com.agani.syncup.group.GroupLink.active),
         ToolsTab.EVERYDAY to com.agani.syncup.sensors.Torch.on,
-        ToolsTab.WELLBEING to (com.agani.syncup.forest.CalmSession.active || Sleep.soundsOn || Sleep.current() != null),
+        ToolsTab.WELLBEING to (Sleep.soundsOn || Sleep.current() != null),
     )
     val prefs = remember { ctx.getSharedPreferences("tools", android.content.Context.MODE_PRIVATE) }
     val pager = rememberPagerState(initialPage = prefs.getInt("tab", 0).coerceIn(0, ToolsTab.entries.lastIndex)) { ToolsTab.entries.size }

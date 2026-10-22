@@ -1,58 +1,42 @@
 package com.agani.syncup.forest
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Air
-import androidx.compose.material.icons.rounded.Bedtime
-import androidx.compose.material.icons.rounded.Cyclone
-import androidx.compose.material.icons.rounded.Eco
-import androidx.compose.material.icons.rounded.FlutterDash
-import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.LocalFireDepartment
-import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.NightsStay
-import androidx.compose.material.icons.rounded.Spa
-import androidx.compose.material.icons.rounded.Thunderstorm
-import androidx.compose.material.icons.rounded.Umbrella
-import androidx.compose.material.icons.rounded.Water
-import androidx.compose.material.icons.rounded.Waves
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -62,513 +46,438 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.agani.syncup.browser.ui.StepSlider
-import com.agani.syncup.ui.theme.CardShape
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.delay
+import java.util.TimeZone
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToInt
 
-/** What the calm sheet opens with (the night card's "Wind down" = Breathe, Sleep 4-7-8). */
-private enum class Preset { NONE, WIND_DOWN }
+/*
+ * Tools → Forest (v2): a new forest every month, worked out from the phone's date and time (ForestRules).
+ * Nothing is saved or synced. The forest fills the screen; This month is its one other page.
+ */
+
+/** Overlays on the forest: paper by day, dark glass at night and in the storm. */
+private val Paper = Color(0xFFFFFCF4)
+private val PaperInk = Color(0xFF22301F)
+private val PaperMuted = Color(0xFF6B7563)
+private val PaperBody = Color(0xFF4B5546)
+private val Glass = Color(0x8C0A1626) // rgba(10, 22, 38, .55)
+private val GlassCard = Color(0xB30A1626)
+private val GlassInk = Color(0xFFF3F1E8)
+private val GlassMuted = Color(0xFFB9C3CE)
+private val GlassBody = Color(0xFFDCE3EA)
+private val CatchBlue = Color(0xEB2563EB) // rgba(37, 99, 235, .92)
+
+@Composable
+fun ForestScreen(onBack: () -> Unit) {
+    var month by rememberSaveable { mutableStateOf(false) }
+    val now = rememberForestNow()
+    BackHandler(enabled = month) { month = false }
+    if (month) ForestMonth(now, onBack = { month = false })
+    else ForestHome(now, onBack = onBack, onMonth = { month = true })
+}
+
+/** The Tools tile's line: "Day 22 · a mongoose came" (it moves on by itself while the tile is on screen). */
+@Composable
+fun forestStatus(): String = ForestRules.statusLine(rememberForestNow())
 
 /**
- * Tools → Forest. Its own pages ([route]) over the forest; calm time takes the whole screen while
- * it runs (or waits, paused), then "It grew".
+ * The forest at this moment, kept up to date while on screen: on every minute, every 10 s while the install day
+ * catches up, and right away when the app comes back or the clock, date or time zone changes. Off screen it stops.
  */
 @Composable
-fun ForestScreen(signedIn: Boolean, onBack: () -> Unit) {
+internal fun rememberForestNow(): ForestNow {
     val ctx = LocalContext.current
-    remember {
-        ForestStore.init(ctx)
-        CalmSession.init(ctx)
-        ForestStore.observe()
+    val install = remember { installTime(ctx) }
+    var now by remember { mutableStateOf(forestAt(install)) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var shown by remember { mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) }
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, _ -> shown = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
     }
-    var route by rememberSaveable { mutableStateOf("home") }
-    var treeId by rememberSaveable { mutableStateOf<String?>(null) }
-    var sheet by rememberSaveable { mutableStateOf<Preset?>(null) }
-    var hidePaused by rememberSaveable { mutableStateOf(false) }
-    // Time passing grows trees too: notice it every minute while Forest is open.
-    LaunchedEffect(Unit) {
+    var clockChanged by remember { mutableIntStateOf(0) }
+    DisposableEffect(shown) {
+        if (!shown) return@DisposableEffect onDispose {}
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context?, i: Intent?) {
+                clockChanged++
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_TIME_CHANGED)
+            addAction(Intent.ACTION_TIMEZONE_CHANGED)
+            addAction(Intent.ACTION_DATE_CHANGED)
+        }
+        ContextCompat.registerReceiver(ctx, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        onDispose { runCatching { ctx.unregisterReceiver(receiver) } }
+    }
+    LaunchedEffect(shown, clockChanged) {
+        if (!shown) return@LaunchedEffect
         while (true) {
-            delay(60_000)
-            ForestStore.observe()
+            val n = forestAt(install)
+            now = n
+            val step = if (n.catchingUp) 10_000L else 60_000L
+            val t = System.currentTimeMillis()
+            delay(step - t % step + 50) // on the minute, so the clock in the top bar is right
         }
     }
-    LaunchedEffect(CalmSession.active, CalmSession.paused) { if (!CalmSession.paused) hidePaused = false }
-
-    val result = CalmSession.result
-    when {
-        CalmSession.active && CalmSession.paused && !hidePaused -> PausedScreen(onHide = { hidePaused = true })
-        CalmSession.active && !CalmSession.paused -> if (CalmSession.mode == CalmMode.BREATHE) BreatheScreen() else QuietScreen()
-        result != null -> ResultScreen(
-            result,
-            onAgain = {
-                CalmSession.clearResult()
-                route = "home"
-                sheet = Preset.NONE
-            },
-            onDone = {
-                CalmSession.clearResult()
-                route = "home"
-            },
-        )
-        else -> {
-            BackHandler(enabled = route != "home") { route = "home" }
-            when (route) {
-                "tree" -> TreePage(treeId, onBack = { route = "home" })
-                "how" -> HowPage(onBack = { route = "home" })
-                "kinds" -> KindsPage(onBack = { route = "home" })
-                "seasons" -> SeasonsPage(onBack = { route = "home" })
-                "week" -> WeekPage(onBack = { route = "home" })
-                else -> ForestHome(
-                    signedIn = signedIn,
-                    onBack = onBack,
-                    onBegin = { sheet = it },
-                    onResume = { CalmSession.resume(ctx) },
-                    onOpenTree = {
-                        treeId = it
-                        route = "tree"
-                    },
-                    onPage = { route = it },
-                )
-            }
-        }
-    }
-    sheet?.let { preset ->
-        CalmSheet(preset, onDismiss = { sheet = null })
-    }
+    return now
 }
 
-// ------------------------------------------------------------------ home
-@OptIn(ExperimentalLayoutApi::class)
+private fun forestAt(installMs: Long): ForestNow = ForestRules.at(System.currentTimeMillis(), installMs, TimeZone.getDefault())
+
+/** When SyncUp was first installed: on that day the month so far plays out (ForestRules' catch-up). */
+private fun installTime(ctx: Context): Long = runCatching {
+    @Suppress("DEPRECATION")
+    ctx.packageManager.getPackageInfo(ctx.packageName, 0).firstInstallTime
+}.getOrDefault(0L)
+
+// ------------------------------------------------------------------ the forest
+private class TapInfo(val title: String, val text: String, val at: Offset)
+
 @Composable
-private fun ForestHome(
-    signedIn: Boolean,
-    onBack: () -> Unit,
-    onBegin: (Preset) -> Unit,
-    onResume: () -> Unit,
-    onOpenTree: (String) -> Unit,
-    onPage: (String) -> Unit,
-) {
-    val c = forestColors()
+private fun ForestHome(now: ForestNow, onBack: () -> Unit, onMonth: () -> Unit) {
+    val dark = now.night || now.phase == ForestPhase.STORM
+    BarIcons(light = !dark, nav = !dark)
+    var tap by remember { mutableStateOf<TapInfo?>(null) }
+    // Taps the scene answered; a tap it didn't answer closes the card.
+    val hits = remember { intArrayOf(0) }
+    // A new forest-day: what the card said may be gone.
+    LaunchedEffect(now.day, now.phase) { tap = null }
+    // The Today card can be put away (×) for the rest of the forest-day; a Today chip at the top brings it back.
     val ctx = LocalContext.current
-    val density = LocalDensity.current
-    val trees = ForestStore.trees
-    val night = DayPart.now() == DayPart.NIGHT
-    BarIcons(light = !night)
-    var selected by remember { mutableStateOf<String?>(null) }
-    var cardH by remember { mutableIntStateOf(0) }
-    var menu by remember { mutableStateOf(false) }
-    BoxWithConstraints(Modifier.fillMaxSize().background(if (night) Color(0xFF0B1626) else Color(0xFFF6EDD6))) {
-        val cardDp = with(density) { cardH.toDp() }.takeIf { cardH > 0 } ?: 290.dp
-        val ground = (maxHeight - cardDp + if (night) 6.dp else 26.dp).coerceAtLeast(maxHeight * .5f)
-        ForestScene(trees, ground, selected, { selected = it }, onOpenTree, Modifier.fillMaxSize())
-        Column(Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
-            ForestTopBar("Forest", onBack, color = if (night) Color(0xFFF1F5EE) else Color(0xFF0F172A)) {
-                Box {
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "More", tint = if (night) Color(0xFFF1F5EE) else Color(0xFF0F172A)) }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        DropdownMenuItem(text = { Text("Trees & seeds") }, onClick = { menu = false; onPage("kinds") })
-                        DropdownMenuItem(text = { Text("How trees grow") }, onClick = { menu = false; onPage("how") })
-                        DropdownMenuItem(text = { Text("Seasons & visitors") }, onClick = { menu = false; onPage("seasons") })
-                        DropdownMenuItem(text = { Text("Your calm week") }, onClick = { menu = false; onPage("week") })
-                        if (signedIn && ForestSync.active) {
-                            DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text("Sync now")
-                                        Text(
-                                            if (ForestSync.syncing) "Syncing…" else "Synced · ${com.agani.syncup.calendar.agoText(ForestSync.lastSyncMs)}",
-                                            fontSize = 12.sp, color = c.muted,
-                                        )
-                                    }
-                                },
-                                onClick = { menu = false; ForestSync.syncNow() },
-                            )
-                        }
-                    }
-                }
+    val dayKey = "${now.date.year}-${now.date.month}-${now.date.day}:${now.day}"
+    var hiddenFor by remember { mutableStateOf(todayHiddenFor(ctx)) }
+    val todayHidden = hiddenFor == dayKey
+    fun hideToday(hide: Boolean) {
+        hiddenFor = if (hide) dayKey else ""
+        setTodayHiddenFor(ctx, hiddenFor)
+    }
+    Box(
+        Modifier.fillMaxSize().background(if (dark) Color(0xFF0B1626) else Color(0xFFCFE6F2)).pointerInput(Unit) {
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                val before = hits[0]
+                do {
+                    val e = awaitPointerEvent(PointerEventPass.Final)
+                } while (e.changes.any { it.pressed })
+                if (hits[0] == before) tap = null
             }
-        }
-        val card = Modifier.align(Alignment.BottomCenter).onSizeChanged { cardH = it.height }
-        if (night) NightCard(card, onBegin, onResume) else DayCard(card, onBegin, onResume)
-    }
-}
-
-private fun greeting(): String = when (FDays.hour()) {
-    in 5..11 -> "Good morning"
-    in 12..16 -> "Good afternoon"
-    in 17..18 -> "Good evening"
-    in 19..23 -> "A calm evening"
-    else -> "A quiet night"
-}
-
-/** "2 trees grew this week · the jasmine is in flower" — what's new, in a line. */
-private fun storyLine(): String {
-    val now = System.currentTimeMillis()
-    val trees = ForestStore.trees
-    if (trees.isEmpty()) return "Plant your first seed — it grows with calm minutes"
-    if (ForestStore.resting()) return "Your forest is resting — one calm session and it's green again"
-    val parts = ArrayList<String>()
-    val grewThisWeek = trees.count { (it.stageMs[Stage.GROWN] ?: 0) > now - 7 * 86_400_000L }
-    if (grewThisWeek > 0) parts.add("$grewThisWeek tree${if (grewThisWeek == 1) "" else "s"} grew this week")
-    val month = FDays.month()
-    trees.firstOrNull { it.stage(now) == Stage.GROWN && month in it.species.season }?.let {
-        parts.add("the ${it.label.lowercase()} is ${if (it.species.fruitsIn(month)) "fruiting" else "in flower"}")
-    }
-    if (parts.isEmpty()) {
-        val g = ForestStore.growing(now)
-        val grown = ForestStore.grownCount(now)
-        parts.add(
-            when {
-                g.isEmpty() -> "$grown grown tree${if (grown == 1) "" else "s"} · seeds waiting to be planted"
-                grown == 0 && g.size == 1 -> "Your ${g[0].stageName(now).lowercase()} is growing"
-                grown == 0 -> "${g.size} trees growing"
-                else -> "${g.size} growing · $grown grown"
+        },
+    ) {
+        ForestScene(
+            now, Modifier.fillMaxSize(),
+            onTap = { t, at ->
+                hits[0]++
+                val (title, text) = tapText(t, now)
+                tap = TapInfo(title, text, at)
             },
         )
-    }
-    return parts.joinToString(" · ").replaceFirstChar { it.uppercase() }
-}
-
-private fun seedsInHand(): Int = Species.entries.sumOf { ForestStore.seeds(it) }
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun DayCard(modifier: Modifier, onBegin: (Preset) -> Unit, onResume: () -> Unit) {
-    val c = forestColors()
-    val today = ForestStore.minutesOn(FDays.today())
-    val goal = ForestStore.goalMinutes
-    val vis = visitors(ForestStore.trees)
-    val tree = ForestStore.growing().maxByOrNull { it.lastCareMs }
-    Column(
-        modifier.windowInsetsPadding(WindowInsets.navigationBars).padding(start = 12.dp, end = 12.dp, bottom = 10.dp).fillMaxWidth()
-            .then(if (c.light) Modifier.shadow(10.dp, CardShape, ambientColor = Color(0x330F172A), spotColor = Color(0x330F172A)) else Modifier)
-            .clip(CardShape).background(c.card)
-            .then(if (c.light) Modifier else Modifier.border(1.dp, c.line, CardShape))
-            .padding(18.dp),
-    ) {
-        Text(greeting(), fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Medium, color = c.ink)
-        Text(storyLine(), fontSize = 13.5.sp, lineHeight = 18.sp, color = c.muted, modifier = Modifier.padding(top = 2.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 14.dp)) {
-            Ring(today / goal.toFloat(), 46.dp, 5.dp, c.moss, c.soft)
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    if (today >= goal) "Goal met · $today calm minutes today" else "$today of $goal calm minutes today",
-                    fontSize = 15.sp, fontWeight = FontWeight.Medium, color = c.ink,
-                )
-                Text(
-                    when {
-                        tree != null && today < goal -> "Your ${tree.stageName().lowercase()} would like ${goal - today} more"
-                        tree != null -> tree.nextText()
-                        today < goal -> "${goal - today} more makes today's goal"
-                        else -> "A lovely day for the forest"
-                    },
-                    fontSize = 12.5.sp, color = c.muted, maxLines = 1,
-                )
+        Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
+            TopPill(now, dark, onBack, onMonth)
+            Row(Modifier.padding(start = 14.dp, end = 14.dp, top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Chip(ForestRules.seasonChip(now), dark)
+                Chip("🌳 " + ForestRules.treeChip(now), dark)
+                // The Today card put away: this chip brings it back.
+                if (todayHidden) Chip("📝 " + if (now.catchingUp) "Day ${now.day}" else "Today", dark, onClick = { hideToday(false) })
             }
+            if (now.catchingUp) CatchUpBanner(now)
         }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 14.dp)) {
-            CountPill("${ForestStore.trees.size}", if (ForestStore.trees.size == 1) "tree" else "trees")
-            CountPill("${ForestStore.calmDays()}", if (ForestStore.calmDays() == 1) "calm day" else "calm days")
-            CountPill("${seedsInHand()}", if (seedsInHand() == 1) "seed" else "seeds")
-            if (vis.butterflies > 0 && DayPart.now() != DayPart.NIGHT && !rainyToday()) CountPill("🦋 ${vis.butterflies}", "")
-        }
-        Spacer(Modifier.height(16.dp))
-        BeginButton(onBegin, onResume, Preset.NONE)
+        val bottom = WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)
+        if (!todayHidden) TodayCard(now, dark, Modifier.align(Alignment.BottomCenter).windowInsetsPadding(bottom), onHide = { hideToday(true) })
+        tap?.let { TapBubble(it) }
     }
 }
 
-/** Today's numbers on the card, in Forest's soft lime ("6 trees"). */
 @Composable
-private fun CountPill(bold: String, rest: String) {
-    val c = forestColors()
+private fun TopPill(now: ForestNow, dark: Boolean, onBack: () -> Unit, onMonth: () -> Unit) {
+    val fg = if (dark) GlassInk else PaperInk
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = Modifier.height(28.dp).clip(RoundedCornerShape(14.dp)).background(c.soft).padding(horizontal = 11.dp),
+        modifier = Modifier.padding(start = 10.dp, end = 10.dp, top = 8.dp).fillMaxWidth()
+            .clip(RoundedCornerShape(26.dp)).background(if (dark) Glass else Paper.copy(alpha = .9f)).padding(2.dp),
     ) {
-        Text(bold, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = c.moss)
-        if (rest.isNotEmpty()) Text(rest, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = c.moss)
-    }
-}
-
-@Composable
-private fun BeginButton(onBegin: (Preset) -> Unit, onResume: () -> Unit, preset: Preset, night: Boolean = false) {
-    if (CalmSession.active && CalmSession.paused) {
-        val ctx = LocalContext.current
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (night) {
-                LineButton("End here", Modifier.weight(1f), color = Color(0xFFE7F3E2), border = Color(0x59E7F3E2)) { CalmSession.stop(ctx) }
-            } else {
-                LineButton("End here", Modifier.weight(1f)) { CalmSession.stop(ctx) }
-            }
-            MossButton("Go on · ${clock(CalmSession.leftMs())} left", Modifier.weight(1.4f), onClick = onResume)
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = fg) }
+        Column(Modifier.weight(1f)) {
+            Text("Forest", fontSize = 17.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium, color = fg, maxLines = 1)
+            Text(ForestRules.topLine(now), fontSize = 11.5.sp, lineHeight = 15.sp, color = fg.copy(alpha = .8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-    } else if (night) {
-        MossButton("Wind down · Breathe 4-7-8", Modifier.fillMaxWidth(), icon = Icons.Rounded.Bedtime) { onBegin(preset) }
-    } else {
-        MossButton("Begin calm time", Modifier.fillMaxWidth(), icon = Icons.Rounded.Eco) { onBegin(preset) }
+        IconButton(onClick = onMonth) { Icon(Icons.Rounded.CalendarMonth, "This month", tint = fg) }
     }
 }
 
 @Composable
-private fun NightCard(modifier: Modifier, onBegin: (Preset) -> Unit, onResume: () -> Unit) {
-    val today = ForestStore.minutesOn(FDays.today())
-    val goal = ForestStore.goalMinutes
-    val vis = visitors(ForestStore.trees)
+private fun Chip(text: String, dark: Boolean, onClick: (() -> Unit)? = null) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.height(26.dp).clip(RoundedCornerShape(13.dp)).background(if (dark) Glass else Paper.copy(alpha = .9f))
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClickLabel = "Show today", onClick = onClick) else Modifier)
+            .padding(horizontal = 10.dp),
+    ) {
+        Text(text, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium, color = if (dark) Color(0xFFEDEBE2) else Color(0xFF2F3A2A), maxLines = 1)
+    }
+}
+
+/** The install day: "Catching up · day 9 of 22", what's happening, and how far along. */
+@Composable
+private fun CatchUpBanner(now: ForestNow) {
+    val c = now.catchUp ?: return
     Column(
-        modifier.windowInsetsPadding(WindowInsets.navigationBars).padding(start = 12.dp, end = 12.dp, bottom = 16.dp).fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp)).background(Color(0xEB0E1E2C)).border(1.dp, Color(0x14FFFFFF), RoundedCornerShape(24.dp))
-            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 14.dp),
+        Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp).fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp)).background(CatchBlue).padding(horizontal = 14.dp, vertical = 10.dp),
     ) {
-        TitleText(greeting(), 21.sp, Color(0xFFEEF2F6))
-        Text(
-            when {
-                vis.fireflies > 0 -> "${vis.fireflies} firefl${if (vis.fireflies == 1) "y" else "ies"} tonight — one for each grown tree"
-                ForestStore.trees.isEmpty() -> "Plant your first seed — even 5 calm minutes"
-                else -> "Fireflies come when a tree is grown"
-            },
-            fontSize = 13.sp, color = Color(0xFFB8C7D3), modifier = Modifier.padding(top = 2.dp),
-        )
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 10.dp)) {
-            Ring(today / goal.toFloat(), 30.dp, 3.5.dp, Color(0xFFE8DDB5), Color(0x29FFFFFF))
-            Spacer(Modifier.width(10.dp))
-            Text(if (today >= goal) "Goal met · $today calm minutes today" else "$today of $goal calm minutes today", fontSize = 13.sp, color = Color(0xFFDCE6EE))
+        Text(ForestRules.catchUpTitle(now).orEmpty(), fontSize = 14.sp, lineHeight = 19.sp, fontWeight = FontWeight.Medium, color = Color.White)
+        Text(ForestRules.catchUpText(now).orEmpty(), fontSize = 12.sp, lineHeight = 16.sp, color = Color.White.copy(alpha = .9f), modifier = Modifier.padding(top = 2.dp))
+        Box(Modifier.padding(top = 8.dp).fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = .3f))) {
+            Box(Modifier.fillMaxWidth(c.progress.toFloat().coerceIn(0f, 1f)).fillMaxHeight().clip(RoundedCornerShape(3.dp)).background(Color.White))
         }
-        Spacer(Modifier.height(12.dp))
-        BeginButton(onBegin, onResume, Preset.WIND_DOWN, night = true)
-        if (!CalmSession.active) {
+    }
+}
+
+@Composable
+private fun TodayCard(now: ForestNow, dark: Boolean, modifier: Modifier, onHide: () -> Unit) {
+    val shape = RoundedCornerShape(22.dp)
+    val ink = if (dark) GlassInk else PaperInk
+    val muted = if (dark) GlassMuted else PaperMuted
+    Box(
+        modifier.padding(start = 12.dp, end = 12.dp, bottom = 14.dp).fillMaxWidth()
+            .then(if (dark) Modifier else Modifier.shadow(14.dp, shape, ambientColor = Color(0x2E141E14), spotColor = Color(0x2E141E14)))
+            .clip(shape).background(if (dark) GlassCard else Paper.copy(alpha = .94f)),
+    ) {
+        Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 12.dp)) {
             Text(
-                "Or another calm time", fontSize = 13.sp, color = Color(0xFFB8C7D3), textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { onBegin(Preset.NONE) }.padding(top = 10.dp, bottom = 2.dp),
+                if (now.catchingUp) "DAY ${now.day}" else "TODAY",
+                fontSize = 11.5.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium, letterSpacing = .3.sp, color = muted,
             )
+            Text(
+                ForestRules.todayTitle(now), fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium, color = ink,
+                modifier = Modifier.padding(top = 2.dp, bottom = 3.dp, end = 26.dp),
+            )
+            for (line in ForestRules.todayLines(now)) {
+                Row(Modifier.padding(top = 3.dp)) {
+                    Text(line.icon, fontSize = 13.sp, lineHeight = 17.sp, modifier = Modifier.width(22.dp))
+                    Text(bolded(line.text, now.todayKind?.title), fontSize = 12.5.sp, lineHeight = 17.sp, color = if (dark) GlassBody else PaperBody)
+                }
+            }
+        }
+        IconButton(onClick = onHide, modifier = Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 2.dp).size(40.dp)) {
+            Icon(Icons.Rounded.Close, "Hide", tint = muted, modifier = Modifier.size(20.dp))
         }
     }
 }
 
-// ------------------------------------------------------------------ the calm sheet
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+/** Which forest-day the Today card was put away for ("" = shown). Kept on the phone so it stays away on reopening. */
+private fun todayHiddenFor(ctx: Context): String =
+    ctx.getSharedPreferences(FOREST_UI, Context.MODE_PRIVATE).getString("today_hidden", "").orEmpty()
+
+private fun setTodayHiddenFor(ctx: Context, key: String) {
+    ctx.getSharedPreferences(FOREST_UI, Context.MODE_PRIVATE).edit().putString("today_hidden", key).apply()
+}
+
+private const val FOREST_UI = "forest_ui"
+
+/** [text] with today's tree kind in bold ("Today's tree: **Neem** · sapling"). */
+private fun bolded(text: String, word: String?): AnnotatedString = buildAnnotatedString {
+    val i = if (word.isNullOrEmpty()) -1 else text.indexOf(word)
+    if (i < 0 || word == null) {
+        append(text)
+    } else {
+        append(text.substring(0, i))
+        withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(word) }
+        append(text.substring(i + word.length))
+    }
+}
+
+// ------------------------------------------------------------------ the tap card
+/** A small paper card pointing at what was tapped: above it when there's room under the top bar, else below. */
 @Composable
-private fun CalmSheet(preset: Preset, onDismiss: () -> Unit) {
-    val c = forestColors()
-    val ctx = LocalContext.current
-    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val growing = remember { ForestStore.growing().sortedByDescending { it.lastCareMs } }
-    val firstSeed = remember { Species.entries.firstOrNull { ForestStore.seeds(it) > 0 } }
-    // "tree:<id>", "seed:<KIND>" or "" (calm time for the day only).
-    var target by rememberSaveable {
-        mutableStateOf(growing.firstOrNull()?.let { "tree:${it.id}" } ?: firstSeed?.let { "seed:${it.name}" } ?: "")
-    }
-    var growDays by rememberSaveable { mutableIntStateOf(ForestStore.lastGrowDays) }
-    var mode by rememberSaveable { mutableStateOf(if (preset == Preset.WIND_DOWN) CalmMode.BREATHE else CalmMode.QUIET) }
-    var minutes by rememberSaveable { mutableIntStateOf(if (preset == Preset.WIND_DOWN) 5 else 20) }
-    var pattern by rememberSaveable { mutableStateOf(if (preset == Preset.WIND_DOWN) BreathPattern.SLEEP else CalmSession.pattern) }
-    var sound by rememberSaveable { mutableStateOf(runCatching { NatureSound.valueOf(ForestStore.lastSound) }.getOrDefault(NatureSound.RAIN)) }
-    var otherDays by remember { mutableStateOf(false) }
-    val seed = target.removePrefix("seed:").takeIf { target.startsWith("seed:") }?.let { runCatching { Species.valueOf(it) }.getOrNull() }
-
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = c.card, dragHandle = {
-        Box(Modifier.padding(top = 10.dp, bottom = 10.dp).size(36.dp, 4.dp).clip(RoundedCornerShape(2.dp)).background(MaterialTheme.colorScheme.outline))
-    }) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 22.dp)) {
-            Text("Calm time", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = c.ink)
-            if (growing.isNotEmpty()) {
-                Label("Care for")
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    growing.forEach { t ->
-                        val on = target == "tree:${t.id}"
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clip(RoundedCornerShape(18.dp)).background(if (on) c.soft else c.card)
-                                .border(if (on) 2.dp else 1.dp, if (on) c.moss else c.line, RoundedCornerShape(18.dp))
-                                .clickable { target = "tree:${t.id}" }.padding(start = 6.dp, end = 12.dp, top = 5.dp, bottom = 5.dp),
-                        ) {
-                            TreePicture(t.species, t.stage(), t.variant, Modifier.size(40.dp, 44.dp).clip(RoundedCornerShape(10.dp)).background(if (c.light) Color(0xFFCFE9F7) else Color(0xFF0B1A2A)))
-                            Spacer(Modifier.width(8.dp))
-                            Column {
-                                Text(t.stageName(), fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = c.ink, maxLines = 1)
-                                Text(t.nextText(), fontSize = 11.5.sp, color = c.muted, maxLines = 1)
-                            }
-                        }
-                    }
-                }
+private fun TapBubble(info: TapInfo) {
+    val shape = RoundedCornerShape(14.dp)
+    val top = WindowInsets.safeDrawing.only(WindowInsetsSides.Top)
+    Layout(
+        content = {
+            Column(
+                Modifier.widthIn(max = 230.dp).shadow(8.dp, shape, ambientColor = Color(0x2E000000), spotColor = Color(0x2E000000))
+                    .clip(shape).background(Paper).padding(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                Text(info.title, fontSize = 13.5.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium, color = PaperInk)
+                Text(info.text, fontSize = 11.5.sp, lineHeight = 15.sp, color = PaperMuted, modifier = Modifier.padding(top = 1.dp))
             }
-            Label(if (growing.isEmpty()) "Plant a seed" else "Or plant a seed")
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Species.entries.forEach { s ->
-                    val found = ForestStore.found(s)
-                    val n = ForestStore.seeds(s)
-                    SeedPacket(s, found, n, on = seed == s) { target = "seed:${s.name}" }
-                }
-            }
-            if (seed != null) {
-                Label("This ${seed.title.lowercase()} grows in")
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (d in listOf(1, 3, 7, 14)) FChip(growDaysText(d), growDays == d) { growDays = d }
-                    FChip(if (growDays in listOf(1, 3, 7, 14)) "Other…" else growDaysText(growDays), growDays !in listOf(1, 3, 7, 14)) { otherDays = true }
-                }
-                val (cAll, _) = Tree.needs(Stage.GROWN, growDays)
-                Text("About ${minutesText(cAll)} of calm time in all, over ${growDaysText(growDays)}", fontSize = 12.sp, color = c.muted, modifier = Modifier.padding(top = 8.dp, start = 2.dp))
-            }
-            Label("Calm now")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (m in CalmMode.entries) {
-                    val on = mode == m
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).background(if (on) c.soft else c.card)
-                            .border(if (on) 2.dp else 1.dp, if (on) c.moss else c.line, RoundedCornerShape(18.dp))
-                            .clickable { mode = m }.padding(vertical = 10.dp, horizontal = 4.dp),
-                    ) {
-                        Icon(
-                            when (m) {
-                                CalmMode.QUIET -> Icons.Rounded.Bedtime
-                                CalmMode.BREATHE -> Icons.Rounded.Spa
-                                CalmMode.SOUNDS -> Icons.Rounded.Umbrella
-                            },
-                            null, tint = c.moss, modifier = Modifier.size(22.dp),
-                        )
-                        Text(m.title, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = if (on) c.moss else c.ink, modifier = Modifier.padding(top = 4.dp))
-                        Text(m.hint, fontSize = 11.sp, color = c.muted)
-                    }
-                }
-            }
-            when (mode) {
-                CalmMode.BREATHE -> FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 10.dp)) {
-                    for (p in BreathPattern.entries) FChip(p.title, pattern == p) { pattern = p }
-                }
-                CalmMode.SOUNDS -> FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 10.dp)) {
-                    for (s in NatureSound.entries) FChip(s.title, sound == s, icon = soundIcon(s)) { sound = s }
-                }
-                else -> {}
-            }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 10.dp)) {
-                for (m in listOf(5, 10, 20, 30, 45, 60)) FChip(if (m == 5) "5 min" else "$m", minutes == m) { minutes = m }
-            }
-            Spacer(Modifier.height(16.dp))
-            val begin = if (seed != null) "Plant & begin · $minutes min" else "Begin · $minutes min"
-            MossButton(begin, Modifier.fillMaxWidth()) {
-                val tree = when {
-                    seed != null -> ForestStore.plant(seed, growDays)?.id
-                    target.startsWith("tree:") -> target.removePrefix("tree:")
-                    else -> null
-                }
-                CalmSession.start(ctx, tree, mode, minutes, if (mode == CalmMode.SOUNDS) sound else null, pattern)
-                if (mode == CalmMode.BREATHE) CalmSession.changePattern(pattern)
-                onDismiss()
-            }
-            if (target.isEmpty()) {
-                Text("No seeds right now — your calm minutes still count for today.", fontSize = 12.sp, color = c.muted, modifier = Modifier.padding(top = 8.dp))
-            }
+            Pointer(down = true)
+            Pointer(down = false)
+        },
+        modifier = Modifier.fillMaxSize(),
+    ) { ms, cs ->
+        val margin = 12.dp.roundToPx()
+        val body = ms[0].measure(Constraints(maxWidth = max(0, cs.maxWidth - 2 * margin)))
+        val aw = 12.dp.roundToPx()
+        val ah = 6.dp.roundToPx()
+        val down = ms[1].measure(Constraints.fixed(aw, ah))
+        val up = ms[2].measure(Constraints.fixed(aw, ah))
+        // Keep clear of the top bar (status bar + the Forest pill).
+        val minTop = top.getTop(this) + 64.dp.roundToPx()
+        layout(cs.maxWidth, cs.maxHeight) {
+            val gap = 8.dp.roundToPx()
+            val x = info.at.x.roundToInt()
+            val y = info.at.y.roundToInt()
+            val above = y - gap - ah - body.height >= minTop
+            val cardTop = if (above) y - gap - ah - body.height else min(y + gap + ah, cs.maxHeight - body.height - margin)
+            val left = (x - 28.dp.roundToPx()).coerceIn(margin, max(margin, cs.maxWidth - margin - body.width))
+            body.place(left, cardTop)
+            val inset = 10.dp.roundToPx()
+            val ax = (x - aw / 2).coerceIn(left + inset, max(left + inset, left + body.width - inset - aw))
+            if (above) down.place(ax, cardTop + body.height) else up.place(ax, cardTop - ah)
         }
     }
-    if (otherDays) {
-        var v by remember { mutableIntStateOf(growDays) }
-        AlertDialog(
-            onDismissRequest = { otherDays = false },
-            title = { Text("Grows in") },
-            text = {
-                Column {
-                    TitleText(growDaysText(v), 26.sp, modifier = Modifier.padding(bottom = 8.dp))
-                    StepSlider(
-                        value = v.toFloat(), range = 1f..14f, step = 1f, label = "days", steps = 12,
-                        onChange = { v = it.toInt().coerceIn(1, 14) },
-                    )
-                    Text("Between 1 day and 2 weeks. A tree needs its time and its calm minutes.", fontSize = 12.5.sp, color = c.muted)
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    growDays = v
-                    otherDays = false
-                }) { Text("Done") }
-            },
-            dismissButton = { TextButton(onClick = { otherDays = false }) { Text("Cancel") } },
-        )
-    }
 }
 
-internal fun soundIcon(s: NatureSound): ImageVector = when (s) {
-    NatureSound.RAIN -> Icons.Rounded.Umbrella
-    NatureSound.STORM -> Icons.Rounded.Thunderstorm
-    NatureSound.RIVER -> Icons.Rounded.Waves
-    NatureSound.OCEAN -> Icons.Rounded.Water
-    NatureSound.BIRDS -> Icons.Rounded.FlutterDash
-    NatureSound.NIGHT -> Icons.Rounded.NightsStay
-    NatureSound.WIND -> Icons.Rounded.Air
-    NatureSound.FIRE -> Icons.Rounded.LocalFireDepartment
-    NatureSound.FAN -> Icons.Rounded.Cyclone
-    NatureSound.NOISE -> Icons.Rounded.GraphicEq
-}
-
-/** A paper seed packet showing the tree it becomes; one without seeds is faded. */
 @Composable
-private fun SeedPacket(s: Species, found: Boolean, seeds: Int, on: Boolean, onClick: () -> Unit) {
-    val c = forestColors()
-    val usable = found && seeds > 0
-    val paper = if (c.light) Color(0xFFFEF3C7) else Color(0xFF30240C)
-    val crimp = (if (c.light) Color(0xFFB45309) else Color(0xFFFCD34D)).copy(alpha = .35f)
-    val shape = RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 14.dp, bottomEnd = 14.dp)
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(82.dp)
-            .let { if (on) it.border(2.5.dp, c.moss, shape) else it }
-            .padding(if (on) 3.dp else 0.dp)
-            .alpha(if (usable) 1f else .45f)
-            .clip(shape)
-            .background(paper)
-            .clickable(enabled = usable, onClick = onClick)
-            .padding(bottom = 7.dp),
-    ) {
-        // The packet's crimped top.
-        Row(Modifier.fillMaxWidth().height(7.dp)) {
-            repeat(7) { i -> Box(Modifier.weight(1f).height(7.dp).background(if (i % 2 == 0) crimp else Color.Transparent)) }
+private fun Pointer(down: Boolean) {
+    Canvas(Modifier) {
+        val p = Path().apply {
+            if (down) {
+                moveTo(0f, 0f); lineTo(size.width, 0f); lineTo(size.width / 2, size.height)
+            } else {
+                moveTo(0f, size.height); lineTo(size.width, size.height); lineTo(size.width / 2, 0f)
+            }
+            close()
         }
-        TreePicture(s, Stage.GROWN, 7, Modifier.padding(top = 4.dp).size(54.dp))
-        Text(s.title, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = c.ink, maxLines = 1)
-        Text(
-            when {
-                !found -> "find later"
-                seeds == 0 -> "no seeds"
-                else -> "$seeds seed${if (seeds == 1) "" else "s"}"
-            },
-            fontSize = 11.sp, color = c.muted,
-        )
+        drawPath(p, Paper)
     }
 }
 
-/** For the Tools tile: what's growing, or calm time's minutes left. */
-@Composable
-fun forestStatus(): String? {
-    val ctx = LocalContext.current
-    remember {
-        ForestStore.init(ctx)
-        CalmSession.init(ctx)
+/** The tap card's two lines for whatever was tapped. */
+private fun tapText(tap: ForestTap, now: ForestNow): Pair<String, String> = when (tap) {
+    is ForestTap.MoonTap -> ForestRules.moonTitle(now) to ForestRules.moonLine(now)
+    is ForestTap.TreeTap -> treeText(tap.tree, now)
+    is ForestTap.ThingTap -> tap.thing.tree?.let { treeText(it, now) } ?: thingText(tap.thing.sprite, now)
+}
+
+private fun treeText(t: ForestTree, now: ForestNow): Pair<String, String> {
+    val kind = t.kind.title
+    val planted = when (t.day) {
+        now.day -> "Planted today"
+        now.day - 1 -> "Planted yesterday"
+        else -> "Planted on day ${t.day}"
     }
-    if (CalmSession.active) {
-        if (CalmSession.paused) return "Calm time paused"
-        var left by remember { mutableStateOf(CalmSession.leftMs()) }
-        LaunchedEffect(Unit) {
-            while (true) {
-                left = CalmSession.leftMs()
-                delay(1_000)
+    return when {
+        t.dead -> "$kind · dried out" to when {
+            now.phase != ForestPhase.STORM -> "Tomorrow: the storm"
+            now.eveningGreen -> "Tomorrow: a new forest"
+            else -> "The storm brings the green back"
+        }
+        t.dry -> "$kind · drying" to "$planted · the dry spell"
+        t.growing -> {
+            val grown = t.stage == Stage.GROWN
+            (if (grown) kind else "$kind · ${ForestRules.stageName(t.stage).lowercase()}") to when {
+                now.catchingUp -> "Day ${t.day}'s tree · catching up"
+                grown -> "Planted today · grown at ${ForestRules.hm(now.grownBy)}"
+                else -> "Planted today · grown by ${ForestRules.hm(now.grownBy)}"
             }
         }
-        return "Calm time · ${clock(left)} left"
+        else -> kind to planted + when (t.sprite) {
+            "t-mango-fruit" -> " · in fruit"
+            "t-mango-flower", "t-jasmine" -> " · in flower"
+            "t-gulmohar" -> " · in bloom"
+            else -> ""
+        }
     }
-    val t = ForestStore.growing().maxByOrNull { it.lastCareMs } ?: return null
-    return "${t.stageName()} growing"
 }
 
+/** Who came, and on which day (the tile's arrival number; [verb] says how it came). */
+private class Who(val name: String, val day: Int, val verb: String = "Came", val note: String? = null)
+
+private val WHO: Map<String, Who> = mapOf(
+    "a-sparrow" to Who("Sparrow", 3), "a-bulbul" to Who("Bulbul", 3), "a-squirrel" to Who("Squirrel", 4),
+    "a-rabbit" to Who("Rabbit", 5), "a-rabbit2" to Who("Rabbit", 5), "a-owl" to Who("Owl", 6, note = "out at night"),
+    "a-frog" to Who("Frog", 7), "o-pond" to Who("The pond", 7, "Appeared", "frogs and lotus"), "a-dragonfly" to Who("Dragonfly", 8),
+    "o-mushrooms" to Who("Mushrooms", 9, "Came up"), "o-rocks" to Who("Rocks", 9, "Appeared"), "o-stones" to Who("A stone path", 9, "Appeared"),
+    "a-peacock" to Who("Peacock", 10), "a-peacock-dance" to Who("Peacock", 10, note = "dancing in the rain"),
+    "a-nest-eggs" to Who("A nest with eggs", 11, "Built"), "a-nest-chicks" to Who("Chicks in the nest", 13, "Hatched"),
+    "a-duck" to Who("Duck", 12), "a-deer" to Who("Spotted deer", 14), "a-doe" to Who("Spotted deer", 14), "a-tortoise" to Who("Tortoise", 15),
+    "a-monkey" to Who("Monkey", 16), "o-beehive" to Who("Beehive", 17, "Built"), "a-bees" to Who("Bees", 17),
+    "o-bench" to Who("Bench", 18, "Put up"), "o-swing" to Who("Swing", 18, "Put up"), "a-kingfisher" to Who("Kingfisher", 19),
+    "a-parrot" to Who("Parrot", 20), "o-stream" to Who("Stream and bridge", 21, "Appeared"), "a-mongoose" to Who("Mongoose", 22),
+    "a-fawn" to Who("Fawn", 23, note = "with its mother"), "a-elephant" to Who("Elephant", 24, note = "stays till the dry spell"),
+    "a-elephant-calf" to Who("Elephant calf", 24, note = "stays till the dry spell"), "a-hornbill" to Who("Hornbill", 25),
+    "a-peahen" to Who("Peahen", 26), "a-peachick" to Who("Peachick", 26), "a-tiger" to Who("A tiger, far away", 27, note = "only at dusk"),
+)
+
+private fun thingText(sprite: String, now: ForestNow): Pair<String, String> {
+    WHO[sprite]?.let { w ->
+        // In a short month the bonus things (25–27) come on the last green day.
+        val on = min(w.day, now.monthLength - 4)
+        val first = when {
+            now.phase == ForestPhase.DRY -> "Leaving in the dry spell"
+            w.day >= 25 && on == w.day -> "Bonus day ${w.day}" + if (on == now.day) " · today" else ""
+            on == now.day -> "${w.verb} today"
+            else -> "${w.verb} on day $on"
+        }
+        return w.name to listOfNotNull(first, w.note).joinToString(" · ")
+    }
+    val month = when (now.phase) {
+        ForestPhase.DRY -> "The dry spell · the animals are leaving"
+        ForestPhase.DESERT -> "Tomorrow: the storm"
+        ForestPhase.STORM -> if (now.eveningGreen) "Tomorrow: a new forest" else "Rain all day"
+        else -> ""
+    }
+    return when (sprite) {
+        "a-trex" -> "A friendly T. rex" to "Visits every Sunday · waves hello"
+        "a-dragon" -> "A good dragon" to if (now.night) "Resting till morning · visits every Sunday" else "Flies over every Sunday"
+        "p-man-sit", "p-woman-sit", "p-man-walk", "p-woman-walk", "p-person-sit", "p-person-walk", "o-picnic" ->
+            "Your picnic day" to "The two of you · back next month"
+        "p-man-umbrella", "p-woman-umbrella", "o-umbrella-big" -> "Your picnic day" to "A rainy picnic · under a big umbrella"
+        "o-tornado" -> "A tornado, far away" to "Spinning across the dry meadow · gone by tomorrow"
+        "a-buffalo" -> "Water buffalo" to "Came to the last of the pond"
+        "a-ox" -> "An ox" to "Came to the last of the pond"
+        "o-volcano" -> "The volcano" to "Erupting on the far hills · quiet again after the storm"
+        "a-camel" -> "Camel" to "Crossing the desert"
+        "a-rhino" -> "Indian rhino" to "Wandering the desert"
+        "a-whale" -> "A whale" to "Swam in with the flood"
+        "a-dolphin" -> "Dolphin" to "Leaping in the flood"
+        "a-fish" -> "A jumping fish" to "Swam in with the flood"
+        "a-fish2" -> "Little fish" to "Jumping in the flood"
+        "a-turtle" -> "Sea turtle" to "Swimming in the flood"
+        "a-octopus" -> "Octopus" to "Waving from the flood"
+        "a-jellyfish" -> "Jellyfish" to "Drifting in the flood"
+        "a-crab" -> "Crab" to "Out on the wet land as the water goes down"
+        "o-dead-tree" -> "A dried-out tree" to month
+        "o-cactus" -> "Cactus" to month
+        "o-dry-bush" -> "A dry bush" to month
+        "o-pond-dry" -> "The pond is drying" to "It fills again after the storm"
+        "o-cracks" -> "Cracked soil" to month
+        "o-shoots" -> "Green shoots" to if (now.phase == ForestPhase.STORM) "Tomorrow: a new forest" else "Fresh after the storm"
+        "o-puddle" -> "A puddle" to when {
+            now.phase == ForestPhase.STORM -> "Rain all day"
+            now.day == 1 -> "From last night's storm"
+            else -> "A monsoon shower"
+        }
+        else -> sprite.substringAfter('-').replace('-', ' ').replaceFirstChar { it.uppercase() } to month
+    }
+}

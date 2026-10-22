@@ -8,14 +8,26 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaPlayer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Air
+import androidx.compose.material.icons.rounded.Cyclone
+import androidx.compose.material.icons.rounded.FlutterDash
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.LocalFireDepartment
+import androidx.compose.material.icons.rounded.NightsStay
+import androidx.compose.material.icons.rounded.Thunderstorm
+import androidx.compose.material.icons.rounded.Umbrella
+import androidx.compose.material.icons.rounded.Water
+import androidx.compose.material.icons.rounded.Waves
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.agani.syncup.R
 import java.nio.ByteOrder
 import java.util.concurrent.Executors
 import kotlin.concurrent.thread
 
 /**
- * Calm sounds — real recordings (CC0 / public domain, from Freesound), each made into a seamless
- * loop and bundled in the app, so they work offline. Forest's Sounds and Sleep share them.
+ * Nature sounds — real recordings (CC0 / public domain, from Freesound), each made into a seamless
+ * loop and bundled in the app, so they work offline. Wellbeing → Sleep plays them.
  */
 enum class NatureSound(val title: String, val res: Int) {
     RAIN("Rain", R.raw.snd_rain),
@@ -28,6 +40,20 @@ enum class NatureSound(val title: String, val res: Int) {
     FIRE("Campfire", R.raw.snd_fire),
     FAN("Fan", R.raw.snd_fan),
     NOISE("Brown noise", R.raw.snd_noise),
+}
+
+/** Each sound's icon (Sleep's sound chips). */
+internal fun soundIcon(s: NatureSound): ImageVector = when (s) {
+    NatureSound.RAIN -> Icons.Rounded.Umbrella
+    NatureSound.STORM -> Icons.Rounded.Thunderstorm
+    NatureSound.RIVER -> Icons.Rounded.Waves
+    NatureSound.OCEAN -> Icons.Rounded.Water
+    NatureSound.BIRDS -> Icons.Rounded.FlutterDash
+    NatureSound.NIGHT -> Icons.Rounded.NightsStay
+    NatureSound.WIND -> Icons.Rounded.Air
+    NatureSound.FIRE -> Icons.Rounded.LocalFireDepartment
+    NatureSound.FAN -> Icons.Rounded.Cyclone
+    NatureSound.NOISE -> Icons.Rounded.GraphicEq
 }
 
 /**

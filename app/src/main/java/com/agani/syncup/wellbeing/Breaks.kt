@@ -80,7 +80,7 @@ internal data class BreakSettings(
 /**
  * Tools → Breaks: an eye break (look far away for 20 s — the 20-20-20 rule) and a move break (2 minutes
  * of simple stretches), each every N minutes inside the days and hours chosen — only while the phone is
- * in use (a phone lying idle means you're already away), never during calm time. Off until set up.
+ * in use (a phone lying idle means you're already away), never at night. Off until set up.
  * It's about this phone's use, so it stays on this phone (not synced).
  */
 object Breaks {
@@ -176,7 +176,7 @@ object Breaks {
         Wellbeing.alarm(ctx, Wellbeing.A_BREAK, Wellbeing.REQ_BREAK, at)
     }
 
-    /** The alarm: a break is due — shown only when the phone is in use and it isn't calm time. */
+    /** The alarm: a break is due — shown only when the phone is in use and it isn't night. */
     internal fun due(ctx: Context) {
         val s = settings
         val now = System.currentTimeMillis()
@@ -289,7 +289,7 @@ private fun BreaksHome(onBack: () -> Unit, onTry: (String) -> Unit) {
             Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant))
             TimeLine("To", s.end, { time = "end" })
         }
-        Hint("Only while you're using the phone — never when it's lying idle. Quiet during Forest calm time.")
+        Hint("Only while you're using the phone — never when it's lying idle.")
     }
     time?.let { which ->
         TimeDialog(if (which == "start") "Breaks from" else "Breaks until", if (which == "start") s.start else s.end, { m ->

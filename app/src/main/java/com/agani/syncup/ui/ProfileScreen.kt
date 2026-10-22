@@ -36,7 +36,6 @@ import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.CalendarMonth
-import androidx.compose.material.icons.rounded.Park
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.FormatSize
@@ -349,7 +348,6 @@ fun ProfileScreen(
                                         SyncType.TABS -> Icons.Rounded.Devices
                                         SyncType.SETTINGS -> Icons.Rounded.Tune
                                         SyncType.CALENDAR -> Icons.Rounded.CalendarMonth
-                                        SyncType.FOREST -> Icons.Rounded.Park
                                         SyncType.WATER -> Icons.Rounded.WaterDrop
                                         SyncType.STEPS -> Icons.AutoMirrored.Rounded.DirectionsWalk
                                         SyncType.HABITS -> Icons.Rounded.TaskAlt
@@ -364,7 +362,6 @@ fun ProfileScreen(
                                         SyncType.TABS -> "See your open tabs on your other devices"
                                         SyncType.SETTINGS -> "Search engine, pop-ups, theme"
                                         SyncType.CALENDAR -> "To-dos and lists — their reminders on every phone"
-                                        SyncType.FOREST -> "Your trees and calm minutes"
                                         SyncType.WATER -> "What you drank, your goal and reminders"
                                         SyncType.STEPS -> "Each day's steps (the higher phone counts)"
                                         SyncType.HABITS -> "Your habits, ticks and streaks"

@@ -121,7 +121,6 @@ class MainActivity : FragmentActivity() {
     private val openQuickShareRequest = mutableStateOf(false)
     /** A Calendar reminder was tapped: open that to-do ("" = just the Calendar). */
     private val openCalendarRequest = mutableStateOf<String?>(null)
-    private val openForestRequest = mutableStateOf(false)
     /** A Wellbeing notification: (ToolsPage name, its argument — "eye", "morning", "checkin"…). */
     private val openToolRequest = mutableStateOf<Pair<String, String?>?>(null)
 
@@ -159,10 +158,6 @@ class MainActivity : FragmentActivity() {
         // Tools → Calendar: its to-dos and their reminders (re-set on every start).
         com.agani.syncup.calendar.CalendarStore.init(this)
         com.agani.syncup.calendar.CalendarReminders.reschedule(this)
-        // Tools → Forest: its trees, any calm time still running, the gentle reminder.
-        com.agani.syncup.forest.ForestStore.init(this)
-        com.agani.syncup.forest.CalmSession.init(this)
-        com.agani.syncup.forest.ForestReminder.schedule(this)
         // Tools → Wellbeing: Water, Steps, Breaks, Sleep, Habits, Mood (their reminders re-set on every start).
         com.agani.syncup.wellbeing.Wellbeing.init(this)
         // Tools → Shopping: its lists (and their sync with the account).
@@ -279,19 +274,12 @@ class MainActivity : FragmentActivity() {
 
     override fun onStart() {
         super.onStart()  // runs ProcessLifecycleOwner.onStart → AppLock.onForeground() first
-        com.agani.syncup.forest.CalmSession.onAppStarted(this)
         // Re-lock only when the app was away longer than the grace (AppLock decides), never on
         // rotation or a quick round-trip to a picker/camera/external link.
         if (AppLock.pendingLock) {
             AppLock.pendingLock = false
             if (security.hasPin()) lockedState.value = true
         }
-    }
-
-    override fun onStop() {
-        // Calm time pauses when SyncUp is left with the screen on (not when the screen goes off).
-        com.agani.syncup.forest.CalmSession.onAppStopped(this)
-        super.onStop()
     }
 
     override fun onPause() {
@@ -369,10 +357,6 @@ class MainActivity : FragmentActivity() {
         intent?.getStringExtra(EXTRA_OPEN_CALENDAR)?.let {
             openCalendarRequest.value = it
             intent.removeExtra(EXTRA_OPEN_CALENDAR)
-        }
-        if (intent?.getBooleanExtra(EXTRA_OPEN_FOREST, false) == true) {
-            openForestRequest.value = true
-            intent.removeExtra(EXTRA_OPEN_FOREST)
         }
         intent?.getStringExtra(EXTRA_OPEN_TOOL)?.let {
             openToolRequest.value = it to intent.getStringExtra(EXTRA_TOOL_ARG)
@@ -509,7 +493,7 @@ class MainActivity : FragmentActivity() {
             vm.syncAll(silent = silent) { cfg -> applyConfig(cfg) }                          // GET /sync
             lifecycleScope.launch(Dispatchers.IO) { ReminderSync.sync(applicationContext) }  // GET /reminders
             BrowserSync.syncNow()                                                            // POST /browser/sync
-            com.agani.syncup.sync.ItemSync.syncAllNow()                                      // Calendar, Forest
+            com.agani.syncup.sync.ItemSync.syncAllNow()                                      // Calendar, Shopping
         }
 
         // The app shows its first screen at once (the launch screen adds no wait); this sets up the server side behind it.
@@ -565,7 +549,7 @@ class MainActivity : FragmentActivity() {
             if (booted && id != null) {
                 if (BrowserSync.onSignedIn(id)) tabManager.resetNormalForNewAccount()
                 BrowserSync.syncNow()
-                // Calendar and Forest sync on their own (same account, same switches).
+                // Calendar and Shopping sync on their own (same account, same switches).
                 com.agani.syncup.sync.ItemSync.signedInAll(id)
                 com.agani.syncup.sync.ItemSync.syncAllNow()
             }
@@ -777,20 +761,6 @@ class MainActivity : FragmentActivity() {
             libraryPage = null
             calendarTask = id.ifBlank { null }
             toolsPage = com.agani.syncup.tools.ToolsPage.CALENDAR
-        }
-
-        // Forest's notifications (calm time, its end, the gentle reminder): Tools → Forest.
-        LaunchedEffect(openForestRequest.value) {
-            if (openForestRequest.value) {
-                openForestRequest.value = false
-                showMusic = false
-                showRadio = false
-                showPartners = false
-                showNotifications = false
-                showProfile = false
-                libraryPage = null
-                toolsPage = com.agani.syncup.tools.ToolsPage.FOREST
-            }
         }
 
         // A Wellbeing notification (Water, Steps, Breaks, Sleep, Habits, Mood): that tool, with its argument.
@@ -1222,10 +1192,7 @@ class MainActivity : FragmentActivity() {
                             onOpenGroup = { toolsPage = com.agani.syncup.tools.ToolsPage.GROUP },
                         )
                         com.agani.syncup.tools.ToolsPage.SHOPPING -> com.agani.syncup.shopping.ShoppingScreen(onBack = { toolsPage = null })
-                        com.agani.syncup.tools.ToolsPage.FOREST -> com.agani.syncup.forest.ForestScreen(
-                            signedIn = loggedIn,
-                            onBack = { toolsPage = null },
-                        )
+                        com.agani.syncup.tools.ToolsPage.FOREST -> com.agani.syncup.forest.ForestScreen(onBack = { toolsPage = null })
                         com.agani.syncup.tools.ToolsPage.WATER -> com.agani.syncup.wellbeing.WaterScreen(onBack = { toolsPage = null })
                         com.agani.syncup.tools.ToolsPage.STEPS -> com.agani.syncup.wellbeing.StepsScreen(onBack = { toolsPage = null })
                         com.agani.syncup.tools.ToolsPage.HABITS -> com.agani.syncup.wellbeing.HabitsScreen(onBack = { toolsPage = null })
@@ -1396,7 +1363,6 @@ class MainActivity : FragmentActivity() {
 
         /** A Calendar reminder's tap: the to-do's id. */
         const val EXTRA_OPEN_CALENDAR = "extra_open_calendar"
-        const val EXTRA_OPEN_FOREST = "extra_open_forest"
         /** Open a tool from its notification: a ToolsPage name, plus [EXTRA_TOOL_ARG] for it. */
         const val EXTRA_OPEN_TOOL = "extra_open_tool"
         const val EXTRA_TOOL_ARG = "extra_tool_arg"
