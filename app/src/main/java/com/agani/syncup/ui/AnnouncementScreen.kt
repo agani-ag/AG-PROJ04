@@ -1,6 +1,14 @@
 package com.agani.syncup.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,21 +49,17 @@ fun AnnouncementScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(32.dp),
+                .padding(horizontal = 24.dp, vertical = 32.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Icon(
-                Icons.Rounded.Campaign,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(72.dp),
-            )
+            NoticeIcon(Icons.Rounded.Campaign)
             if (title.isNotBlank()) {
                 Text(
                     title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 24.sp,
+                    lineHeight = 30.sp,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onBackground,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(top = 20.dp),
@@ -64,22 +68,36 @@ fun AnnouncementScreen(
             if (message.isNotBlank()) {
                 Text(
                     message,
-                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 14.5.sp,
+                    lineHeight = 21.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 10.dp),
+                    modifier = Modifier.padding(top = 6.dp),
                 )
             }
             if (!blocking) {
                 Button(
                     onClick = onDismiss,
                     modifier = Modifier
+                        .padding(top = 28.dp)
                         .fillMaxWidth()
-                        .padding(top = 28.dp),
+                        .widthIn(max = 420.dp)
+                        .height(48.dp),
                 ) {
-                    Text("Got it", fontWeight = FontWeight.SemiBold)
+                    Text("Got it", fontSize = 15.sp, fontWeight = FontWeight.Medium)
                 }
             }
         }
+    }
+}
+
+/** The big soft-blue circle at the top of a full-screen notice (and Update required). */
+@Composable
+internal fun NoticeIcon(icon: ImageVector) {
+    Box(
+        Modifier.size(96.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(44.dp))
     }
 }

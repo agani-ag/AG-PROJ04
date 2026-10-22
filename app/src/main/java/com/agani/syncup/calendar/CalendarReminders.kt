@@ -32,6 +32,8 @@ object CalendarReminders {
     private const val PREFS = "calendar_alarms"
     private const val HORIZON_DAYS = 14
     private const val MAX_ALARMS = 60
+    /** Days a repeating to-do is walked through to find its coming ones (a year of daily ones). */
+    private const val OCCURRENCE_LIMIT = 400
 
     const val ACTION_FIRE = "com.agani.syncup.calendar.FIRE"
     const val ACTION_REFRESH = "com.agani.syncup.calendar.REFRESH"
@@ -61,24 +63,35 @@ object CalendarReminders {
         val now = System.currentTimeMillis()
         val today = Days.today()
         val until = Days.add(today, HORIZON_DAYS)
+        val horizonEnd = Days.at(Days.add(until, 1), 0)
         data class Fire(val at: Long, val task: String, val day: Int, val offset: Int)
         val fires = ArrayList<Fire>()
         for (t in CalendarStore.tasks) {
             if (t.done || !t.hasDate || t.reminders.isEmpty()) continue
-            // A repeating to-do reminds on every coming occurrence, even if the last one wasn't ticked.
-            val from = if (t.repeat.repeats) maxOf(t.day, Days.add(today, -1)) else t.day
-            for (d in t.occurrences(from, until, 40)) {
-                for (off in t.reminders) {
-                    val at = t.startMs(d) - off * 60_000L
-                    if (at > now) fires.add(Fire(at, t.id, d, off))
+            // Any number of minutes before — custom ones too, weeks before, or (all day) below 0 = later
+            // on the day. A reminder N days before goes off for the days N days further on, so each one
+            // looks at its own stretch of days.
+            for (off in t.reminders.distinct()) {
+                val shift = off.floorDiv(24 * 60)
+                // A repeating to-do reminds on every coming occurrence, even if the last one wasn't ticked.
+                val from = if (t.repeat.repeats) maxOf(t.day, Days.add(today, shift - 1)) else t.day
+                for (d in t.occurrences(from, Days.add(until, shift + 1), OCCURRENCE_LIMIT)) {
+                    val at = Reminders.atMs(t, off, d)
+                    if (at > now && at < horizonEnd) fires.add(Fire(at, t.id, d, off))
                 }
             }
         }
-        // Snoozed ones come back once.
+        // Snoozed ones come back once (and ones long gone are forgotten).
         val snoozes = runCatching { org.json.JSONObject(prefs.getString("snoozes", "{}") ?: "{}") }.getOrDefault(org.json.JSONObject())
+        val stale = ArrayList<String>()
         snoozes.keys().forEach { id ->
             val at = snoozes.optLong(id)
             if (at > now && CalendarStore.task(id)?.done == false) fires.add(Fire(at, id, CalendarStore.task(id)?.day ?: today, SNOOZED))
+            else if (at < now - 86_400_000L) stale.add(id)
+        }
+        if (stale.isNotEmpty()) {
+            stale.forEach { snoozes.remove(it) }
+            prefs.edit().putString("snoozes", snoozes.toString()).apply()
         }
         val chosen = fires.sortedBy { it.at }.take(MAX_ALARMS)
         val set = JSONArray()
@@ -121,11 +134,7 @@ object CalendarReminders {
         ensureChannel(ctx)
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val today = Days.today()
-        val whenText = buildString {
-            append(if (offset == SNOOZED) "Snoozed · " else "")
-            append(Days.friendly(day, today))
-            if (!t.allDay) append(" ${Days.time(t.time)}")
-        }
+        val whenText = (if (offset == SNOOZED) "Snoozed · " else "") + t.whenText(day, today)
         val steps = if (t.checklist.isNotEmpty()) " · ${t.checklist.count { it.done }} of ${t.checklist.size} steps done" else ""
         val text = "$whenText · ${CalendarStore.list(t.listId).name}$steps"
         val open = PendingIntent.getActivity(
@@ -136,7 +145,8 @@ object CalendarReminders {
         )
         val n = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_sync)
-            .setContentTitle(if (offset >= 24 * 60 && day > today) "${Days.friendly(day, today)}: ${t.title}" else t.title)
+            // Reminded on an earlier day (a day or a week before, the evening before…): say which day it's for.
+            .setContentTitle(if (day > today) "${Days.friendly(day, today)}: ${t.title}" else t.title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(if (t.notes.isNotBlank()) "$text\n${t.notes}" else text))
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
@@ -182,8 +192,11 @@ object CalendarReminders {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    /** "offset" of a snoozed reminder coming back. */
-    const val SNOOZED = -1
+    /**
+     * "offset" of a snoozed reminder coming back. Not -1 (as it once was): an all-day to-do's custom
+     * reminder may be -1 (9:01 on the day), so this is a number no reminder can be.
+     */
+    const val SNOOZED = Int.MIN_VALUE
 
     internal fun fired(context: Context, taskId: String, day: Int, offset: Int) {
         if (offset == SNOOZED) clearSnooze(context, taskId)

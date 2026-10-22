@@ -47,8 +47,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -62,9 +62,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
@@ -75,6 +75,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.ui.StepSlider
+import com.agani.syncup.ui.theme.CardShape
 import kotlinx.coroutines.delay
 
 /** What the calm sheet opens with (the night card's "Wind down" = Breathe, Sleep 4-7-8). */
@@ -173,9 +174,9 @@ private fun ForestHome(
         val ground = (maxHeight - cardDp + if (night) 6.dp else 26.dp).coerceAtLeast(maxHeight * .5f)
         ForestScene(trees, ground, selected, { selected = it }, onOpenTree, Modifier.fillMaxSize())
         Column(Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
-            ForestTopBar("Forest", onBack, color = if (night) Color(0xFFF1F5EE) else Color(0xFF22301F)) {
+            ForestTopBar("Forest", onBack, color = if (night) Color(0xFFF1F5EE) else Color(0xFF0F172A)) {
                 Box {
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "More", tint = if (night) Color(0xFFF1F5EE) else Color(0xFF22301F)) }
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Rounded.MoreVert, "More", tint = if (night) Color(0xFFF1F5EE) else Color(0xFF0F172A)) }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text("Trees & seeds") }, onClick = { menu = false; onPage("kinds") })
                         DropdownMenuItem(text = { Text("How trees grow") }, onClick = { menu = false; onPage("how") })
@@ -251,14 +252,16 @@ private fun DayCard(modifier: Modifier, onBegin: (Preset) -> Unit, onResume: () 
     val vis = visitors(ForestStore.trees)
     val tree = ForestStore.growing().maxByOrNull { it.lastCareMs }
     Column(
-        modifier.fillMaxWidth().shadow(18.dp, RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp))
-            .clip(RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp)).background(c.paper)
-            .windowInsetsPadding(WindowInsets.navigationBars).padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 18.dp),
+        modifier.windowInsetsPadding(WindowInsets.navigationBars).padding(start = 12.dp, end = 12.dp, bottom = 10.dp).fillMaxWidth()
+            .then(if (c.light) Modifier.shadow(10.dp, CardShape, ambientColor = Color(0x330F172A), spotColor = Color(0x330F172A)) else Modifier)
+            .clip(CardShape).background(c.card)
+            .then(if (c.light) Modifier else Modifier.border(1.dp, c.line, CardShape))
+            .padding(18.dp),
     ) {
-        TitleText(greeting(), 24.sp)
+        Text(greeting(), fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Medium, color = c.ink)
         Text(storyLine(), fontSize = 13.5.sp, lineHeight = 18.sp, color = c.muted, modifier = Modifier.padding(top = 2.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
-            Ring(today / goal.toFloat(), 46.dp, 5.dp, c.moss, c.line)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 14.dp)) {
+            Ring(today / goal.toFloat(), 46.dp, 5.dp, c.moss, c.soft)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(
@@ -276,28 +279,45 @@ private fun DayCard(modifier: Modifier, onBegin: (Preset) -> Unit, onResume: () 
                 )
             }
         }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 12.dp)) {
-            Pill { PillText("${ForestStore.trees.size}", if (ForestStore.trees.size == 1) "tree" else "trees") }
-            Pill { PillText("${ForestStore.calmDays()}", if (ForestStore.calmDays() == 1) "calm day" else "calm days") }
-            Pill { PillText("${seedsInHand()}", if (seedsInHand() == 1) "seed" else "seeds") }
-            if (vis.butterflies > 0 && DayPart.now() != DayPart.NIGHT && !rainyToday()) Pill { PillText("🦋 ${vis.butterflies}", "") }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 14.dp)) {
+            CountPill("${ForestStore.trees.size}", if (ForestStore.trees.size == 1) "tree" else "trees")
+            CountPill("${ForestStore.calmDays()}", if (ForestStore.calmDays() == 1) "calm day" else "calm days")
+            CountPill("${seedsInHand()}", if (seedsInHand() == 1) "seed" else "seeds")
+            if (vis.butterflies > 0 && DayPart.now() != DayPart.NIGHT && !rainyToday()) CountPill("🦋 ${vis.butterflies}", "")
         }
         Spacer(Modifier.height(16.dp))
         BeginButton(onBegin, onResume, Preset.NONE)
     }
 }
 
+/** Today's numbers on the card, in Forest's soft lime ("6 trees"). */
+@Composable
+private fun CountPill(bold: String, rest: String) {
+    val c = forestColors()
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.height(28.dp).clip(RoundedCornerShape(14.dp)).background(c.soft).padding(horizontal = 11.dp),
+    ) {
+        Text(bold, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, color = c.moss)
+        if (rest.isNotEmpty()) Text(rest, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = c.moss)
+    }
+}
+
 @Composable
 private fun BeginButton(onBegin: (Preset) -> Unit, onResume: () -> Unit, preset: Preset, night: Boolean = false) {
-    val c = forestColors()
     if (CalmSession.active && CalmSession.paused) {
         val ctx = LocalContext.current
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            LineButton("End here", Modifier.weight(1f), color = if (night) Color(0xFFE7F3E2) else c.moss, border = if (night) Color(0x59E7F3E2) else Color(0xFFCFC5AC)) { CalmSession.stop(ctx) }
+            if (night) {
+                LineButton("End here", Modifier.weight(1f), color = Color(0xFFE7F3E2), border = Color(0x59E7F3E2)) { CalmSession.stop(ctx) }
+            } else {
+                LineButton("End here", Modifier.weight(1f)) { CalmSession.stop(ctx) }
+            }
             MossButton("Go on · ${clock(CalmSession.leftMs())} left", Modifier.weight(1.4f), onClick = onResume)
         }
     } else if (night) {
-        MossButton("Wind down · Breathe 4-7-8", Modifier.fillMaxWidth(), icon = Icons.Rounded.Bedtime, container = Color(0xFFE8DDB5), content = Color(0xFF1E2A3A)) { onBegin(preset) }
+        MossButton("Wind down · Breathe 4-7-8", Modifier.fillMaxWidth(), icon = Icons.Rounded.Bedtime) { onBegin(preset) }
     } else {
         MossButton("Begin calm time", Modifier.fillMaxWidth(), icon = Icons.Rounded.Eco) { onBegin(preset) }
     }
@@ -359,11 +379,11 @@ private fun CalmSheet(preset: Preset, onDismiss: () -> Unit) {
     var otherDays by remember { mutableStateOf(false) }
     val seed = target.removePrefix("seed:").takeIf { target.startsWith("seed:") }?.let { runCatching { Species.valueOf(it) }.getOrNull() }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = c.paper, dragHandle = {
-        Box(Modifier.padding(top = 10.dp, bottom = 6.dp).size(36.dp, 4.dp).clip(RoundedCornerShape(2.dp)).background(Color(0xFFCFC5AC)))
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = c.card, dragHandle = {
+        Box(Modifier.padding(top = 10.dp, bottom = 10.dp).size(36.dp, 4.dp).clip(RoundedCornerShape(2.dp)).background(MaterialTheme.colorScheme.outline))
     }) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 22.dp)) {
-            TitleText("Calm time", 22.sp)
+            Text("Calm time", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = c.ink)
             if (growing.isNotEmpty()) {
                 Label("Care for")
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -371,11 +391,11 @@ private fun CalmSheet(preset: Preset, onDismiss: () -> Unit) {
                         val on = target == "tree:${t.id}"
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(if (on) c.soft else c.card)
-                                .border(if (on) 2.dp else 1.dp, if (on) c.moss else c.line, RoundedCornerShape(16.dp))
-                                .clickable { target = "tree:${t.id}" }.padding(start = 6.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+                            modifier = Modifier.clip(RoundedCornerShape(18.dp)).background(if (on) c.soft else c.card)
+                                .border(if (on) 2.dp else 1.dp, if (on) c.moss else c.line, RoundedCornerShape(18.dp))
+                                .clickable { target = "tree:${t.id}" }.padding(start = 6.dp, end = 12.dp, top = 5.dp, bottom = 5.dp),
                         ) {
-                            TreePicture(t.species, t.stage(), t.variant, Modifier.size(40.dp, 44.dp))
+                            TreePicture(t.species, t.stage(), t.variant, Modifier.size(40.dp, 44.dp).clip(RoundedCornerShape(10.dp)).background(if (c.light) Color(0xFFCFE9F7) else Color(0xFF0B1A2A)))
                             Spacer(Modifier.width(8.dp))
                             Column {
                                 Text(t.stageName(), fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = c.ink, maxLines = 1)
@@ -408,9 +428,9 @@ private fun CalmSheet(preset: Preset, onDismiss: () -> Unit) {
                     val on = mode == m
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(if (on) c.soft else c.card)
-                            .border(if (on) 2.dp else 1.dp, if (on) c.moss else c.line, RoundedCornerShape(16.dp))
-                            .clickable { mode = m }.padding(vertical = 10.dp, horizontal = 6.dp),
+                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).background(if (on) c.soft else c.card)
+                            .border(if (on) 2.dp else 1.dp, if (on) c.moss else c.line, RoundedCornerShape(18.dp))
+                            .clickable { mode = m }.padding(vertical = 10.dp, horizontal = 4.dp),
                     ) {
                         Icon(
                             when (m) {
@@ -420,7 +440,7 @@ private fun CalmSheet(preset: Preset, onDismiss: () -> Unit) {
                             },
                             null, tint = c.moss, modifier = Modifier.size(22.dp),
                         )
-                        Text(m.title, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = if (on) c.moss else c.ink2, modifier = Modifier.padding(top = 4.dp))
+                        Text(m.title, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = if (on) c.moss else c.ink, modifier = Modifier.padding(top = 4.dp))
                         Text(m.hint, fontSize = 11.sp, color = c.muted)
                     }
                 }
@@ -465,7 +485,6 @@ private fun CalmSheet(preset: Preset, onDismiss: () -> Unit) {
                     StepSlider(
                         value = v.toFloat(), range = 1f..14f, step = 1f, label = "days", steps = 12,
                         onChange = { v = it.toInt().coerceIn(1, 14) },
-                        colors = SliderDefaults.colors(thumbColor = c.moss, activeTrackColor = c.moss),
                     )
                     Text("Between 1 day and 2 weeks. A tree needs its time and its calm minutes.", fontSize = 12.5.sp, color = c.muted)
                 }
@@ -494,38 +513,38 @@ internal fun soundIcon(s: NatureSound): ImageVector = when (s) {
     NatureSound.NOISE -> Icons.Rounded.GraphicEq
 }
 
-/** A paper seed packet showing the tree it becomes. */
+/** A paper seed packet showing the tree it becomes; one without seeds is faded. */
 @Composable
 private fun SeedPacket(s: Species, found: Boolean, seeds: Int, on: Boolean, onClick: () -> Unit) {
     val c = forestColors()
     val usable = found && seeds > 0
+    val paper = if (c.light) Color(0xFFFEF3C7) else Color(0xFF30240C)
+    val crimp = (if (c.light) Color(0xFFB45309) else Color(0xFFFCD34D)).copy(alpha = .35f)
     val shape = RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 14.dp, bottomEnd = 14.dp)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.width(82.dp)
             .let { if (on) it.border(2.5.dp, c.moss, shape) else it }
             .padding(if (on) 3.dp else 0.dp)
+            .alpha(if (usable) 1f else .45f)
             .clip(shape)
-            .background(
-                if (usable) Brush.verticalGradient(listOf(Color(0xFFEAD9B4), Color(0xFFDCC596)))
-                else Brush.verticalGradient(listOf(Color(0xFFE9E4D8), Color(0xFFDDD6C6))),
-            )
+            .background(paper)
             .clickable(enabled = usable, onClick = onClick)
-            .padding(bottom = 8.dp),
+            .padding(bottom = 7.dp),
     ) {
         // The packet's crimped top.
-        Row(Modifier.fillMaxWidth().height(8.dp)) {
-            repeat(7) { i -> Box(Modifier.weight(1f).height(8.dp).background(if (i % 2 == 0) Color(0xFFC9AE7A) else Color(0xFFD8C08F))) }
+        Row(Modifier.fillMaxWidth().height(7.dp)) {
+            repeat(7) { i -> Box(Modifier.weight(1f).height(7.dp).background(if (i % 2 == 0) crimp else Color.Transparent)) }
         }
-        TreePicture(s, Stage.GROWN, 7, Modifier.padding(top = 4.dp).size(58.dp), faded = !usable)
-        Text(s.title, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = if (usable) Color(0xFF4A3B22) else Color(0xFF9A9283), maxLines = 1)
+        TreePicture(s, Stage.GROWN, 7, Modifier.padding(top = 4.dp).size(54.dp))
+        Text(s.title, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = c.ink, maxLines = 1)
         Text(
             when {
                 !found -> "find later"
                 seeds == 0 -> "no seeds"
                 else -> "$seeds seed${if (seeds == 1) "" else "s"}"
             },
-            fontSize = 11.sp, color = if (usable) Color(0xFF7A6745) else Color(0xFF9A9283),
+            fontSize = 11.sp, color = c.muted,
         )
     }
 }

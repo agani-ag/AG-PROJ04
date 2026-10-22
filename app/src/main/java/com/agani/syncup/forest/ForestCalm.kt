@@ -444,7 +444,7 @@ internal fun ResultScreen(r: CalmResult, onAgain: () -> Unit, onDone: () -> Unit
         }
         Spacer(Modifier.weight(1f).height(20.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 24.dp, top = 20.dp)) {
-            LineButton("Calm again", Modifier.weight(1f), color = c.moss, border = if (c.light) Color(0xFFCFC5AC) else c.line, onClick = onAgain)
+            LineButton("Calm again", Modifier.weight(1f), onClick = onAgain)
             MossButton("See the forest", Modifier.weight(1f), onClick = onDone)
         }
     }

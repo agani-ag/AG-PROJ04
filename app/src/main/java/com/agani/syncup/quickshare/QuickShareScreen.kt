@@ -1,27 +1,23 @@
 package com.agani.syncup.quickshare
 
 import android.content.Intent
-import android.os.Build
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,15 +30,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Android
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Edit
@@ -59,6 +56,7 @@ import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.WifiTethering
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -82,32 +80,35 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
-import com.agani.syncup.browser.ui.BarIcon
-import com.agani.syncup.browser.ui.IconTile
-import com.agani.syncup.browser.ui.MenuRow
-import com.agani.syncup.browser.ui.SectionHeader
 import com.agani.syncup.browser.ui.SheetHeader
-import com.agani.syncup.browser.ui.TonalRow
 import com.agani.syncup.downloads.FileKind
 import com.agani.syncup.downloads.Files
-import com.agani.syncup.ui.theme.isLight
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import com.agani.syncup.music.CardDivider
+import com.agani.syncup.music.SectionHead
+import com.agani.syncup.music.ToolTile
+import com.agani.syncup.music.ToolTint
+import com.agani.syncup.music.ToolTopBar
+import com.agani.syncup.music.cardSlice
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.appCard
+import com.agani.syncup.ui.theme.dialogSurface
+import com.agani.syncup.ui.theme.success
 import java.io.File
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Tools → SyncUp Share: send files or text to / receive them from a nearby SyncUp phone. See [QuickShare]. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -270,10 +271,7 @@ fun QuickShareScreen(onBack: () -> Unit, onOpenDownloads: () -> Unit, onOpenLink
 
     Box(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
         Column(Modifier.fillMaxSize()) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
-                BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = ::back)
-                Text(if (writing) "Send text" else "SyncUp Share", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
-            }
+            ToolTopBar(if (writing) "Send text" else "SyncUp Share", onBack = ::back)
             when (QuickShare.phase) {
                 QsPhase.IDLE -> if (writing) TextComposer(
                     value = draft,
@@ -317,17 +315,17 @@ fun QuickShareScreen(onBack: () -> Unit, onOpenDownloads: () -> Unit, onOpenLink
     }
 
     if (pickSheet) {
-        ModalBottomSheet(onDismissRequest = { pickSheet = false }) {
+        ModalBottomSheet(onDismissRequest = { pickSheet = false }, containerColor = cs.surfaceContainerLowest) {
             SheetHeader("Send to a nearby phone", "Pick what to send — nothing is uploaded")
-            MenuRow(Icons.Rounded.PhotoLibrary, "Photos & videos") {
+            SheetOption(Icons.Rounded.PhotoLibrary, "Photos & videos") {
                 pickSheet = false
                 pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
             }
-            MenuRow(Icons.Rounded.FolderOpen, "Files") {
+            SheetOption(Icons.Rounded.FolderOpen, "Files") {
                 pickSheet = false
                 pickFiles.launch(arrayOf("*/*"))
             }
-            MenuRow(Icons.Rounded.TextFields, "Text or link") {
+            SheetOption(Icons.Rounded.TextFields, "Text or link") {
                 pickSheet = false
                 writeText()
             }
@@ -367,6 +365,7 @@ fun QuickShareScreen(onBack: () -> Unit, onOpenDownloads: () -> Unit, onOpenLink
                 }) { Text("Save") }
             },
             dismissButton = { TextButton(onClick = { renaming = false }) { Text("Cancel") } },
+            containerColor = cs.dialogSurface,
         )
     }
 
@@ -381,6 +380,7 @@ fun QuickShareScreen(onBack: () -> Unit, onOpenDownloads: () -> Unit, onOpenLink
                 )
             },
             confirmButton = { TextButton(onClick = { tileHelp = false }) { Text("OK") } },
+            containerColor = cs.dialogSurface,
         )
     }
 
@@ -396,6 +396,7 @@ fun QuickShareScreen(onBack: () -> Unit, onOpenDownloads: () -> Unit, onOpenLink
                 }) { Text("Stop", color = cs.error) }
             },
             dismissButton = { TextButton(onClick = { confirmStop = false }) { Text("Keep going") } },
+            containerColor = cs.dialogSurface,
         )
     }
 }
@@ -413,27 +414,19 @@ private fun Home(
     onTileChange: (Boolean) -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    val light = cs.isLight
-    LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth()) {
-                ActionCard(
-                    Icons.Rounded.ArrowUpward, "Send", "Files, photos or text for a nearby phone",
-                    Color(if (light) 0xFF1D4ED8 else 0xFF93C5FD), Color(if (light) 0xFFDBEAFE else 0xFF1E3A8A),
-                    Modifier.weight(1f), onSend,
-                )
-                ActionCard(
-                    Icons.Rounded.ArrowDownward, "Receive", "Let a nearby phone send to you",
-                    Color(if (light) 0xFF15803D else 0xFF86EFAC), Color(if (light) 0xFFDCFCE7 else 0xFF14532D),
-                    Modifier.weight(1f), onReceive,
-                )
+    val history = QuickShare.history
+    LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp)) {
+        item(key = "actions") {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                ActionCard(Icons.Rounded.ArrowUpward, "Send", "Files, photos or text for a nearby phone", ToolTint.BLUE, Modifier.weight(1f), onSend)
+                ActionCard(Icons.Rounded.ArrowDownward, "Receive", "Let a nearby phone send to you", ToolTint.GREEN, Modifier.weight(1f), onReceive)
             }
         }
         if (permissionNote) {
-            item {
+            item(key = "permission") {
                 Column(
-                    Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                        .background(cs.errorContainer).padding(16.dp),
+                    Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                        .background(cs.errorContainer).padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp),
                 ) {
                     Text(
                         "SyncUp Share needs the Nearby devices permission to find the other phone. It isn't used for anything else.",
@@ -443,39 +436,41 @@ private fun Home(
                 }
             }
         }
-        item {
-            TonalRow(
-                title = QuickShare.myName,
-                subtitle = "Your name on SyncUp Share",
-                leading = { IconTile(Icons.Rounded.Smartphone, container = cs.surfaceContainerHigh, content = cs.onSurfaceVariant) },
-                trailing = { Icon(Icons.Rounded.Edit, "Change name", tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
-                onClick = onRename,
-            )
+        item(key = "me") {
+            Column(Modifier.padding(top = 12.dp).fillMaxWidth().appCard(CardShape)) {
+                ShareRow(
+                    title = QuickShare.myName,
+                    subtitle = "Your name on SyncUp Share",
+                    leading = { ToolTile(Icons.Rounded.Smartphone, ToolTint.SLATE) },
+                    trailing = { Icon(Icons.Rounded.Edit, "Change name", tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
+                    onClick = onRename,
+                )
+                CardDivider()
+                ShareRow(
+                    title = "Show in Quick Settings",
+                    subtitle = if (tileOn) "SyncUp Share is in your swipe-down panel" else "Add a SyncUp Share button to your swipe-down panel",
+                    leading = { ToolTile(Icons.Rounded.SwipeDown, ToolTint.SLATE) },
+                    trailing = { Switch(checked = tileOn, onCheckedChange = onTileChange) },
+                    onClick = { onTileChange(!tileOn) },
+                )
+            }
         }
-        item {
-            TonalRow(
-                title = "Show in Quick Settings",
-                subtitle = if (tileOn) "SyncUp Share is in your swipe-down panel" else "Add a SyncUp Share button to your swipe-down panel",
-                leading = { IconTile(Icons.Rounded.SwipeDown, container = cs.surfaceContainerHigh, content = cs.onSurfaceVariant) },
-                trailing = { Switch(checked = tileOn, onCheckedChange = onTileChange) },
-                onClick = { onTileChange(!tileOn) },
-            )
-        }
-        item {
+        item(key = "info") {
             Text(
                 "Both phones need SyncUp, with Bluetooth and Wi-Fi on. Files go straight from phone to phone — nothing is uploaded and no mobile data is used.",
                 fontSize = 12.5.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 12.dp),
             )
         }
-        if (QuickShare.history.isNotEmpty()) {
-            item { SectionHeader("Recent", Modifier.padding(start = 20.dp, end = 12.dp, top = 12.dp), action = "Clear", onAction = { QuickShare.clearHistory() }) }
-            items(QuickShare.history, key = { it.at }) { r ->
+        if (history.isNotEmpty()) {
+            item(key = "recent") { SectionHead("Recent", action = { HeadAction("Clear") { QuickShare.clearHistory() } }) }
+            itemsIndexed(history, key = { _, r -> r.at }) { i, r ->
+                val slice = Modifier.cardSlice(first = i == 0, last = i == history.lastIndex)
                 if (r.isText) {
-                    TextRecentRow(r, ago(r.at))
-                    return@items
+                    TextRecentRow(r, ago(r.at), slice)
+                    return@itemsIndexed
                 }
-                TonalRow(
+                ShareRow(
                     title = if (r.incoming) "Received from ${r.peer}" else "Sent to ${r.peer}",
                     subtitle = buildString {
                         append(if (r.count == 1) "1 file" else "${r.count} files")
@@ -483,11 +478,15 @@ private fun Home(
                         append(" · ${ago(r.at)}")
                         if (!r.ok) append(" · didn't finish")
                     },
+                    modifier = slice,
                     leading = {
-                        IconTile(
+                        ToolTile(
                             if (r.incoming) Icons.Rounded.ArrowDownward else Icons.Rounded.ArrowUpward,
-                            container = if (r.ok) cs.secondaryContainer else cs.errorContainer,
-                            content = if (r.ok) cs.onSecondaryContainer else cs.onErrorContainer,
+                            when {
+                                !r.ok -> ToolTint.RED
+                                r.incoming -> ToolTint.GREEN
+                                else -> ToolTint.BLUE
+                            },
                         )
                     },
                 )
@@ -497,19 +496,29 @@ private fun Home(
 }
 
 @Composable
-private fun ActionCard(icon: ImageVector, title: String, subtitle: String, color: Color, container: Color, modifier: Modifier, onClick: () -> Unit) {
+private fun ActionCard(icon: ImageVector, title: String, subtitle: String, tint: ToolTint, modifier: Modifier, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(22.dp)
     Column(
-        modifier.heightIn(min = 150.dp).clip(shape).background(cs.surfaceContainerLowest)
-            .border(1.dp, cs.outlineVariant, shape).clickable(onClick = onClick).padding(16.dp),
+        modifier.heightIn(min = 150.dp).appCard(CardShape).clickable(onClick = onClick).padding(14.dp),
     ) {
-        Box(Modifier.size(48.dp).clip(RoundedCornerShape(15.dp)).background(container), contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = color, modifier = Modifier.size(28.dp))
-        }
+        ToolTile(icon, tint)
         Spacer(Modifier.weight(1f).heightIn(min = 16.dp))
-        Text(title, fontSize = 17.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
-        Text(subtitle, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+        Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
+        Text(subtitle, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
+    }
+}
+
+/** One choice in the Send sheet: the icon on a soft blue tile, then the label. */
+@Composable
+private fun SheetOption(icon: ImageVector, title: String, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 60.dp).padding(horizontal = 24.dp, vertical = 8.dp),
+    ) {
+        ToolTile(icon, ToolTint.BLUE, size = 40.dp)
+        Spacer(Modifier.width(16.dp))
+        Text(title, fontSize = 15.sp, color = cs.onSurface)
     }
 }
 
@@ -518,17 +527,15 @@ private fun ActionCard(icon: ImageVector, title: String, subtitle: String, color
 private fun Searching(onChange: () -> Unit, onCancel: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val picked = QuickShare.picked
+    val nearby = QuickShare.nearby
     Column(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 16.dp)) {
+        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp)) {
             val text = QuickShare.outText
             if (QuickShare.textMode && text != null) {
-                item { TextOfferCard(text, QuickShare.outSecret, onChange) }
-            } else item {
-                Column(
-                    Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp))
-                        .background(cs.surfaceContainerLow).padding(vertical = 8.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 16.dp, end = 8.dp)) {
+                item(key = "what") { TextOfferCard(text, QuickShare.outSecret, onChange) }
+            } else item(key = "what") {
+                Column(Modifier.fillMaxWidth().appCard(CardShape).padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             "${if (picked.size == 1) "1 file" else "${picked.size} files"} · ${Files.size(picked.sumOf { it.size.coerceAtLeast(0) })}",
                             fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.weight(1f),
@@ -536,40 +543,48 @@ private fun Searching(onChange: () -> Unit, onCancel: () -> Unit) {
                         TextButton(onClick = onChange) { Text("Change") }
                     }
                     picked.take(3).forEach { p ->
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 8.dp, top = 5.dp, bottom = 5.dp)) {
                             Icon(kindIcon(p.name, p.mime), null, tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(10.dp))
                             Text(p.name, fontSize = 13.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                            if (p.size >= 0) Text(Files.size(p.size), fontSize = 12.sp, color = cs.onSurfaceVariant)
+                            if (p.size >= 0) Text(Files.size(p.size), fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp))
                         }
                     }
                     if (picked.size > 3) {
-                        Text("and ${picked.size - 3} more", fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(horizontal = 44.dp, vertical = 2.dp))
+                        Text("and ${picked.size - 3} more", fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 28.dp, top = 2.dp))
                     }
                 }
             }
-            item { SectionHeader("Nearby phones", Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp)) }
-            items(QuickShare.nearby, key = { it.endpointId }) { phone ->
-                TonalRow(
+            item(key = "head") { SectionHead("Nearby phones") }
+            itemsIndexed(nearby, key = { _, phone -> "p" + phone.endpointId }) { i, phone ->
+                ShareRow(
                     title = phone.name,
                     subtitle = "Tap to send",
+                    modifier = Modifier.cardSlice(first = i == 0, last = false),
                     leading = { Initial(phone.name) },
+                    trailing = { Icon(Icons.Rounded.ChevronRight, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp)) },
                     onClick = { QuickShare.sendTo(phone) },
                 )
             }
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp)) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            item(key = "looking") {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.cardSlice(first = nearby.isEmpty(), last = true).fillMaxWidth().heightIn(min = 60.dp)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                ) {
+                    Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.5.dp, trackColor = cs.outlineVariant)
+                    }
                     Spacer(Modifier.width(14.dp))
                     Text(
-                        if (QuickShare.nearby.isEmpty()) "Looking for phones… On the other phone, open Tools → SyncUp Share → Receive."
+                        if (nearby.isEmpty()) "Looking for phones… On the other phone, open Tools → SyncUp Share → Receive."
                         else "Still looking for more phones…",
                         fontSize = 13.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant,
                     )
                 }
             }
         }
-        BottomButtons { OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancel") } }
+        BottomButtons { OutlinePill("Cancel", Modifier.fillMaxWidth(), onCancel) }
     }
 }
 
@@ -577,24 +592,26 @@ private fun Searching(onChange: () -> Unit, onCancel: () -> Unit) {
 @Composable
 private fun Visible(onRename: () -> Unit, onStop: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val pulse = rememberInfiniteTransition(label = "pulse")
-    val scale by pulse.animateFloat(1f, 1.12f, infiniteRepeatable(tween(1100), RepeatMode.Reverse), label = "scale")
     Column(Modifier.fillMaxSize()) {
         Column(
             Modifier.weight(1f).fillMaxWidth().padding(horizontal = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Box(Modifier.size(132.dp).scale(scale).clip(CircleShape).background(cs.primaryContainer.copy(alpha = .5f)), contentAlignment = Alignment.Center) {
-                Box(Modifier.size(96.dp).clip(CircleShape).background(cs.primaryContainer), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.WifiTethering, null, tint = cs.onPrimaryContainer, modifier = Modifier.size(44.dp))
+            // Two soft green rings: this phone is out there, ready.
+            Box(Modifier.size(132.dp).clip(CircleShape).background(ToolTint.GREEN.tile.copy(alpha = .55f)), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(96.dp).clip(CircleShape).background(ToolTint.GREEN.tile), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.WifiTethering, null, tint = ToolTint.GREEN.icon, modifier = Modifier.size(44.dp))
                 }
             }
             Spacer(Modifier.height(28.dp))
             Text("Ready to receive", fontSize = 20.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
             Spacer(Modifier.height(6.dp))
             Text("Nearby phones see you as", fontSize = 14.sp, color = cs.onSurfaceVariant)
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onRename).padding(6.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = 6.dp).clip(RoundedCornerShape(50)).clickable(onClick = onRename).padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
                 Text(QuickShare.myName, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = cs.primary)
                 Spacer(Modifier.width(6.dp))
                 Icon(Icons.Rounded.Edit, "Change name", tint = cs.primary, modifier = Modifier.size(16.dp))
@@ -605,7 +622,7 @@ private fun Visible(onRename: () -> Unit, onStop: () -> Unit) {
                 fontSize = 13.sp, lineHeight = 19.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center,
             )
         }
-        BottomButtons { OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) { Text("Stop receiving") } }
+        BottomButtons { OutlinePill("Stop receiving", Modifier.fillMaxWidth(), onStop) }
     }
 }
 
@@ -619,7 +636,7 @@ private fun Confirm(onAccept: () -> Unit, onDecline: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Initial(QuickShare.peerName, size = 72)
+            Initial(QuickShare.peerName, size = 76, soft = true)
             Spacer(Modifier.height(20.dp))
             Text(QuickShare.peerName, fontSize = 20.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, textAlign = TextAlign.Center)
             Text(
@@ -634,12 +651,12 @@ private fun Confirm(onAccept: () -> Unit, onDecline: () -> Unit) {
             )
             Spacer(Modifier.height(28.dp))
             CodeBox(QuickShare.code)
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
             Text("Check the other phone shows the same code.", fontSize = 13.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center)
         }
         BottomButtons {
-            OutlinedButton(onClick = onDecline, modifier = Modifier.weight(1f)) { Text("Decline") }
-            Button(onClick = onAccept, modifier = Modifier.weight(1f)) { Text("Accept") }
+            OutlinePill("Decline", Modifier.weight(1f), onDecline)
+            Button(onClick = onAccept, modifier = Modifier.weight(1f).height(48.dp)) { Text("Accept", fontSize = 15.sp) }
         }
     }
 }
@@ -655,7 +672,7 @@ private fun Connecting(onCancel: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            CircularProgressIndicator(modifier = Modifier.size(48.dp), strokeWidth = 3.dp)
+            CircularProgressIndicator(modifier = Modifier.size(48.dp), strokeWidth = 3.dp, trackColor = cs.outlineVariant)
             Spacer(Modifier.height(24.dp))
             Text(
                 if (sending) "Waiting for ${QuickShare.peerName} to accept" else "Connecting to ${QuickShare.peerName}…",
@@ -664,11 +681,11 @@ private fun Connecting(onCancel: () -> Unit) {
             if (QuickShare.code.isNotBlank()) {
                 Spacer(Modifier.height(24.dp))
                 CodeBox(QuickShare.code)
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(12.dp))
                 Text("Check the other phone shows the same code.", fontSize = 13.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center)
             }
         }
-        BottomButtons { OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancel") } }
+        BottomButtons { OutlinePill("Cancel", Modifier.fillMaxWidth(), onCancel) }
     }
 }
 
@@ -687,32 +704,33 @@ private fun Transferring(onCancel: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                CircularProgressIndicator(modifier = Modifier.size(48.dp), strokeWidth = 3.dp)
+                CircularProgressIndicator(modifier = Modifier.size(48.dp), strokeWidth = 3.dp, trackColor = cs.outlineVariant)
                 Spacer(Modifier.height(24.dp))
                 Text(
                     if (sending) "Sending text to ${QuickShare.peerName}…" else "Receiving text from ${QuickShare.peerName}…",
                     fontSize = 18.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, textAlign = TextAlign.Center,
                 )
             }
-            BottomButtons { OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancel") } }
+            BottomButtons { OutlinePill("Cancel", Modifier.fillMaxWidth(), onCancel) }
         }
         return
     }
+    val files = QuickShare.files
     Column(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 16.dp)) {
-            item {
-                Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp)) {
+            item(key = "progress") {
+                Column(Modifier.fillMaxWidth().appCard(CardShape).padding(16.dp)) {
                     Text(
                         if (sending) "Sending to ${QuickShare.peerName}" else "Receiving from ${QuickShare.peerName}",
-                        fontSize = 18.sp, fontWeight = FontWeight.Medium, color = cs.onSurface,
+                        fontSize = 17.sp, fontWeight = FontWeight.Medium, color = cs.onSurface,
                     )
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(14.dp))
                     LinearProgressIndicator(
                         progress = { if (total > 0) (done.toFloat() / total).coerceIn(0f, 1f) else 0f },
-                        strokeCap = StrokeCap.Round,
+                        strokeCap = StrokeCap.Round, trackColor = cs.outlineVariant,
                         modifier = Modifier.fillMaxWidth().height(8.dp),
                     )
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(10.dp))
                     Text(
                         buildString {
                             append(if (total > 0) "${Files.size(done)} of ${Files.size(total)}" else "Starting…")
@@ -725,22 +743,25 @@ private fun Transferring(onCancel: () -> Unit) {
                     )
                 }
             }
-            items(QuickShare.files, key = { it.payloadId }) { f -> FileRow(f) }
+            item(key = "gap") { Spacer(Modifier.height(12.dp)) }
+            itemsIndexed(files, key = { _, f -> f.payloadId }) { i, f ->
+                FileRow(f, Modifier.cardSlice(first = i == 0, last = i == files.lastIndex))
+            }
         }
-        BottomButtons { OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancel") } }
+        BottomButtons { OutlinePill("Cancel", Modifier.fillMaxWidth(), onCancel) }
     }
 }
 
 @Composable
-private fun FileRow(f: QsFile, onOpen: (() -> Unit)? = null) {
+private fun FileRow(f: QsFile, modifier: Modifier, onOpen: (() -> Unit)? = null) {
     val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth()
             .then(if (onOpen != null) Modifier.clickable(onClick = onOpen) else Modifier)
-            .padding(horizontal = 20.dp, vertical = 8.dp),
+            .heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
-        IconTile(kindIcon(f.name, f.mime), container = cs.surfaceContainerHigh, content = cs.onSurfaceVariant)
+        ToolTile(kindIcon(f.name, f.mime), ToolTint.SLATE, size = 40.dp)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(f.name, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -748,8 +769,8 @@ private fun FileRow(f: QsFile, onOpen: (() -> Unit)? = null) {
                 QsFileState.MOVING -> {
                     LinearProgressIndicator(
                         progress = { if (f.size > 0) (f.done.toFloat() / f.size).coerceIn(0f, 1f) else 0f },
-                        strokeCap = StrokeCap.Round,
-                        modifier = Modifier.padding(top = 6.dp).fillMaxWidth().height(4.dp),
+                        strokeCap = StrokeCap.Round, trackColor = cs.outlineVariant,
+                        modifier = Modifier.padding(top = 7.dp).fillMaxWidth().height(4.dp),
                     )
                 }
                 else -> Text(
@@ -760,13 +781,13 @@ private fun FileRow(f: QsFile, onOpen: (() -> Unit)? = null) {
                         QsFileState.FAILED -> "Didn't arrive"
                         else -> ""
                     },
-                    fontSize = 12.sp, color = if (f.state == QsFileState.FAILED) cs.error else cs.onSurfaceVariant,
+                    fontSize = 12.5.sp, color = if (f.state == QsFileState.FAILED) cs.error else cs.onSurfaceVariant,
                 )
             }
         }
         Spacer(Modifier.width(8.dp))
         when (f.state) {
-            QsFileState.DONE -> Icon(Icons.Rounded.CheckCircle, "Done", tint = cs.primary, modifier = Modifier.size(20.dp))
+            QsFileState.DONE -> Icon(Icons.Rounded.CheckCircle, "Done", tint = cs.success, modifier = Modifier.size(20.dp))
             QsFileState.FAILED -> Icon(Icons.Rounded.Close, "Failed", tint = cs.error, modifier = Modifier.size(20.dp))
             QsFileState.SAVING -> CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
             else -> Unit
@@ -779,13 +800,14 @@ private fun FileRow(f: QsFile, onOpen: (() -> Unit)? = null) {
 private fun Finished(onOpen: (QsFile) -> Unit, onDownloads: () -> Unit, onAgain: () -> Unit, onDone: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val sending = QuickShare.role == QsRole.SEND
-    val n = QuickShare.files.size
+    val list = QuickShare.files
+    val n = list.size
     val files = if (n == 1) "1 file" else "$n files"
     Column(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 16.dp)) {
-            item {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Rounded.CheckCircle, null, tint = cs.primary, modifier = Modifier.size(72.dp))
+        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+            item(key = "done") {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    DoneMark()
                     Spacer(Modifier.height(16.dp))
                     Text(
                         if (sending) "Sent $files to ${QuickShare.peerName}" else "Received $files from ${QuickShare.peerName}",
@@ -796,17 +818,20 @@ private fun Finished(onOpen: (QsFile) -> Unit, onDownloads: () -> Unit, onAgain:
                     }
                 }
             }
-            items(QuickShare.files, key = { it.payloadId }) { f ->
-                FileRow(f, onOpen = if (!sending && f.savedUri != null) ({ onOpen(f) }) else null)
+            itemsIndexed(list, key = { _, f -> f.payloadId }) { i, f ->
+                FileRow(
+                    f, Modifier.cardSlice(first = i == 0, last = i == list.lastIndex),
+                    onOpen = if (!sending && f.savedUri != null) ({ onOpen(f) }) else null,
+                )
             }
         }
         BottomButtons {
             if (sending) {
-                OutlinedButton(onClick = onAgain, modifier = Modifier.weight(1f)) { Text("Send more") }
+                OutlinePill("Send more", Modifier.weight(1f), onAgain)
             } else {
-                OutlinedButton(onClick = onDownloads, modifier = Modifier.weight(1f)) { Text("Downloads") }
+                OutlinePill("Downloads", Modifier.weight(1f), onDownloads)
             }
-            Button(onClick = onDone, modifier = Modifier.weight(1f)) { Text("Done") }
+            Button(onClick = onDone, modifier = Modifier.weight(1f).height(48.dp)) { Text("Done", fontSize = 15.sp) }
         }
     }
 }
@@ -821,7 +846,9 @@ private fun Failed(onRetry: () -> Unit, onDone: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Icon(Icons.Rounded.ErrorOutline, null, tint = cs.error, modifier = Modifier.size(64.dp))
+            Box(Modifier.size(76.dp).clip(CircleShape).background(ToolTint.RED.tile), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.ErrorOutline, null, tint = ToolTint.RED.icon, modifier = Modifier.size(38.dp))
+            }
             Spacer(Modifier.height(16.dp))
             Text(
                 QuickShare.error ?: "Something went wrong.",
@@ -829,40 +856,114 @@ private fun Failed(onRetry: () -> Unit, onDone: () -> Unit) {
             )
         }
         BottomButtons {
-            OutlinedButton(onClick = onRetry, modifier = Modifier.weight(1f)) { Text(if (sending) "Try again" else "Receive again") }
-            Button(onClick = onDone, modifier = Modifier.weight(1f)) { Text("Done") }
+            OutlinePill(if (sending) "Try again" else "Receive again", Modifier.weight(1f), onRetry)
+            Button(onClick = onDone, modifier = Modifier.weight(1f).height(48.dp)) { Text("Done", fontSize = 15.sp) }
         }
     }
 }
 
 // ============================================================================ bits
+/**
+ * A row inside a card (Recent, nearby phones): tile, title and one line, then whatever sits on the
+ * right. Put it in a [cardSlice] or an appCard.
+ */
 @Composable
-private fun BottomButtons(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+internal fun ShareRow(
+    title: String,
+    subtitle: String?,
+    modifier: Modifier = Modifier,
+    leading: @Composable () -> Unit,
+    trailing: (@Composable RowScope.() -> Unit)? = null,
+    endPadding: Dp = 16.dp,
+    onClick: (() -> Unit)? = null,
+) {
+    val cs = MaterialTheme.colorScheme
     Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .heightIn(min = 64.dp).padding(start = 16.dp, end = endPadding, top = 10.dp, bottom = 10.dp),
+    ) {
+        leading()
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (!subtitle.isNullOrBlank()) {
+                Text(
+                    subtitle, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+        if (trailing != null) {
+            Spacer(Modifier.width(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, content = trailing)
+        }
+    }
+}
+
+/** A small text action at the end of a section heading ("Clear"). */
+@Composable
+private fun HeadAction(label: String, onClick: () -> Unit) {
+    Text(
+        label, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 4.dp),
+    )
+}
+
+/** The page's buttons, at the foot of the screen. */
+@Composable
+private fun BottomButtons(content: @Composable RowScope.() -> Unit) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp),
         content = content,
     )
 }
 
+/** An outlined pill on the card colour (Cancel, Decline, Send more). */
+@Composable
+internal fun OutlinePill(label: String, modifier: Modifier, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    OutlinedButton(
+        onClick = onClick,
+        border = BorderStroke(1.dp, cs.outlineVariant),
+        colors = ButtonDefaults.outlinedButtonColors(containerColor = cs.surfaceContainerLowest, contentColor = cs.onSurface),
+        modifier = modifier.height(48.dp),
+    ) { Text(label, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+}
+
+/** A tick on a soft green circle: it went through. */
+@Composable
+internal fun DoneMark() {
+    Box(Modifier.size(76.dp).clip(CircleShape).background(ToolTint.GREEN.tile), contentAlignment = Alignment.Center) {
+        Icon(Icons.Rounded.Check, null, tint = ToolTint.GREEN.icon, modifier = Modifier.size(40.dp))
+    }
+}
+
+/** The code both phones show, on a white card. */
 @Composable
 private fun CodeBox(code: String) {
     val cs = MaterialTheme.colorScheme
     Box(
-        Modifier.clip(RoundedCornerShape(16.dp)).background(cs.surfaceContainerHigh).padding(horizontal = 28.dp, vertical = 12.dp),
+        Modifier.appCard(RoundedCornerShape(20.dp)).padding(start = 36.dp, end = 28.dp, top = 12.dp, bottom = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(code.toCharArray().joinToString(" "), fontSize = 30.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp, color = cs.onSurface)
+        Text(code, fontSize = 30.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 8.sp, color = cs.onSurface)
     }
 }
 
+/** A round first-letter avatar: blue, or soft blue for the big one on the accept screen. */
 @Composable
-private fun Initial(name: String, size: Int = 40) {
+private fun Initial(name: String, size: Int = 36, soft: Boolean = false) {
     val cs = MaterialTheme.colorScheme
-    Box(Modifier.size(size.dp).clip(CircleShape).background(cs.primaryContainer), contentAlignment = Alignment.Center) {
+    Box(
+        Modifier.size(size.dp).clip(CircleShape).background(if (soft) ToolTint.BLUE.tile else cs.primary),
+        contentAlignment = Alignment.Center,
+    ) {
         Text(
             name.trim().take(1).uppercase().ifBlank { "?" },
-            fontSize = (size * 0.42f).sp, fontWeight = FontWeight.Medium, color = cs.onPrimaryContainer,
+            fontSize = (size * 0.4f).sp, fontWeight = FontWeight.Medium, color = if (soft) ToolTint.BLUE.icon else cs.onPrimary,
         )
     }
 }

@@ -1,6 +1,7 @@
 package com.agani.syncup.video
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,16 +20,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.MoreVert
@@ -69,7 +69,9 @@ import coil.compose.SubcomposeAsyncImage
 import com.agani.syncup.browser.ui.BarIcon
 import com.agani.syncup.browser.ui.EmptyState
 import com.agani.syncup.browser.ui.PillButton
-import com.agani.syncup.browser.ui.SyncPill
+import com.agani.syncup.music.ToolTint
+import com.agani.syncup.music.ToolTopBar
+import com.agani.syncup.ui.theme.appCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -140,27 +142,27 @@ fun ChannelBrowserScreen(
         if (categoryId == CAT_FAVORITES && url !in favoriteUrls && categoryChannels.size <= 1) categoryId = CAT_ALL
     }
 
-    Box(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
+    Box(Modifier.fillMaxSize().background(cs.background).windowInsetsPadding(WindowInsets.safeDrawing)) {
         Column(Modifier.fillMaxSize()) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
-                BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
-                Column(Modifier.weight(1f).padding(start = 4.dp)) {
-                    Text(title.ifBlank { "Channels" }, fontSize = 20.sp, lineHeight = 24.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("$totalCount channels", fontSize = 12.sp, color = cs.onSurfaceVariant)
-                }
+            ToolTopBar(title.ifBlank { "Channels" }, onBack, subtitle = "$totalCount channels") {
                 Box {
-                    BarIcon(Icons.Rounded.MoreVert, "More", tint = cs.onSurfaceVariant) { showMenu = true }
+                    BarIcon(Icons.Rounded.MoreVert, "More", tint = cs.onSurface) { showMenu = true }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                         DropdownMenuItem(text = { Text("Update link") }, onClick = { showMenu = false; showUpdateDialog = true })
                         DropdownMenuItem(text = { Text("Remove this list", color = cs.error) }, onClick = { showMenu = false; onRemoved() })
                     }
                 }
             }
-            SyncPill(
-                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-                height = 48.dp, focused = query.isNotEmpty(),
+            // Search: a white pill; a blue ring while there's a search.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp).fillMaxWidth().height(50.dp)
+                    .appCard(RoundedCornerShape(50))
+                    .then(if (query.isNotEmpty()) Modifier.border(2.dp, cs.primary, RoundedCornerShape(50)) else Modifier)
+                    .padding(start = 16.dp, end = 5.dp),
             ) {
-                Icon(Icons.Rounded.Search, null, tint = cs.onSurfaceVariant)
+                Icon(Icons.Rounded.Search, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
                 BasicTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -187,9 +189,9 @@ fun ChannelBrowserScreen(
                 if (favoriteUrls.isNotEmpty()) {
                     item(key = "favorites") {
                         TvChip(
-                            "★ Favorites",
+                            "Favorites",
                             categories.flatMap { it.channels }.count { it.url in favoriteUrls },
-                            selected = categoryId == CAT_FAVORITES,
+                            selected = categoryId == CAT_FAVORITES, star = true,
                         ) { categoryId = CAT_FAVORITES }
                     }
                 }
@@ -199,7 +201,7 @@ fun ChannelBrowserScreen(
                 }
             }
             if (languages.isNotEmpty()) {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp)) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp)) {
                     item(key = "all-lang") { TvChip("All languages", categoryChannels.size, selected = language == null) { language = null } }
                     items(languages, key = { it }) { lang ->
                         TvChip(lang, languageCounts.getValue(lang), selected = lang == language) { language = lang }
@@ -217,15 +219,13 @@ fun ChannelBrowserScreen(
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
-                    contentPadding = PaddingValues(horizontal = 11.dp, vertical = 5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 24.dp),
                     modifier = Modifier.weight(1f),
                 ) {
                     gridItems(shown, key = { it.id }) { ch ->
-                        TvChannelCard(
-                            ch, isFavorite = ch.url in favoriteUrls,
-                            onToggleFavorite = { toggleFavorite(ch.url) },
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 5.dp),
-                        ) { onPlay(ch) }
+                        TvChannelCard(ch, isFavorite = ch.url in favoriteUrls, onToggleFavorite = { toggleFavorite(ch.url) }) { onPlay(ch) }
                     }
                 }
             }
@@ -281,53 +281,71 @@ fun ChannelBrowserScreen(
     }
 }
 
+/** A filter pill: the chosen one soft blue, the rest white with a thin line; the count in a lighter tone. */
 @Composable
-private fun TvChip(label: String, count: Int, selected: Boolean, onClick: () -> Unit) {
+private fun TvChip(label: String, count: Int, selected: Boolean, star: Boolean = false, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(17.dp)
+    val fg = if (selected) cs.onPrimaryContainer else cs.onSurface
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.height(34.dp).clip(RoundedCornerShape(17.dp))
-            .background(if (selected) cs.primaryContainer else cs.surfaceContainerHigh)
+        modifier = Modifier.height(34.dp).clip(shape)
+            .then(if (selected) Modifier.background(cs.primaryContainer) else Modifier.background(cs.surfaceContainerLowest).border(1.dp, cs.outlineVariant, shape))
             .clickable(onClick = onClick).padding(horizontal = 14.dp),
     ) {
-        Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant)
-        Text(
-            " $count", fontSize = 12.sp,
-            color = (if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant).copy(alpha = .6f),
-        )
+        if (star) {
+            Icon(Icons.Rounded.Star, null, tint = fg, modifier = Modifier.size(15.dp))
+            Spacer(Modifier.width(5.dp))
+        }
+        Text(label, fontSize = 13.5.sp, color = fg)
+        Text(" $count", fontSize = 12.sp, color = fg.copy(alpha = .6f))
     }
 }
+
+/** Each channel's tile colour, picked from its name (the same every time). */
+private val TILE_TINTS = listOf(
+    ToolTint.RED, ToolTint.AMBER, ToolTint.VIOLET, ToolTint.GREEN, ToolTint.ROSE, ToolTint.ORANGE, ToolTint.LIME,
+    ToolTint.PINK, ToolTint.SKY, ToolTint.TEAL, ToolTint.INDIGO, ToolTint.CYAN, ToolTint.SLATE,
+)
+
+/** "City News 24" → "CN". */
+private fun initials(name: String): String =
+    name.split(' ', '-', '_').filter { w -> w.firstOrNull()?.isLetterOrDigit() == true }.take(2).joinToString("") { it.take(1) }.uppercase().ifBlank { "TV" }
 
 @Composable
 private fun TvChannelCard(ch: TvChannel, isFavorite: Boolean, onToggleFavorite: () -> Unit, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    Column(modifier.clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick)) {
+    val tint = TILE_TINTS[(ch.title.hashCode() and 0x7fffffff) % TILE_TINTS.size]
+    Column(modifier.clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick)) {
         Box(
-            Modifier.fillMaxWidth().aspectRatio(1.35f).clip(RoundedCornerShape(14.dp)).background(cs.surfaceContainerHighest),
+            Modifier.fillMaxWidth().aspectRatio(1.35f).clip(RoundedCornerShape(16.dp)).background(tint.tile),
             contentAlignment = Alignment.Center,
         ) {
+            val letters: @Composable () -> Unit = {
+                Text(initials(ch.title), fontSize = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = .5.sp, color = tint.icon)
+            }
             if (ch.logo.isBlank()) {
-                Icon(Icons.Rounded.LiveTv, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(28.dp))
+                letters()
             } else {
                 SubcomposeAsyncImage(
                     model = ch.logo, contentDescription = null, contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize().padding(14.dp),
                     loading = { Box(Modifier.fillMaxSize()) },
-                    error = { Icon(Icons.Rounded.LiveTv, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(28.dp)) },
+                    error = { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { letters() } },
                 )
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.align(Alignment.TopStart).padding(6.dp).clip(RoundedCornerShape(5.dp))
+                modifier = Modifier.align(Alignment.TopStart).padding(6.dp).clip(RoundedCornerShape(6.dp))
                     .background(Color(0xFFDC2626)).padding(horizontal = 5.dp, vertical = 2.dp),
             ) {
                 Box(Modifier.size(5.dp).clip(CircleShape).background(Color.White))
                 Spacer(Modifier.width(3.dp))
-                Text("LIVE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White, letterSpacing = .3.sp)
+                Text("LIVE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White, letterSpacing = .4.sp)
             }
             Box(
                 Modifier.align(Alignment.TopEnd).padding(4.dp).size(26.dp).clip(CircleShape)
-                    .background(Color.Black.copy(alpha = .4f)).clickable(onClick = onToggleFavorite),
+                    .background(Color(0x610F172A)).clickable(onClick = onToggleFavorite),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
@@ -337,6 +355,6 @@ private fun TvChannelCard(ch: TvChannel, isFavorite: Boolean, onToggleFavorite: 
                 )
             }
         }
-        Text(ch.title, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+        Text(ch.title, fontSize = 12.5.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
     }
 }

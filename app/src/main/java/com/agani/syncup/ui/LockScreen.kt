@@ -34,6 +34,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.agani.syncup.ui.theme.dialogSurface
 
 @Composable
 fun LockScreen(
@@ -55,13 +57,13 @@ fun LockScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(32.dp),
+                .padding(horizontal = 24.dp, vertical = 32.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Box(
                 modifier = Modifier
-                    .size(72.dp)
+                    .size(76.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center,
@@ -70,19 +72,22 @@ fun LockScreen(
                     Icons.Rounded.Lock,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(34.dp),
+                    modifier = Modifier.size(32.dp),
                 )
             }
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(20.dp))
             Text(
                 "SyncUp is locked",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
+                fontSize = 24.sp,
+                lineHeight = 30.sp,
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onBackground,
             )
+            Spacer(Modifier.height(6.dp))
             Text(
                 "Enter your 4-digit PIN",
-                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 14.5.sp,
+                lineHeight = 21.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
@@ -108,35 +113,38 @@ fun LockScreen(
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .widthIn(max = 320.dp),
+                    .widthIn(max = 340.dp),
             )
             if (error) {
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "Incorrect PIN",
                     color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium,
+                    fontSize = 14.sp,
                 )
             }
             if (biometricEnabled) {
-                Spacer(Modifier.height(10.dp))
-                TextButton(onClick = onBiometric) {
+                Spacer(Modifier.height(14.dp))
+                TextButton(onClick = onBiometric, modifier = Modifier.height(46.dp)) {
                     Icon(Icons.Rounded.Fingerprint, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.size(8.dp))
-                    Text("Use biometric")
+                    Text("Use biometric", fontSize = 15.sp, fontWeight = FontWeight.Medium)
                 }
             }
             if (attempts >= 2) {
-                Spacer(Modifier.height(4.dp))
-                TextButton(onClick = { showForgot = true }) { Text("Forgot PIN?") }
+                Spacer(Modifier.height(if (biometricEnabled) 0.dp else 14.dp))
+                TextButton(onClick = { showForgot = true }, modifier = Modifier.height(46.dp)) {
+                    Text("Forgot PIN?", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                }
             }
         }
     }
 
     if (showForgot) {
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.dialogSurface,
             onDismissRequest = { showForgot = false },
-            title = { Text("Forgot PIN?", fontWeight = FontWeight.Bold) },
+            title = { Text("Forgot PIN?") },
             text = {
                 Text(
                     "You'll be signed out and can sign in again with your email and password. " +

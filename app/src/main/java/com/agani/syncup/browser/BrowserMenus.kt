@@ -47,6 +47,7 @@ import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -65,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.ui.EmptyState
@@ -73,8 +75,6 @@ import com.agani.syncup.browser.ui.IconTile
 import com.agani.syncup.browser.ui.MenuRow
 import com.agani.syncup.browser.ui.SectionTheme
 import com.agani.syncup.browser.ui.SheetDivider
-import com.agani.syncup.browser.ui.SheetHeader
-import com.agani.syncup.browser.ui.TonalRow
 import com.agani.syncup.browser.ui.sectionIcon
 import com.agani.syncup.browser.ui.sectionName
 import com.agani.syncup.ui.theme.success
@@ -95,7 +95,7 @@ internal fun SectionSheet(
     onSignIn: () -> Unit,
 ) {
     Column(Modifier.padding(bottom = 16.dp)) {
-        SheetHeader("Switch section")
+        BrowserSheetTitle("Switch section")
         SectionChoice(
             Section.NORMAL,
             if (signedIn) "Your browsing · synced to your account" else "Your browsing on this phone",
@@ -115,8 +115,13 @@ internal fun SectionSheet(
             onPick(Section.INCOGNITO)
         }
         if (!signedIn) {
-            FilledTonalButton(onClick = onSignIn, modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 12.dp).height(48.dp)) {
-                Text("Sign in to SyncUp")
+            val cs = MaterialTheme.colorScheme
+            FilledTonalButton(
+                onClick = onSignIn,
+                colors = ButtonDefaults.filledTonalButtonColors(containerColor = cs.primaryContainer, contentColor = cs.onPrimaryContainer),
+                modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 12.dp).height(46.dp),
+            ) {
+                Text("Sign in to SyncUp", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             }
             Text(
                 "Signing in syncs your bookmarks, history and tabs",
@@ -133,38 +138,49 @@ private fun SectionChoice(section: Section, subtitle: String, count: Int, select
     // section's accent — Normal blue, SyncUp teal, Incognito violet — in the sheet's lightness.
     MaterialTheme(colorScheme = accentOn(MaterialTheme.colorScheme, section)) {
         val cs = MaterialTheme.colorScheme
-        TonalRow(
-            title = sectionName(section),
-            subtitle = subtitle,
-            selected = selected,
-            leading = {
-                if (selected) IconTile(sectionIcon(section), container = cs.primary, content = cs.onPrimary)
-                else IconTile(sectionIcon(section))
-            },
-            trailing = {
-                if (count > 0 && !locked) {
-                    Box(
-                        Modifier.size(24.dp).clip(RoundedCornerShape(8.dp)).background(Color.Transparent),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("$count", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant)
-                    }
-                    Spacer(Modifier.width(4.dp))
-                }
-                Icon(
-                    when {
-                        locked -> Icons.Rounded.Lock
-                        selected -> Icons.Rounded.Check
-                        else -> Icons.AutoMirrored.Rounded.ArrowForward
-                    },
-                    null,
-                    tint = if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp).alpha(if (locked || selected) 1f else 0f),
+        // The section in use is a soft pill; the others are plain rows with their section's soft tile.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 12.dp, end = 12.dp, bottom = 4.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(if (selected) cs.primaryContainer else Color.Transparent)
+                .clickable(onClick = onClick)
+                .padding(12.dp),
+        ) {
+            if (selected) IconTile(sectionIcon(section), container = cs.primary, content = cs.onPrimary, size = 42.dp)
+            else IconTile(sectionIcon(section), size = 42.dp)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    sectionName(section), fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium,
+                    color = if (selected) cs.onPrimaryContainer else cs.onSurface,
                 )
-                Spacer(Modifier.width(8.dp))
-            },
-            onClick = onClick,
-        )
+                Text(
+                    subtitle, fontSize = 12.5.sp, lineHeight = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    color = if (selected) cs.onPrimaryContainer.copy(alpha = .85f) else cs.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            if (count > 0 && !locked) {
+                Text(
+                    "$count", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold,
+                    color = if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant, modifier = Modifier.padding(horizontal = 6.dp),
+                )
+            }
+            Icon(
+                when {
+                    locked -> Icons.Rounded.Lock
+                    selected -> Icons.Rounded.Check
+                    else -> Icons.AutoMirrored.Rounded.ArrowForward
+                },
+                null,
+                tint = if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant,
+                modifier = Modifier.size(18.dp).alpha(if (locked || selected) 1f else 0f),
+            )
+            Spacer(Modifier.width(4.dp))
+        }
     }
 }
 
@@ -190,7 +206,7 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 12.dp)) {
         // SyncUp's other places, from anywhere in the browser.
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             HubButton(Icons.Rounded.Home, "Home", Modifier.weight(1f)) { onAction(MenuAction.HOME) }
             HubButton(Icons.Rounded.GridView, "Tools", Modifier.weight(1f), busy = com.agani.syncup.tools.toolsStatus() != null) { onAction(MenuAction.TOOLS) }
             HubButton(Icons.Rounded.Person, "You", Modifier.weight(1f)) { onAction(MenuAction.YOU) }
@@ -274,12 +290,13 @@ private fun AdsRow(text: String, action: String, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).height(52.dp).padding(horizontal = 24.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).height(52.dp).padding(start = 24.dp, end = 20.dp),
     ) {
         Icon(Icons.Rounded.Shield, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(22.dp))
-        Spacer(Modifier.width(18.dp))
-        Text(text, fontSize = 15.sp, letterSpacing = .1.sp, color = cs.onSurface, modifier = Modifier.weight(1f), maxLines = 1)
-        Text(action, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.primary)
+        Spacer(Modifier.width(14.dp))
+        Text(text, fontSize = 14.sp, color = cs.onSurface, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.width(8.dp))
+        Text(action, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = cs.primary)
     }
 }
 
@@ -290,19 +307,19 @@ private fun RowScope.QuickAction(icon: ImageVector, label: String, enabled: Bool
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .weight(1f)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(16.dp))
             .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 6.dp)
             .alpha(if (enabled) 1f else .38f),
     ) {
         Box(
-            Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(if (on) cs.primaryContainer else cs.surfaceContainerHigh),
+            Modifier.size(52.dp).clip(CircleShape).background(if (on) cs.primaryContainer else cs.field),
             contentAlignment = Alignment.Center,
         ) {
             Icon(icon, label, tint = if (on) cs.onPrimaryContainer else cs.onSurface)
         }
         Spacer(Modifier.height(6.dp))
-        Text(label, fontSize = 12.sp, letterSpacing = .3.sp, color = cs.onSurface)
+        Text(label, fontSize = 12.sp, color = cs.onSurface)
     }
 }
 
@@ -331,7 +348,7 @@ internal fun WorkInfoSheet(tab: BrowserTab, onReload: () -> Unit, onSearchNormal
                 .padding(start = 20.dp, end = 20.dp, bottom = 8.dp)
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(cs.surfaceContainerLowest)
+                .background(cs.field)
                 .padding(14.dp),
         ) {
             Icon(if (tab.isMasked) Icons.Rounded.VisibilityOff else SyncUpMark, null, tint = cs.primary, modifier = Modifier.size(20.dp))
@@ -359,19 +376,19 @@ internal fun ErrorPage(message: String, onRetry: () -> Unit) {
     }
 }
 
-/** Home, Tools or You: a big tonal button at the top of the browser's ⋮ menu. [busy]: something runs inside. */
+/** Home, Tools or You: a big soft button at the top of the browser's ⋮ menu. [busy]: something runs inside. */
 @Composable
 private fun HubButton(icon: ImageVector, label: String, modifier: Modifier, busy: Boolean = false, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
-        modifier = modifier.height(64.dp).clip(RoundedCornerShape(18.dp)).background(cs.secondaryContainer).clickable(onClick = onClick),
+        modifier = modifier.height(64.dp).clip(RoundedCornerShape(22.dp)).background(cs.primaryContainer).clickable(onClick = onClick),
     ) {
         Box {
-            Icon(icon, null, tint = cs.onSecondaryContainer, modifier = Modifier.size(22.dp))
+            Icon(icon, null, tint = cs.onPrimaryContainer, modifier = Modifier.size(22.dp))
             if (busy) Box(Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-2).dp).size(8.dp).clip(CircleShape).background(cs.primary))
         }
-        Text(label, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = cs.onSecondaryContainer, modifier = Modifier.padding(top = 4.dp))
+        Text(label, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = cs.onPrimaryContainer, modifier = Modifier.padding(top = 4.dp))
     }
 }

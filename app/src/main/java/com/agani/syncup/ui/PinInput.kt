@@ -63,19 +63,19 @@ fun PinInput(
                 repeat(PIN_LENGTH) { index ->
                     val filled = index < value.length
                     val active = index == value.length
+                    // v7: soft grey boxes with a thin line; the box being typed in is outlined blue.
                     val borderColor = when {
                         isError -> MaterialTheme.colorScheme.error
                         active -> MaterialTheme.colorScheme.primary
-                        filled -> MaterialTheme.colorScheme.outline
                         else -> MaterialTheme.colorScheme.outlineVariant
                     }
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .height(60.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .border(2.dp, borderColor, RoundedCornerShape(14.dp)),
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainer)
+                            .border(2.dp, borderColor, RoundedCornerShape(16.dp)),
                         contentAlignment = Alignment.Center,
                     ) {
                         if (filled) {

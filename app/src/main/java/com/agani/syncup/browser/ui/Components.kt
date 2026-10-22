@@ -120,12 +120,6 @@ fun sectionScheme(section: Section): ColorScheme {
     }
 }
 
-/**
- * The browser's bars — address bar, find bar, bottom bar — and the system bars next to them: the
- * surface in light, one tone up in dark, black and Incognito so a bar reads as a bar, not a hole.
- */
-val ColorScheme.chrome: Color get() = if (isLight) surface else surfaceContainer
-
 /** The SyncUp mark (the app's two-arrow logo): the icon of the SyncUp section — links SyncUp provides. */
 val SyncUpMark: ImageVector
     @Composable get() = ImageVector.vectorResource(R.drawable.ic_syncup_mark)
@@ -193,8 +187,10 @@ fun PillButton(icon: ImageVector, desc: String, size: Dp = 34.dp, tint: Color = 
 @Composable
 fun SectionKey(section: Section, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) {
     val cs = MaterialTheme.colorScheme
-    val bg by animateColorAsState(cs.primaryContainer, tween(350), label = "key")
-    val fg by animateColorAsState(cs.primary, tween(350), label = "keyIcon")
+    // v7: Normal's key is plain grey; SyncUp and Incognito keep their soft accent.
+    val normal = section == Section.NORMAL
+    val bg by animateColorAsState(if (normal) cs.surfaceContainer else cs.primaryContainer, tween(200), label = "key")
+    val fg by animateColorAsState(if (normal) cs.onSurface else cs.primary, tween(200), label = "keyIcon")
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier

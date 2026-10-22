@@ -67,13 +67,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.agani.syncup.browser.ui.ProgressLine
 import com.agani.syncup.browser.ui.SectionTheme
 import com.agani.syncup.browser.ui.sectionScheme
-import com.agani.syncup.browser.ui.chrome
 import com.agani.syncup.browser.ui.setBarIcons
 import com.agani.syncup.data.AnnouncementDto
 import com.agani.syncup.data.LoginMode
 import com.agani.syncup.sync.BrowserSync
 import com.agani.syncup.data.UrlItem
 import com.agani.syncup.data.User
+import com.agani.syncup.ui.theme.isLight
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -314,13 +314,13 @@ fun BrowserScreen(
         val topTarget = when {
             showTabs -> switcherColors.surface
             siteAtTop -> pageColor ?: cs.surface
-            onPage && !editing -> cs.chrome
+            onPage && !editing -> cs.bar
             else -> cs.surface
         }
         val navTarget = when {
-            showTabs -> switcherColors.surfaceContainer
+            showTabs -> switcherColors.bar
             editing -> cs.surface
-            else -> cs.chrome
+            else -> cs.bar
         }
         val topColor by animateColorAsState(topTarget, tween(250), label = "statusBar")
         val navColor by animateColorAsState(navTarget, tween(250), label = "navBar")
@@ -367,7 +367,8 @@ fun BrowserScreen(
                     ) {
                         Column {
                             PageBar(tab, db, atBottom = false, onTap = { startEditing(tab.url) }, onReload = { tabs.reload(tab) }, onStop = { tabs.stop(tab) })
-                            ProgressLine(tab.loading, tab.progress, Modifier.background(cs.chrome))
+                            ProgressLine(tab.loading, tab.progress, Modifier.background(cs.bar))
+                            HorizontalDivider(thickness = 1.dp, color = cs.outlineVariant)
                         }
                     }
                 }
@@ -439,7 +440,7 @@ fun BrowserScreen(
                     ) {
                         Column {
                             HorizontalDivider(thickness = 1.dp, color = cs.outlineVariant)
-                            ProgressLine(tab.loading, tab.progress, Modifier.background(cs.chrome))
+                            ProgressLine(tab.loading, tab.progress, Modifier.background(cs.bar))
                             PageBar(tab, db, atBottom = true, onTap = { startEditing(tab.url) }, onReload = { tabs.reload(tab) }, onStop = { tabs.stop(tab) })
                         }
                     }
@@ -469,7 +470,7 @@ fun BrowserScreen(
 
             androidx.compose.animation.AnimatedVisibility(
                 visible = showTabs,
-                enter = fadeIn(tween(200)) + scaleIn(tween(300), initialScale = .96f),
+                enter = fadeIn(tween(200)) + scaleIn(tween(220), initialScale = .96f),
                 exit = fadeOut(tween(150)) + scaleOut(tween(200), targetScale = .98f),
             ) {
                 TabSwitcher(
@@ -499,13 +500,15 @@ fun BrowserScreen(
                 snackbar,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(start = 12.dp, end = 12.dp, bottom = 80.dp),
             ) { data ->
+                // The design's toast: dark on a light page, light on a dark one.
+                val light = cs.isLight
                 Snackbar(
                     data,
                     shape = MaterialTheme.shapes.small,
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    actionColor = MaterialTheme.colorScheme.primary,
-                    dismissActionContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    containerColor = if (light) Color(0xFF1F2937) else Color(0xFFE8ECF2),
+                    contentColor = if (light) Color(0xFFF9FAFB) else Color(0xFF0B0F17),
+                    actionColor = if (light) Color(0xFF93C5FD) else Color(0xFF1D4ED8),
+                    dismissActionContentColor = if (light) Color(0xFFCBD5E1) else Color(0xFF475569),
                 )
             }
         }
@@ -584,7 +587,7 @@ fun BrowserScreen(
         }
 
         if (showSections) {
-            ModalBottomSheet(onDismissRequest = { showSections = false }) {
+            ModalBottomSheet(onDismissRequest = { showSections = false }, containerColor = cs.sheet) {
                 SectionSheet(
                     current = section,
                     tabs = tabs,
@@ -605,7 +608,7 @@ fun BrowserScreen(
         }
 
         if (showMenu && tab != null) {
-            ModalBottomSheet(onDismissRequest = { showMenu = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            ModalBottomSheet(onDismissRequest = { showMenu = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = cs.sheet) {
                 MenuSheet(
                     tab = tab,
                     db = db,
@@ -654,7 +657,7 @@ fun BrowserScreen(
         }
 
         if (showWorkInfo && tab != null) {
-            ModalBottomSheet(onDismissRequest = { showWorkInfo = false }) {
+            ModalBottomSheet(onDismissRequest = { showWorkInfo = false }, containerColor = cs.sheet) {
                 WorkInfoSheet(
                     tab = tab,
                     onReload = {
@@ -673,7 +676,7 @@ fun BrowserScreen(
 
     // Account + sign-in sheets use the app theme, not the section tint.
     if (showAccount && account.user != null) {
-        ModalBottomSheet(onDismissRequest = { showAccount = false }) {
+        ModalBottomSheet(onDismissRequest = { showAccount = false }, containerColor = MaterialTheme.colorScheme.sheet) {
             AccountSheet(
                 account = account,
                 hasWork = hasWork,
@@ -712,6 +715,7 @@ fun BrowserScreen(
                 actions.onDismissSignIn()
             },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.sheet,
         ) {
             SignInSheet(
                 form = authForm,

@@ -9,6 +9,7 @@ import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.Virtualizer
 import android.os.Build
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,7 +18,9 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,8 +33,12 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.WarningAmber
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -189,9 +196,56 @@ class SoundEffects(private val session: Int) {
     }
 }
 
-private val PanelBg = Color(0xFF111827)
+private val PanelBg = Color(0xFF0F1115)
 private val Rose = Color(0xFFE11D48)
 private val Amber = Color(0xFFF59E0B)
+
+/** The red of the players' seek bar and progress lines. */
+internal val SeekRed = Color(0xFFEF4444)
+
+/**
+ * The players' colours (Video player, Watch Party) — always dark: SyncUp's Dark (pure black, cards a
+ * hair lighter with thin lines) with the player's [accent] for buttons, radio dots and links.
+ */
+internal fun playerScheme(accent: Color): ColorScheme = darkColorScheme(
+    primary = accent, onPrimary = Color.White,
+    primaryContainer = Color(0xFF3B1218), onPrimaryContainer = Color(0xFFFECDD3),
+    secondary = Color(0xFF98A2B3), onSecondary = Color(0xFF0F172A),
+    secondaryContainer = Color(0xFF1C2130), onSecondaryContainer = Color(0xFFDCE3F0),
+    background = Color(0xFF000000), onBackground = Color(0xFFE8ECF2),
+    surface = Color(0xFF000000), onSurface = Color(0xFFE8ECF2),
+    surfaceVariant = Color(0xFF1E232C), onSurfaceVariant = Color(0xFF98A2B3),
+    surfaceContainerLowest = Color(0xFF0F1115), surfaceContainerLow = Color(0xFF121419),
+    surfaceContainer = Color(0xFF161A21), surfaceContainerHigh = Color(0xFF1E232C),
+    surfaceContainerHighest = Color(0xFF262C38), surfaceBright = Color(0xFF262C38), surfaceDim = Color(0xFF000000),
+    outline = Color(0xFF3A4250), outlineVariant = Color(0xFF1E232C),
+    error = Color(0xFFF87171), onError = Color(0xFF3A0A0A),
+    errorContainer = Color(0xFF3B1515), onErrorContainer = Color(0xFFFFD9D9),
+    scrim = Color(0xFF000000),
+)
+
+/**
+ * The players' seek bar: a slim red line with a round red dot. Drag or tap it — no − / + here (only
+ * value sliders have those). [fraction] is 0..1.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun VideoSeekBar(fraction: Float, onSeek: (Float) -> Unit, onSeekDone: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    Slider(
+        value = fraction.coerceIn(0f, 1f), onValueChange = onSeek, onValueChangeFinished = onSeekDone, enabled = enabled,
+        modifier = modifier.fillMaxWidth(),
+        thumb = { Box(Modifier.size(16.dp).clip(CircleShape).background(SeekRed)) },
+        track = { state -> SeekLine(state.value) },
+    )
+}
+
+/** The seek bar's line on its own (a guest's view of where the video is). */
+@Composable
+internal fun SeekLine(fraction: Float, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = .3f))) {
+        Box(Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).fillMaxHeight().background(SeekRed))
+    }
+}
 
 /**
  * Sound & booster, over the video (dark): this phone's volume, the booster and the style. The same
@@ -214,7 +268,7 @@ fun SoundPanel(onClose: () -> Unit, modifier: Modifier = Modifier) {
     }
     val sliderColors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = .25f))
     Column(
-        modifier.background(PanelBg).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 14.dp),
+        modifier.background(PanelBg).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.AutoMirrored.Rounded.VolumeUp, null, tint = Color.White, modifier = Modifier.size(20.dp))
@@ -246,15 +300,16 @@ fun SoundPanel(onClose: () -> Unit, modifier: Modifier = Modifier) {
                 Text("Loud. Long listening at high boost can hurt your ears and your phone's speaker.", color = Color(0xFFFCD34D), fontSize = 12.sp, lineHeight = 16.sp)
             }
         }
-        Text("Sound style", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 14.dp, bottom = 8.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Sound style", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 16.dp, bottom = 10.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             SoundStyle.entries.forEach { s ->
                 if (s == SoundStyle.NIGHT && Build.VERSION.SDK_INT < 28) return@forEach
                 val on = s == VideoSound.style
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(if (on) Rose else Color.White.copy(alpha = .1f))
-                        .clickable { VideoSound.changeStyle(context, s) }.padding(horizontal = 12.dp, vertical = 7.dp),
+                    modifier = Modifier.height(34.dp).clip(RoundedCornerShape(17.dp))
+                        .then(if (on) Modifier.background(Rose) else Modifier.background(Color.White.copy(alpha = .08f)).border(1.dp, Color.White.copy(alpha = .12f), RoundedCornerShape(17.dp)))
+                        .clickable { VideoSound.changeStyle(context, s) }.padding(horizontal = 14.dp),
                 ) {
                     Text(s.label, color = Color.White, fontSize = 13.sp)
                     if (s == SoundStyle.SURROUND) {
@@ -286,8 +341,8 @@ fun SoundPanel(onClose: () -> Unit, modifier: Modifier = Modifier) {
 
 @Composable
 private fun Label(title: String, value: String) {
-    Row(Modifier.fillMaxWidth().padding(top = 12.dp)) {
-        Text(title, color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+    Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp)) {
+        Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
         Text(value, color = Color(0xFFFDA4AF), fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
     }
 }

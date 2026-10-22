@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -22,15 +23,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.agani.syncup.group.GroupLink
+import com.agani.syncup.group.GroupMode
 import com.agani.syncup.music.LocalPlayer
 import com.agani.syncup.music.Song
 import com.agani.syncup.quickshare.QsPhase
 import com.agani.syncup.quickshare.QuickShare
 import com.agani.syncup.quickshare.Radios
 import com.agani.syncup.quickshare.RadiosDialog
+import com.agani.syncup.ui.theme.dialogSurface
 import com.agani.syncup.walkie.Walkie
-import com.agani.syncup.group.GroupLink
-import com.agani.syncup.group.GroupMode
 
 /**
  * Start a Radio → Party from somewhere else (the Music player): Nearby permission, Bluetooth / Wi-Fi
@@ -73,7 +75,7 @@ fun rememberPartyStarter(onStarted: () -> Unit): (songs: List<Song>, fromMs: Lon
                         fontSize = 13.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(value = name, onValueChange = { name = it.take(30) }, singleLine = true, label = { Text("Party name") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = name, onValueChange = { name = it.take(30) }, singleLine = true, label = { Text("Party name") }, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth())
                 }
             },
             confirmButton = {
@@ -90,6 +92,7 @@ fun rememberPartyStarter(onStarted: () -> Unit): (songs: List<Song>, fromMs: Lon
                 }) { Text("Start") }
             },
             dismissButton = { TextButton(onClick = { naming = false; pending = null }) { Text("Cancel") } },
+            containerColor = MaterialTheme.colorScheme.dialogSurface,
         )
     }
     if (waitingForRadios) {

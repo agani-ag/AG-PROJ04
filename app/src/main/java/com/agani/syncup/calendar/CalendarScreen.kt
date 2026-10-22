@@ -1,5 +1,8 @@
 package com.agani.syncup.calendar
 
+import com.agani.syncup.ui.theme.PillTab
+import com.agani.syncup.ui.theme.PillTabs
+import com.agani.syncup.ui.theme.appCard
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -7,6 +10,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,7 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -80,9 +85,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -93,13 +106,17 @@ import kotlinx.coroutines.launch
 
 /** Calendar's own accent: indigo (the Tools tile's colour). */
 @Composable
-internal fun indigo(): Color = if (MaterialTheme.colorScheme.isLight) Color(0xFF4F46E5) else Color(0xFFA5B4FC)
+internal fun indigo(): Color = if (MaterialTheme.colorScheme.isLight) Color(0xFF4338CA) else Color(0xFFA5B4FC)
 
 @Composable
-internal fun indigoContainer(): Color = if (MaterialTheme.colorScheme.isLight) Color(0xFFE0E7FF) else Color(0xFF312E81)
+internal fun indigoContainer(): Color = if (MaterialTheme.colorScheme.isLight) Color(0xFFE0E7FF) else Color(0xFF1C1F3D)
 
 @Composable
-internal fun onIndigoContainer(): Color = if (MaterialTheme.colorScheme.isLight) Color(0xFF312E81) else Color(0xFFE0E7FF)
+internal fun onIndigoContainer(): Color = if (MaterialTheme.colorScheme.isLight) Color(0xFF3730A3) else Color(0xFFC7D2FE)
+
+/** Text and icons on [indigo] (the + button, a ticked box). */
+@Composable
+internal fun onIndigo(): Color = if (MaterialTheme.colorScheme.isLight) Color.White else Color(0xFF1E1B4B)
 
 internal fun listColor(l: TaskList) = Color(l.color.toInt())
 
@@ -248,9 +265,9 @@ private fun CalendarHome(
                 BarIcon(Icons.Rounded.Search, "Search", onClick = onSearch)
                 Box {
                     BarIcon(Icons.Rounded.MoreVert, "More", onClick = { menu = true })
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, shape = RoundedCornerShape(18.dp), containerColor = cs.surfaceContainerLowest) {
                         SyncLine(signedIn)
-                        HorizontalDivider()
+                        HorizontalDivider(color = cs.outlineVariant)
                         if (signedIn && CalendarSync.active) {
                             DropdownMenuItem(text = { Text("Sync now") }, leadingIcon = { Icon(Icons.Rounded.Sync, null) }, onClick = {
                                 menu = false
@@ -272,7 +289,10 @@ private fun CalendarHome(
                     }
                 }
             }
-            Tabs(tab, onTab)
+            PillTabs(
+                listOf(PillTab("Calendar", Icons.Rounded.CalendarMonth), PillTab("To-do", Icons.AutoMirrored.Rounded.List)),
+                selected = tab, onSelect = onTab, modifier = Modifier.padding(horizontal = 16.dp),
+            )
             if (!signedIn && !bannerHidden) {
                 SignedOutBanner(onSignIn = onSignIn, onHide = {
                     bannerHidden = true
@@ -285,12 +305,7 @@ private fun CalendarHome(
                 TodoTab(onOpen, ::ticked, ::deleted)
             }
         }
-        FloatingActionButton(
-            onClick = onAdd,
-            containerColor = indigo(),
-            contentColor = if (cs.isLight) Color.White else Color(0xFF1E1B4B),
-            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
-        ) { Icon(Icons.Rounded.Add, "New to-do", modifier = Modifier.size(28.dp)) }
+        AddButton(onAdd, Modifier.align(Alignment.BottomEnd))
         SnackbarHost(snack, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 88.dp))
     }
 
@@ -299,6 +314,18 @@ private fun CalendarHome(
     if (signedIn && waiting.isNotEmpty() && !mergeDismissed) {
         MergeSheet(waiting.size, onDone = { mergeDismissed = true })
     }
+}
+
+/** The round + in Calendar's colour, bottom right. */
+@Composable
+internal fun AddButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    FloatingActionButton(
+        onClick = onClick,
+        shape = CircleShape,
+        containerColor = indigo(),
+        contentColor = onIndigo(),
+        modifier = modifier.padding(20.dp).size(58.dp),
+    ) { Icon(Icons.Rounded.Add, "New to-do", modifier = Modifier.size(28.dp)) }
 }
 
 @Composable
@@ -333,40 +360,18 @@ internal fun agoText(ms: Long): String {
 }
 
 @Composable
-private fun Tabs(tab: Int, onTab: (Int) -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    Row(
-        Modifier.padding(horizontal = 16.dp, vertical = 2.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(cs.surfaceContainerHigh).padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        listOf(Icons.Rounded.CalendarMonth to "Calendar", Icons.AutoMirrored.Rounded.List to "To-do").forEachIndexed { i, (icon, label) ->
-            val on = i == tab
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.weight(1f).height(38.dp).clip(RoundedCornerShape(19.dp)).background(if (on) indigoContainer() else Color.Transparent).clickable { onTab(i) },
-            ) {
-                Icon(icon, null, tint = if (on) onIndigoContainer() else cs.onSurfaceVariant, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(label, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = if (on) onIndigoContainer() else cs.onSurfaceVariant)
-            }
-        }
-    }
-}
-
-@Composable
 private fun SignedOutBanner(onSignIn: () -> Unit, onHide: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.Top,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cs.surfaceContainerHigh).padding(start = 12.dp, top = 10.dp, bottom = 4.dp),
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(cs.surfaceContainer).padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
     ) {
-        Icon(Icons.Rounded.Smartphone, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        Icon(Icons.Rounded.Smartphone, null, tint = cs.onSurfaceVariant, modifier = Modifier.padding(top = 1.dp).size(18.dp))
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text("On this phone only.", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
+            Text("On this phone only.", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
             Text("Sign in to keep your to-dos on all your phones — and safe if this one is lost.", fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant)
-            TextButton(onClick = onSignIn, contentPadding = PaddingValues(0.dp)) { Text("Sign in", color = indigo()) }
+            TextButton(onClick = onSignIn, contentPadding = PaddingValues(0.dp)) { Text("Sign in", color = indigo(), fontWeight = FontWeight.Medium) }
         }
         BarIcon(Icons.Rounded.Close, "Hide", onClick = onHide)
     }
@@ -387,28 +392,28 @@ private fun MonthTab(selected: Int, onSelect: (Int) -> Unit, onOpen: (Task) -> U
     }
     val syncup = remember(selected, version) { CalendarStore.syncupReminders(selected, selected).sortedBy { it.time } }
 
-    LazyColumn(contentPadding = PaddingValues(bottom = 110.dp)) {
-        item {
-            val month = Days.addMonths(thisMonth, pager.currentPage - CENTER)
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 20.dp, end = 8.dp, top = 8.dp)) {
-                Text("${Days.monthNames[month / 100 % 100 - 1]} ${month / 10000}", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.weight(1f))
-                if (month != thisMonth) {
-                    TextButton(onClick = {
-                        onSelect(today)
-                        scope.launch { pager.animateScrollToPage(CENTER) }
-                    }) { Text("Today", color = indigo()) }
+    LazyColumn(contentPadding = PaddingValues(top = 12.dp, bottom = 110.dp)) {
+        item(key = "month") {
+            Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().appCard().padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 8.dp)) {
+                val month = Days.addMonths(thisMonth, pager.currentPage - CENTER)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp)) {
+                    Text("${Days.monthNames[month / 100 % 100 - 1]} ${month / 10000}", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.weight(1f))
+                    if (month != thisMonth) {
+                        TextButton(onClick = {
+                            onSelect(today)
+                            scope.launch { pager.animateScrollToPage(CENTER) }
+                        }) { Text("Today", color = indigo(), fontWeight = FontWeight.Medium) }
+                    }
+                    BarIcon(Icons.Rounded.ChevronLeft, "Last month", onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } })
+                    BarIcon(Icons.Rounded.ChevronRight, "Next month", onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } })
                 }
-                BarIcon(Icons.Rounded.ChevronLeft, "Last month", onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } })
-                BarIcon(Icons.Rounded.ChevronRight, "Next month", onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } })
+                HorizontalPager(state = pager, modifier = Modifier.fillMaxWidth()) { page ->
+                    MonthGrid(Days.addMonths(thisMonth, page - CENTER), selected, onSelect, version)
+                }
             }
         }
-        item {
-            HorizontalPager(state = pager, modifier = Modifier.fillMaxWidth()) { page ->
-                MonthGrid(Days.addMonths(thisMonth, page - CENTER), selected, onSelect, version)
-            }
-        }
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 20.dp, end = 8.dp, top = 6.dp)) {
+        item(key = "dayhead") {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 2.dp)) {
                 Text(if (selected == today) "Today · ${Days.short(selected)}" else Days.short(selected), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
                 Spacer(Modifier.width(8.dp))
                 val left = dayTasks.count { !it.done }
@@ -421,11 +426,14 @@ private fun MonthTab(selected: Int, onSelect: (Int) -> Unit, onOpen: (Task) -> U
                     },
                     fontSize = 12.5.sp, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = { onDayView(selected) }) { Text("Hours", color = indigo()) }
+                TextButton(onClick = { onDayView(selected) }) { Text("Hours", color = indigo(), fontWeight = FontWeight.Medium) }
             }
         }
-        items(dayTasks, key = { "t" + it.id }) { t -> SwipeTaskRow(t, onOpen, onTick, onDelete, showDate = false) }
-        items(syncup, key = { "r" + it.id + it.day }) { r -> SyncUpReminderRow(r) }
+        itemsIndexed(dayTasks, key = { _, t -> "t" + t.id }) { i, t ->
+            SwipeTaskRow(t, onOpen, onTick, onDelete, day = selected, first = i == 0, last = i == dayTasks.lastIndex)
+        }
+        if (dayTasks.isNotEmpty() && syncup.isNotEmpty()) item(key = "gap") { Spacer(Modifier.height(10.dp)) }
+        itemsIndexed(syncup, key = { _, r -> "r" + r.id + r.day + r.time }) { i, r -> SyncUpReminderRow(r, first = i == 0, last = i == syncup.lastIndex) }
     }
 }
 
@@ -457,9 +465,10 @@ private fun MonthGrid(month: Int, selected: Int, onSelect: (Int) -> Unit, versio
     }
     val names = if (mondayFirst) listOf("M", "T", "W", "T", "F", "S", "S") else listOf("S", "M", "T", "W", "T", "F", "S")
     val accent = indigo()
-    Column(Modifier.padding(horizontal = 12.dp)) {
+    val onAccent = onIndigo()
+    Column {
         Row(Modifier.fillMaxWidth()) {
-            names.forEach { Text(it, fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f).padding(vertical = 4.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center) }
+            names.forEach { Text(it, fontSize = 11.5.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f).padding(top = 2.dp, bottom = 6.dp), textAlign = TextAlign.Center) }
         }
         for (w in 0 until 6) {
             val rowStart = Days.add(gridStart, w * 7)
@@ -470,7 +479,7 @@ private fun MonthGrid(month: Int, selected: Int, onSelect: (Int) -> Unit, versio
                     val inMonth = d / 100 == month / 100
                     val isToday = d == today
                     Column(
-                        Modifier.weight(1f).height(46.dp).clip(RoundedCornerShape(12.dp)).clickable { onSelect(d) }.padding(top = 4.dp),
+                        Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(14.dp)).clickable { onSelect(d) },
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Box(
@@ -481,15 +490,15 @@ private fun MonthGrid(month: Int, selected: Int, onSelect: (Int) -> Unit, versio
                         ) {
                             Text(
                                 "${d % 100}", fontSize = 14.sp,
-                                fontWeight = if (isToday) FontWeight.Medium else FontWeight.Normal,
+                                fontWeight = if (isToday || d == selected) FontWeight.Medium else FontWeight.Normal,
                                 color = when {
-                                    isToday -> if (cs.isLight) Color.White else Color(0xFF1E1B4B)
-                                    !inMonth -> cs.onSurfaceVariant.copy(alpha = .45f)
+                                    isToday -> onAccent
+                                    !inMonth -> cs.onSurfaceVariant.copy(alpha = .5f)
                                     else -> cs.onSurface
                                 },
                             )
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.padding(top = 2.dp).height(5.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.padding(top = 3.dp).height(5.dp)) {
                             dots[d].orEmpty().forEach { c -> Box(Modifier.size(5.dp).clip(CircleShape).background(if (inMonth) c else c.copy(alpha = .4f))) }
                         }
                     }
@@ -499,25 +508,25 @@ private fun MonthGrid(month: Int, selected: Int, onSelect: (Int) -> Unit, versio
     }
 }
 
+/** A reminder sent by SyncUp on the chosen day — read-only, on a soft grey card (no shadow). */
 @Composable
-private fun SyncUpReminderRow(r: CalendarStore.SyncUpReminder) {
+private fun SyncUpReminderRow(r: CalendarStore.SyncUpReminder, first: Boolean, last: Boolean) {
     val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp))
-            .background(cs.surfaceContainerLow).padding(horizontal = 14.dp, vertical = 10.dp),
+        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().heightIn(min = 60.dp).clip(segmentShape(first, last))
+            .background(cs.surfaceContainer).dividerAbove(!first, cs.outlineVariant).padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
-        Icon(Icons.Rounded.Notifications, null, tint = Color(0xFFE11D48), modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(12.dp))
+        Icon(Icons.Rounded.Notifications, null, tint = Color(0xFFE11D48), modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(r.title, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("${Days.time(r.time)} · From SyncUp", fontSize = 12.sp, color = cs.onSurfaceVariant)
+            Text(r.title, fontSize = 15.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("${Days.time(r.time)} · From SyncUp", fontSize = 12.5.sp, color = cs.onSurfaceVariant)
         }
     }
 }
 
 // ============================================================================ To-do
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun TodoTab(onOpen: (Task) -> Unit, onTick: (Task) -> Unit, onDelete: (Task) -> Unit) {
     val cs = MaterialTheme.colorScheme
@@ -536,18 +545,20 @@ private fun TodoTab(onOpen: (Task) -> Unit, onTick: (Task) -> Unit, onDelete: (T
         Triple("Later", false, open.filter { it.day > tomorrow }),
         Triple("No date", false, open.filter { it.day == 0 }),
     )
-    LazyColumn(contentPadding = PaddingValues(bottom = 110.dp)) {
-        item {
-            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyColumn(contentPadding = PaddingValues(top = 12.dp, bottom = 110.dp)) {
+        item(key = "filters") {
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChipLike("All ${CalendarStore.tasks.count { !it.done }}", null, filter == null) { filter = null }
                 CalendarStore.lists.forEach { l -> FilterChipLike(l.name, listColor(l), filter == l.id) { filter = if (filter == l.id) null else l.id } }
             }
         }
         if (open.isEmpty()) {
-            item {
+            item(key = "empty") {
                 Column(Modifier.fillMaxWidth().padding(40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Rounded.Check, null, tint = indigo(), modifier = Modifier.size(44.dp))
-                    Spacer(Modifier.height(10.dp))
+                    Box(Modifier.size(64.dp).clip(CircleShape).background(indigoContainer()), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Check, null, tint = indigo(), modifier = Modifier.size(32.dp))
+                    }
+                    Spacer(Modifier.height(14.dp))
                     Text("Nothing to do", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
                     Text("Tap + to add a to-do.", fontSize = 13.sp, color = cs.onSurfaceVariant)
                 }
@@ -555,44 +566,84 @@ private fun TodoTab(onOpen: (Task) -> Unit, onTick: (Task) -> Unit, onDelete: (T
         }
         groups.forEach { (name, red, list) ->
             if (list.isNotEmpty()) {
-                groupHeader("$name · ${list.size}", red)
-                items(list, key = { it.id }) { t -> SwipeTaskRow(t, onOpen, onTick, onDelete, showDate = name != "Today" && name != "Tomorrow") }
+                groupHeader(name, "$name · ${list.size}", red)
+                itemsIndexed(list, key = { _, t -> t.id }) { i, t -> SwipeTaskRow(t, onOpen, onTick, onDelete, first = i == 0, last = i == list.lastIndex) }
             }
         }
     }
 }
 
-private fun LazyListScope.groupHeader(text: String, red: Boolean) {
-    item(key = "h$text") {
+private fun LazyListScope.groupHeader(key: String, text: String, red: Boolean) {
+    item(key = "h$key") {
         Text(
-            text.uppercase(), fontSize = 12.5.sp, fontWeight = FontWeight.Medium, letterSpacing = .5.sp,
-            color = if (red) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 6.dp),
+            text, fontSize = 14.5.sp, fontWeight = FontWeight.Medium,
+            color = if (red) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 10.dp),
         )
     }
 }
 
+/** A v7 chip: the picked one in Calendar's soft indigo, the rest white with a thin line. */
 @Composable
 internal fun FilterChipLike(label: String, dot: Color?, on: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(17.dp)
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.height(34.dp).clip(RoundedCornerShape(17.dp)).background(if (on) indigoContainer() else cs.surfaceContainerHigh)
-            .clickable(onClick = onClick).padding(horizontal = 12.dp),
+        modifier = Modifier.height(34.dp).clip(shape).background(if (on) indigoContainer() else cs.surfaceContainerLowest)
+            .then(if (on) Modifier else Modifier.border(1.dp, cs.outlineVariant, shape))
+            .clickable(onClick = onClick).padding(horizontal = 14.dp),
     ) {
         if (dot != null) {
             Box(Modifier.size(9.dp).clip(CircleShape).background(dot))
             Spacer(Modifier.width(6.dp))
         }
-        Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (on) onIndigoContainer() else cs.onSurface)
+        Text(label, fontSize = 13.5.sp, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, color = if (on) onIndigoContainer() else cs.onSurface)
+    }
+}
+
+// ============================================================================ grouped cards in long lists
+/** A row's corners in its grouped card: round on top for the first, at the bottom for the last. */
+internal fun segmentShape(first: Boolean, last: Boolean): Shape = RoundedCornerShape(
+    topStart = if (first) 24.dp else 0.dp, topEnd = if (first) 24.dp else 0.dp,
+    bottomStart = if (last) 24.dp else 0.dp, bottomEnd = if (last) 24.dp else 0.dp,
+)
+
+/** A thin line across the top of a row (between rows of one card). */
+internal fun Modifier.dividerAbove(show: Boolean, color: Color): Modifier = if (!show) this else drawWithContent {
+    drawContent()
+    val w = 1.dp.toPx()
+    drawLine(color, Offset(0f, w / 2), Offset(size.width, w / 2), w)
+}
+
+/**
+ * One row's piece of a grouped card (the To-do groups, Calendar's day): white, the card's corners,
+ * a thin line round the card and between its rows. Each row draws its own piece, so the list stays
+ * lazy — and no row has a shadow of its own, so long lists scroll smoothly.
+ */
+@Composable
+internal fun Modifier.cardSegment(first: Boolean, last: Boolean): Modifier {
+    val cs = MaterialTheme.colorScheme
+    val line = cs.outlineVariant
+    return this.clip(segmentShape(first, last)).background(cs.surfaceContainerLowest).drawWithContent {
+        drawContent()
+        val w = 1.dp.toPx()
+        val r = 24.dp.toPx()
+        // The card's edge: its sides on every row, its top / bottom only on the first / last.
+        val top = if (first) w / 2 else -2 * r
+        val bottom = if (last) size.height - w / 2 else size.height + 2 * r
+        drawRoundRect(line, Offset(w / 2, top), Size(size.width - w, bottom - top), CornerRadius(r - w / 2), style = Stroke(w))
+        if (!first) drawLine(line, Offset(0f, w / 2), Offset(size.width, w / 2), w)
     }
 }
 
 // ============================================================================ a to-do row
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun SwipeTaskRow(t: Task, onOpen: (Task) -> Unit, onTick: (Task) -> Unit, onDelete: (Task) -> Unit, showDate: Boolean) {
-    val cs = MaterialTheme.colorScheme
+internal fun SwipeTaskRow(
+    t: Task, onOpen: (Task) -> Unit, onTick: (Task) -> Unit, onDelete: (Task) -> Unit,
+    day: Int = t.day, first: Boolean = true, last: Boolean = true,
+) {
     val state = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
         when (v) {
             SwipeToDismissBoxValue.StartToEnd -> {
@@ -606,80 +657,80 @@ internal fun SwipeTaskRow(t: Task, onOpen: (Task) -> Unit, onTick: (Task) -> Uni
             else -> false
         }
     })
+    val red = MaterialTheme.colorScheme.error
     SwipeToDismissBox(
         state = state,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        modifier = Modifier.padding(horizontal = 16.dp),
         backgroundContent = {
-            val toEnd = state.dismissDirection == SwipeToDismissBoxValue.StartToEnd
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = if (toEnd) Arrangement.Start else Arrangement.End,
-                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)).background(if (toEnd) Color(0xFF16A34A) else cs.error).padding(horizontal = 20.dp),
-            ) {
-                Icon(if (toEnd) Icons.Rounded.Check else Icons.Rounded.Delete, null, tint = Color.White)
+            // Only while swiping — at rest it would show as a coloured edge round the card's corners.
+            if (state.dismissDirection != SwipeToDismissBoxValue.Settled) {
+                val toEnd = state.dismissDirection == SwipeToDismissBoxValue.StartToEnd
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = if (toEnd) Arrangement.Start else Arrangement.End,
+                    modifier = Modifier.fillMaxSize().clip(segmentShape(first, last)).background(if (toEnd) Color(0xFF16A34A) else red).padding(horizontal = 20.dp),
+                ) {
+                    Icon(if (toEnd) Icons.Rounded.Check else Icons.Rounded.Delete, null, tint = Color.White)
+                }
             }
         },
     ) {
-        TaskRow(t, onOpen, onTick, showDate)
+        TaskRow(t, onOpen, onTick, day, first, last)
     }
 }
 
+/**
+ * A to-do in a list: its list's colour bar, the tick box, the title, and a line saying when — date
+ * and time together, for [day] (one of its days; red when it's past) — then repeat, reminder, steps.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun TaskRow(t: Task, onOpen: (Task) -> Unit, onTick: (Task) -> Unit, showDate: Boolean) {
+internal fun TaskRow(t: Task, onOpen: (Task) -> Unit, onTick: (Task) -> Unit, day: Int = t.day, first: Boolean = true, last: Boolean = true) {
     val cs = MaterialTheme.colorScheme
     val today = Days.today()
     val list = CalendarStore.list(t.listId)
     Row(
-        modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).clip(RoundedCornerShape(16.dp)).background(cs.surfaceContainerLowest)
-            .border(1.dp, cs.outlineVariant, RoundedCornerShape(16.dp)).clickable { onOpen(t) }.padding(end = 12.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp).cardSegment(first, last).clickable { onOpen(t) }.padding(start = 12.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.padding(start = 10.dp).width(4.dp).height(40.dp).clip(RoundedCornerShape(2.dp)).background(listColor(list)))
+        Box(Modifier.width(4.dp).height(36.dp).clip(RoundedCornerShape(2.dp)).background(listColor(list)))
         Box(
-            Modifier.padding(horizontal = 12.dp).size(24.dp).clip(RoundedCornerShape(7.dp))
+            Modifier.padding(horizontal = 12.dp).size(24.dp).clip(RoundedCornerShape(8.dp))
                 .background(if (t.done) indigo() else Color.Transparent)
-                .border(2.dp, if (t.done) indigo() else cs.outline, RoundedCornerShape(7.dp))
+                .then(if (t.done) Modifier else Modifier.border(2.dp, cs.onSurfaceVariant, RoundedCornerShape(8.dp)))
                 .clickable { if (!t.done) onTick(t) else CalendarStore.uncomplete(t.id) },
             contentAlignment = Alignment.Center,
         ) {
-            if (t.done) Icon(Icons.Rounded.Check, "Done", tint = if (cs.isLight) Color.White else Color(0xFF1E1B4B), modifier = Modifier.size(16.dp))
+            if (t.done) Icon(Icons.Rounded.Check, "Done", tint = onIndigo(), modifier = Modifier.size(16.dp))
         }
-        Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
+        Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
             Text(
-                t.title, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                t.title, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 color = if (t.done) cs.onSurfaceVariant else cs.onSurface, textDecoration = if (t.done) TextDecoration.LineThrough else null,
             )
-            val bits = buildList<Pair<androidx.compose.ui.graphics.vector.ImageVector?, String>> {
-                if (t.hasDate && showDate) add(null to Days.friendly(t.day, today))
-                if (!t.allDay && t.hasDate) add(Icons.Rounded.Schedule to (Days.time(t.time) + if (t.endTime >= 0) " – ${Days.time(t.endTime)}" else ""))
-                if (t.reminders.isNotEmpty()) add(Icons.Rounded.Notifications to reminderShort(t.reminders.min(), t.allDay))
-                if (t.repeat.repeats) add(Icons.Rounded.Repeat to t.repeat.short)
-                if (t.checklist.isNotEmpty()) add(null to "${t.checklist.count { it.done }} of ${t.checklist.size}")
+            val overdue = t.hasDate && day < today && !t.done
+            val bits = buildList<Triple<ImageVector?, String, Boolean>> {
+                if (t.hasDate) add(Triple(if (t.allDay) Icons.Rounded.CalendarMonth else Icons.Rounded.Schedule, t.whenText(day, today), overdue))
+                if (t.repeat.repeats) add(Triple(Icons.Rounded.Repeat, t.repeat.short, false))
+                if (t.hasDate && t.reminders.isNotEmpty()) add(Triple(Icons.Rounded.Notifications, Reminders.short(t, t.reminders.min()), false))
+                if (t.checklist.isNotEmpty()) add(Triple(null, "${t.checklist.count { it.done }} of ${t.checklist.size}", false))
             }
             if (bits.isNotEmpty()) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 3.dp)) {
-                    bits.forEachIndexed { i, (icon, text) ->
-                        if (i > 0) Spacer(Modifier.width(10.dp))
-                        if (icon != null) {
-                            Icon(icon, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(13.dp))
-                            Spacer(Modifier.width(3.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.padding(top = 3.dp)) {
+                    bits.forEach { (icon, text, red) ->
+                        val color = if (red) cs.error else cs.onSurfaceVariant
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (icon != null) {
+                                Icon(icon, null, tint = color, modifier = Modifier.size(13.dp))
+                                Spacer(Modifier.width(3.dp))
+                            }
+                            Text(text, fontSize = 12.sp, color = color, fontWeight = if (red) FontWeight.Medium else FontWeight.Normal, maxLines = 1)
                         }
-                        val overdue = i == 0 && showDate && t.hasDate && t.day < today && !t.done
-                        Text(text, fontSize = 12.sp, color = if (overdue) cs.error else cs.onSurfaceVariant, fontWeight = if (overdue) FontWeight.Medium else FontWeight.Normal, maxLines = 1)
                     }
                 }
             }
         }
     }
-}
-
-/** "10 min before", "At the time", "1 day before". */
-internal fun reminderShort(minutes: Int, allDay: Boolean): String = when {
-    minutes == 0 -> if (allDay) "On the day" else "At the time"
-    minutes < 60 -> "$minutes min before"
-    minutes < 24 * 60 -> "${minutes / 60} h before"
-    minutes == 7 * 24 * 60 -> "1 week before"
-    else -> "${minutes / (24 * 60)} day${if (minutes >= 48 * 60) "s" else ""} before"
 }
 
 // ============================================================================ the Tools tile's line
@@ -704,7 +755,7 @@ private fun MergeSheet(count: Int, onDone: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     var intoAccount by remember { mutableStateOf(true) }
     val inAccount = CalendarStore.tasks.count { !it.local && !it.phoneOnly }
-    ModalBottomSheet(onDismissRequest = onDone) {
+    ModalBottomSheet(onDismissRequest = onDone, containerColor = cs.surfaceContainerLowest) {
         Column(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 24.dp)) {
             Text("Welcome back", fontSize = 20.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
             Text(
@@ -728,7 +779,7 @@ private fun MergeSheet(count: Int, onDone: () -> Unit) {
             Button(onClick = {
                 if (intoAccount) CalendarStore.moveLocalIntoAccount() else CalendarStore.keepLocalOnPhone()
                 onDone()
-            }, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) { Text("Continue") }
+            }, modifier = Modifier.fillMaxWidth().padding(top = 12.dp).height(46.dp)) { Text("Continue", fontSize = 15.sp) }
         }
     }
 }

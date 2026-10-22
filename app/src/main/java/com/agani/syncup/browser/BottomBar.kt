@@ -38,12 +38,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.ui.BarIcon
 import com.agani.syncup.browser.ui.SectionKey
-import com.agani.syncup.browser.ui.chrome
 import com.agani.syncup.browser.ui.sectionName
 
 /**
- * Back · Forward · section key · Tabs · Menu — the same five buttons, evenly spaced, on every page.
- * Back / Forward stay in place and are greyed out when there's nowhere to go.
+ * Back · Forward · section key · Tabs · Menu — the same five buttons, evenly spaced, on every page,
+ * docked on the bar's paper under one hairline. Back / Forward stay in place and are greyed out when
+ * there's nowhere to go.
  */
 @Composable
 internal fun BottomBar(
@@ -59,7 +59,7 @@ internal fun BottomBar(
     onMenu: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth().background(cs.chrome)) {
+    Column(Modifier.fillMaxWidth().background(cs.bar)) {
         if (divider) HorizontalDivider(thickness = 1.dp, color = cs.outlineVariant)
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -78,7 +78,7 @@ internal fun BottomBar(
                 contentAlignment = Alignment.Center,
             ) {
                 Box(
-                    Modifier.size(22.dp).border(2.dp, cs.onSurface, RoundedCornerShape(6.dp)),
+                    Modifier.size(24.dp).border(2.dp, cs.onSurface, RoundedCornerShape(7.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
                     // The count rolls when tabs open or close.
@@ -91,7 +91,7 @@ internal fun BottomBar(
                         },
                         label = "tabCount",
                     ) { n ->
-                        Text(if (n > 99) "∞" else n.toString(), fontSize = 11.sp, lineHeight = 11.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
+                        Text(if (n > 99) "∞" else n.toString(), fontSize = 11.5.sp, lineHeight = 11.5.sp, fontWeight = FontWeight.Bold, color = cs.onSurface)
                     }
                 }
             }

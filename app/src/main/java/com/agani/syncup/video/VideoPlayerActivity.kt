@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -73,11 +74,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -159,7 +157,7 @@ class VideoPlayerActivity : ComponentActivity() {
         effects = fx
         open(intent, exo)
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme(primary = Color(0xFFEF4444))) {
+            MaterialTheme(colorScheme = playerScheme(SeekRed)) {
                 LaunchedEffect(VideoSound.boost, VideoSound.style) { fx.apply(VideoSound.boost, VideoSound.style) }
                 // Tools → Sensors → Wave to control: pause / ±10 s with a wave (when switched on).
                 com.agani.syncup.sensors.WaveEffect { action ->
@@ -593,19 +591,18 @@ private fun PlayerScreen(
                     IconBtn(Icons.Rounded.Forward10, "Forward 10 seconds", size = 40) { exo.seekTo((exo.currentPosition + 10_000).coerceAtMost(exo.duration.coerceAtLeast(0))); lastTouch = System.currentTimeMillis() }
                 }
                 // Bottom: seek bar, times, quick buttons.
-                Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 10.dp)) {
                     val shownPos = seeking?.let { (it * duration).toLong() } ?: position
-                    Slider(
-                        value = if (duration > 0) (shownPos.toFloat() / duration).coerceIn(0f, 1f) else 0f,
-                        onValueChange = { seeking = it; lastTouch = System.currentTimeMillis() },
-                        onValueChangeFinished = { seeking?.let { exo.seekTo((it * duration).toLong()) }; seeking = null },
-                        colors = SliderDefaults.colors(thumbColor = Color(0xFFEF4444), activeTrackColor = Color(0xFFEF4444), inactiveTrackColor = Color.White.copy(alpha = .3f)),
+                    VideoSeekBar(
+                        fraction = if (duration > 0) shownPos.toFloat() / duration else 0f,
+                        onSeek = { seeking = it; lastTouch = System.currentTimeMillis() },
+                        onSeekDone = { seeking?.let { exo.seekTo((it * duration).toLong()) }; seeking = null },
                     )
                     Row(Modifier.fillMaxWidth()) {
                         Text(fmtTime(shownPos), color = Color.White, fontSize = 12.sp, modifier = Modifier.weight(1f))
                         Text(fmtTime(duration), color = Color.White, fontSize = 12.sp)
                     }
-                    Row(horizontalArrangement = Arrangement.SpaceAround, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                    Row(horizontalArrangement = Arrangement.SpaceAround, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
                         LabeledBtn(Icons.Rounded.Lock, "Lock") { locked = true; showControls = false }
                         LabeledBtn(Icons.Rounded.Speed, fmtSpeed(speed)) { dialog = "speed" }
                         LabeledBtn(Icons.Rounded.Subtitles, "Subtitles") { dialog = "subs" }
@@ -705,15 +702,16 @@ private fun RoundButton(icon: ImageVector, desc: String, onClick: () -> Unit) {
     }
 }
 
+/** An icon over its label (Lock, Speed, Subtitles, Rotate). */
 @Composable
 private fun LabeledBtn(icon: ImageVector, label: String, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp),
+        modifier = Modifier.widthIn(min = 64.dp).clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(horizontal = 8.dp, vertical = 6.dp),
     ) {
         Icon(icon, null, tint = Color.White, modifier = Modifier.size(22.dp))
-        Spacer(Modifier.height(4.dp))
-        Text(label, color = Color.White, fontSize = 11.sp)
+        Spacer(Modifier.height(5.dp))
+        Text(label, color = Color.White, fontSize = 11.5.sp)
     }
 }
 

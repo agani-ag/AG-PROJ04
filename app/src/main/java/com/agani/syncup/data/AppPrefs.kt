@@ -2,18 +2,32 @@ package com.agani.syncup.data
 
 import android.content.Context
 
+/** v7 offers Light and Dark (Dark is pure black). SYSTEM and BLACK stay only so older saved or
+ * synced values still read; [AppPrefs.themeMode] turns them into LIGHT / DARK. */
 enum class ThemeMode { SYSTEM, LIGHT, DARK, BLACK }
 
 /** Plain (non-sensitive) app preferences: theme choice + biometric toggle. */
-class AppPrefs(context: Context) {
+class AppPrefs(private val context: Context) {
     private val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
 
-    /** Light unless the user picked System, Dark or Black (Settings → Appearance). */
-    fun themeMode(): ThemeMode = runCatching {
-        ThemeMode.valueOf(prefs.getString(KEY_THEME, ThemeMode.LIGHT.name)!!)
-    }.getOrDefault(ThemeMode.LIGHT)
+    /** Light or Dark (Settings → Appearance); Light by default. An older System choice becomes what
+     * the phone uses now, and Black becomes Dark — saved, so it's asked only once. */
+    fun themeMode(): ThemeMode {
+        val saved = runCatching { ThemeMode.valueOf(prefs.getString(KEY_THEME, ThemeMode.LIGHT.name)!!) }.getOrDefault(ThemeMode.LIGHT)
+        val mode = normalize(saved)
+        if (mode != saved) setThemeMode(mode)
+        return mode
+    }
 
-    fun setThemeMode(mode: ThemeMode) = prefs.edit().putString(KEY_THEME, mode.name).apply()
+    fun setThemeMode(mode: ThemeMode) = prefs.edit().putString(KEY_THEME, normalize(mode).name).apply()
+
+    /** Only LIGHT or DARK. */
+    fun normalize(mode: ThemeMode): ThemeMode = when (mode) {
+        ThemeMode.LIGHT -> ThemeMode.LIGHT
+        ThemeMode.DARK, ThemeMode.BLACK -> ThemeMode.DARK
+        ThemeMode.SYSTEM -> if ((context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES) ThemeMode.DARK else ThemeMode.LIGHT
+    }
 
     fun biometricEnabled(): Boolean = prefs.getBoolean(KEY_BIOMETRIC, false)
     fun setBiometricEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_BIOMETRIC, enabled).apply()

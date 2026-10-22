@@ -189,26 +189,17 @@ class MainActivity : FragmentActivity() {
                 BrowserSync.onRemoteTheme = { themeMode = it }
                 onDispose { BrowserSync.onRemoteTheme = null }
             }
-            val dark = when (themeMode) {
-                ThemeMode.LIGHT -> false
-                ThemeMode.DARK, ThemeMode.BLACK -> true
-                ThemeMode.SYSTEM -> isSystemInDarkTheme()
-            }
+            // Light or Dark (pure black) — AppPrefs turns any older System / Black choice into one of them.
+            val dark = themeMode == ThemeMode.DARK || themeMode == ThemeMode.BLACK
             // Android 13+: the system's launch screen (blank, no icon) matches the theme (light by default).
-            LaunchedEffect(themeMode) {
+            LaunchedEffect(dark) {
                 if (Build.VERSION.SDK_INT >= 33) {
                     runCatching {
-                        splashScreen.setSplashScreenTheme(
-                            when (themeMode) {
-                                ThemeMode.LIGHT -> android.content.res.Resources.ID_NULL
-                                ThemeMode.SYSTEM -> R.style.Theme_AGHub_SplashSystem
-                                ThemeMode.DARK, ThemeMode.BLACK -> R.style.Theme_AGHub_SplashDark
-                            },
-                        )
+                        splashScreen.setSplashScreenTheme(if (dark) R.style.Theme_AGHub_SplashDark else android.content.res.Resources.ID_NULL)
                     }
                 }
             }
-            AgHubTheme(darkTheme = dark, amoled = themeMode == ThemeMode.BLACK) {
+            AgHubTheme(darkTheme = dark) {
                 // Verification prompts (OTP / code / number) are handled at the top level so they
                 // can appear ON TOP of the lock screen — the app PIN is skipped for these only,
                 // and the app stays locked underneath once the prompt is closed.
@@ -958,7 +949,7 @@ class MainActivity : FragmentActivity() {
         }
 
         CompositionLocalProvider(LocalPlayer provides player) {
-            Crossfade(targetState = screen, animationSpec = tween(300), label = "screen") { target ->
+            Crossfade(targetState = screen, animationSpec = tween(220), label = "screen") { target -> // v7: quick and light
                 when (target) {
                     AppScreen.ForceUpdate -> ForceUpdateScreen()
                     AppScreen.Announcement -> AnnouncementScreen(
@@ -1069,6 +1060,8 @@ class MainActivity : FragmentActivity() {
                             com.agani.syncup.home.HomeScreen(
                                 signedIn = loggedIn,
                                 userInitial = state.user?.name?.trim()?.take(1)?.uppercase(),
+                                // v7: "Good afternoon," above the first name when signed in ("SyncUp" signed out).
+                                userName = state.user?.name.takeIf { loggedIn },
                                 links = if (loggedIn) state.urls else com.agani.syncup.browser.GeneralLinks.links,
                                 onSearch = {
                                     tabManager.focusAddressBar = true
@@ -1292,7 +1285,7 @@ class MainActivity : FragmentActivity() {
             com.agani.syncup.sso.SignInConsentHost(state.user.takeIf { loggedIn })
             // Sign-in from Home, You or a tool (the browser shows its own sheet).
             if (showLogin && !loggedIn && booted && screen != AppScreen.Browser) {
-                androidx.compose.material3.ModalBottomSheet(
+                androidx.compose.material3.ModalBottomSheet(containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLowest,
                     onDismissRequest = {
                         vm.clearError()
                         showLogin = false

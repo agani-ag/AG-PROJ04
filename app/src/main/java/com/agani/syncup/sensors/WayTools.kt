@@ -86,6 +86,10 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.location.LocationManagerCompat
 import com.agani.syncup.browser.ui.StepSlider
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.appCard
+import com.agani.syncup.ui.theme.isLight
+import com.agani.syncup.ui.theme.success
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.cos
@@ -157,7 +161,7 @@ internal fun LocationGate(why: String, access: Access, content: @Composable () -
         !on -> {
             val cs = MaterialTheme.colorScheme
             Column(
-                Modifier.padding(16.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cs.surfaceContainerLow).padding(20.dp),
+                Modifier.padding(16.dp).fillMaxWidth().appCard(CardShape).padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text("Location is off", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
@@ -233,7 +237,10 @@ fun CompassTool(onBack: () -> Unit) {
 
     ToolPage("Compass", onBack) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("${shown.roundToInt() % 360}° ${windOf(shown)}", fontSize = 44.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = cs.onSurface, modifier = Modifier.padding(top = 4.dp))
+            Text(
+                "${shown.roundToInt() % 360}° ${windOf(shown)}", fontSize = 40.sp, fontWeight = FontWeight.Medium, color = cs.onSurface,
+                style = TextStyle(fontFeatureSettings = "tnum"), modifier = Modifier.padding(top = 2.dp),
+            )
             hold?.let { h ->
                 val d = turn(shown, h)
                 Text(
@@ -242,10 +249,10 @@ fun CompassTool(onBack: () -> Unit) {
                         d > 0 -> "Turn right ${d.roundToInt()}°"
                         else -> "Turn left ${(-d).roundToInt()}°"
                     },
-                    fontSize = 15.sp, fontWeight = FontWeight.Medium, color = if (abs(d) < 5) Color(0xFF16A34A) else cs.primary,
+                    fontSize = 15.sp, fontWeight = FontWeight.Medium, color = if (abs(d) < 5) cs.success else cs.primary,
                 )
             }
-            CompassDial(shown, hold, Modifier.padding(vertical = 14.dp).fillMaxWidth(.9f).aspectRatio(1f))
+            CompassDial(shown, hold, Modifier.padding(top = 10.dp, bottom = 14.dp).fillMaxWidth(.84f).aspectRatio(1f))
             if (poor) {
                 Note("The reading isn't steady — move the phone in a figure 8 a few times, away from metal and magnets.")
                 Spacer(Modifier.height(10.dp))
@@ -256,8 +263,8 @@ fun CompassTool(onBack: () -> Unit) {
                 (if (poor) "Poor" else if (mag.accuracy == SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM) "Fair" else "Good") to "Accuracy",
             )
             Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().appCard(CardShape).padding(start = 16.dp, end = 14.dp, top = 12.dp, bottom = 12.dp)) {
+                Column(Modifier.weight(1f).padding(end = 10.dp)) {
                     Text("True north", fontSize = 15.sp, color = cs.onSurface)
                     Text(
                         when {
@@ -276,65 +283,79 @@ fun CompassTool(onBack: () -> Unit) {
                 })
             }
             if (trueNorth && !access.granted) TextButton(onClick = access.ask) { Text("Allow location") }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
                 if (hold == null) {
-                    Button(onClick = { hold = shown }, enabled = seen, modifier = Modifier.weight(1f)) { Text("Hold this direction") }
+                    Button(onClick = { hold = shown }, enabled = seen, modifier = Modifier.weight(1f).height(48.dp)) { Text("Hold this direction", fontSize = 15.sp) }
                 } else {
-                    OutlinedButton(onClick = { hold = null }, modifier = Modifier.weight(1f)) { Text("Clear direction") }
+                    OutlinedButton(onClick = { hold = null }, modifier = Modifier.weight(1f).height(48.dp)) { Text("Clear direction", fontSize = 15.sp) }
                 }
             }
         }
     }
 }
 
+/**
+ * The compass card, turned so the heading is at the top: a tick every 5°, numbers every 30°, N in red;
+ * the letters stay upright. A blue mark above the card shows where the phone points.
+ */
 @Composable
 private fun CompassDial(heading: Float, hold: Float?, modifier: Modifier) {
     val cs = MaterialTheme.colorScheme
     val measurer = rememberTextMeasurer()
     val ink = cs.onSurface
-    val faint = cs.outlineVariant
-    val sky = cs.primary
+    val muted = cs.onSurfaceVariant
+    val north = cs.error
+    val accent = cs.primary
+    val card = cs.surfaceContainerLowest
+    val rim = cs.outlineVariant
+    val light = cs.isLight
+    // Measured once; drawn every frame as the dial turns.
+    val letters = remember(ink, north) {
+        listOf("N" to 0, "E" to 90, "S" to 180, "W" to 270).map { (t, deg) ->
+            deg to measurer.measure(t, TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Medium, color = if (deg == 0) north else ink))
+        }
+    }
+    val numbers = remember(muted) {
+        (30 until 360 step 30).filter { it % 90 != 0 }.map { deg -> deg to measurer.measure("$deg", TextStyle(fontSize = 10.5.sp, color = muted)) }
+    }
     Canvas(modifier) {
         val c = Offset(size.width / 2, size.height / 2)
-        val radius = min(size.width, size.height) / 2 - 8.dp.toPx()
-        drawCircle(cs.surfaceContainerLow, radius, c)
-        drawCircle(faint, radius, c, style = Stroke(2.dp.toPx()))
+        // Drawn on a 280-unit square: the card's edge at 124, ticks from 112 inward, letters at 84.
+        val u = min(size.width, size.height) / 280f
+        val radius = 124 * u
+        if (light) drawCircle(Color(0x140F172A), radius + 1.5f * u, Offset(c.x, c.y + 1.5f * u))
+        drawCircle(card, radius, c)
+        drawCircle(rim, radius, c, style = Stroke(1.5f * u))
         rotate(-heading, c) {
             for (deg in 0 until 360 step 5) {
                 val long = deg % 30 == 0
-                val len = if (long) 16.dp.toPx() else if (deg % 15 == 0) 10.dp.toPx() else 6.dp.toPx()
+                val len = (if (long) 12 else if (deg % 10 == 0) 8 else 4) * u
                 val a = Math.toRadians(deg.toDouble() - 90)
-                val outer = Offset(c.x + (radius - 4.dp.toPx()) * cos(a).toFloat(), c.y + (radius - 4.dp.toPx()) * sin(a).toFloat())
-                val inner = Offset(c.x + (radius - 4.dp.toPx() - len) * cos(a).toFloat(), c.y + (radius - 4.dp.toPx() - len) * sin(a).toFloat())
-                drawLine(if (long) ink else faint, inner, outer, strokeWidth = if (long) 2.dp.toPx() else 1.5.dp.toPx())
-            }
-            listOf("N" to 0, "E" to 90, "S" to 180, "W" to 270).forEach { (letter, deg) ->
-                val a = Math.toRadians(deg.toDouble() - 90)
-                val p = Offset(c.x + (radius - 40.dp.toPx()) * cos(a).toFloat(), c.y + (radius - 40.dp.toPx()) * sin(a).toFloat())
-                val layout = measurer.measure(letter, TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, color = if (letter == "N") Color(0xFFDC2626) else ink))
-                rotate(deg.toFloat(), p) {
-                    drawText(layout, topLeft = Offset(p.x - layout.size.width / 2f, p.y - layout.size.height / 2f))
-                }
+                val outer = Offset(c.x + 112 * u * cos(a).toFloat(), c.y + 112 * u * sin(a).toFloat())
+                val inner = Offset(c.x + (112 * u - len) * cos(a).toFloat(), c.y + (112 * u - len) * sin(a).toFloat())
+                drawLine(if (deg == 0) north else if (long) ink else muted, inner, outer, strokeWidth = (if (long) 2.2f else 1.3f) * u, cap = StrokeCap.Round)
             }
             hold?.let { h ->
                 val a = Math.toRadians(h.toDouble() - 90)
-                drawLine(sky, c, Offset(c.x + radius * .82f * cos(a).toFloat(), c.y + radius * .82f * sin(a).toFloat()), strokeWidth = 4.dp.toPx(), cap = StrokeCap.Round)
+                drawLine(accent, c, Offset(c.x + radius * .82f * cos(a).toFloat(), c.y + radius * .82f * sin(a).toFloat()), strokeWidth = 4 * u, cap = StrokeCap.Round)
             }
+            // The needle: red to north, grey to south, turning with the dial.
+            drawPath(Path().apply { moveTo(c.x, c.y - 64 * u); lineTo(c.x + 9 * u, c.y); lineTo(c.x - 9 * u, c.y); close() }, north)
+            drawPath(Path().apply { moveTo(c.x, c.y + 64 * u); lineTo(c.x + 9 * u, c.y); lineTo(c.x - 9 * u, c.y); close() }, muted.copy(alpha = .45f))
         }
-        // The needle: red to north, grey to south, turning with the dial.
-        rotate(-heading, c) {
-            val w = 12.dp.toPx()
-            val l = radius * .55f
-            drawPath(Path().apply { moveTo(c.x, c.y - l); lineTo(c.x - w, c.y); lineTo(c.x + w, c.y); close() }, Color(0xFFDC2626))
-            drawPath(Path().apply { moveTo(c.x, c.y + l); lineTo(c.x - w, c.y); lineTo(c.x + w, c.y); close() }, faint)
+        // Letters and numbers go round with the dial but stay upright.
+        fun place(deg: Int, r: Float, layout: androidx.compose.ui.text.TextLayoutResult) {
+            val a = Math.toRadians(deg - heading - 90.0)
+            val p = Offset(c.x + r * u * cos(a).toFloat(), c.y + r * u * sin(a).toFloat())
+            drawText(layout, topLeft = Offset(p.x - layout.size.width / 2f, p.y - layout.size.height / 2f))
         }
-        drawCircle(ink, 5.dp.toPx(), c)
-        // Where the phone points: a fixed mark at the top.
-        drawPath(
-            Path().apply { moveTo(c.x, c.y - radius - 6.dp.toPx()); lineTo(c.x - 9.dp.toPx(), c.y - radius + 10.dp.toPx()); lineTo(c.x + 9.dp.toPx(), c.y - radius + 10.dp.toPx()); close() },
-            sky,
-        )
+        letters.forEach { (deg, layout) -> place(deg, 84f, layout) }
+        numbers.forEach { (deg, layout) -> place(deg, 88f, layout) }
+        drawCircle(card, 7 * u, c)
+        drawCircle(ink, 7 * u, c, style = Stroke(2 * u))
+        // Where the phone points: a fixed mark above the card.
+        drawPath(Path().apply { moveTo(c.x, c.y - 122 * u); lineTo(c.x - 9 * u, c.y - 136 * u); lineTo(c.x + 9 * u, c.y - 136 * u); close() }, accent)
     }
 }
 
@@ -403,7 +424,7 @@ fun SpeedometerTool(onBack: () -> Unit) {
         // Mirrored, big and bright, to read in the car's glass at night.
         Box(Modifier.fillMaxSize().background(Color.Black).clickable { windshield = false }, contentAlignment = Alignment.Center) {
             Column(Modifier.scale(scaleX = -1f, scaleY = 1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("${shownSpeed.roundToInt()}", fontSize = 160.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = Color(0xFF4ADE80))
+                Text("${shownSpeed.roundToInt()}", fontSize = 160.sp, fontWeight = FontWeight.Bold, style = TextStyle(fontFeatureSettings = "tnum"), color = Color(0xFF4ADE80))
                 Text(unit, fontSize = 36.sp, color = Color(0xFF4ADE80))
             }
             Text("Tap to go back", fontSize = 13.sp, color = Color.White.copy(alpha = .5f), modifier = Modifier.align(Alignment.BottomCenter).padding(24.dp))
@@ -497,7 +518,7 @@ private fun SpeedGauge(value: Float, max: Float, unit: String, over: Boolean, mo
             drawArc(fill, 135f, 270f * (value / max).coerceIn(0f, 1f), false, topLeft, Size(d, d), style = Stroke(stroke, cap = StrokeCap.Round))
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("${value.roundToInt()}", fontSize = 72.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = if (over) Color(0xFFDC2626) else cs.onSurface)
+            Text("${value.roundToInt()}", fontSize = 72.sp, fontWeight = FontWeight.Medium, style = TextStyle(fontFeatureSettings = "tnum"), color = if (over) Color(0xFFDC2626) else cs.onSurface)
             Text(unit, fontSize = 16.sp, color = cs.onSurfaceVariant)
         }
     }
@@ -528,7 +549,7 @@ fun HeightTool(onBack: () -> Unit) {
         val body: @Composable () -> Unit = {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Spacer(Modifier.height(28.dp))
-                Text(metres?.let { len(it) } ?: "—", fontSize = 64.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = cs.onSurface)
+                Text(metres?.let { len(it) } ?: "—", fontSize = 64.sp, fontWeight = FontWeight.Medium, style = TextStyle(fontFeatureSettings = "tnum"), color = cs.onSurface)
                 Text("above sea level", fontSize = 16.sp, color = cs.onSurfaceVariant)
                 Spacer(Modifier.height(6.dp))
                 Text(

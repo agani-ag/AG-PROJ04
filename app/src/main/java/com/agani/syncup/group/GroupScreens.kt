@@ -22,19 +22,19 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Add
@@ -48,19 +48,17 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PanTool
-import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Phone
+import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -70,6 +68,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -79,7 +78,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -91,9 +89,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.agani.syncup.downloads.Files
+import com.agani.syncup.music.CardDivider
+import com.agani.syncup.music.NoteBox
+import com.agani.syncup.music.SectionHead
+import com.agani.syncup.music.ToolTile
+import com.agani.syncup.music.ToolTint
+import com.agani.syncup.music.ToolTopBar
+import com.agani.syncup.music.cardSlice
+import com.agani.syncup.music.tintButton
 import com.agani.syncup.party.Party
 import com.agani.syncup.party.SongPicker
-import com.agani.syncup.ui.theme.isLight
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.appCard
+import com.agani.syncup.ui.theme.dialogSurface
+import com.agani.syncup.ui.theme.success
 import com.agani.syncup.walkie.TalkMode
 import com.agani.syncup.watchparty.VideoPickerSheet
 import com.agani.syncup.watchparty.WatchParty
@@ -102,12 +111,13 @@ import kotlinx.coroutines.delay
 import org.json.JSONObject
 
 // ============================================================================ colours
-internal val Indigo = Color(0xFF4338CA)
-private val IndigoLight = Color(0xFFE0E7FF)
-private val IndigoDeep = Color(0xFF1E1B4B)
-private val GroupGradient = Brush.linearGradient(listOf(Color(0xFF312E81), Indigo, Color(0xFF6366F1)))
+/** The group's own colour (its Tools tile, the group bar, Switch). */
+internal val GroupTint = ToolTint.INDIGO
 
-/** Each mode in its Tools tile's colours: (icon, accent, light container). */
+/** The talk button's teal (the same in Light and Dark, with white on it). */
+private val WalkieTeal = Color(0xFF0F766E)
+
+/** Each mode's icon, and its tool's colour: Music party pink, Watch together rose, Walkie talkie teal, Share files blue. */
 internal fun GroupMode.icon(): ImageVector = when (this) {
     GroupMode.MUSIC -> Icons.Rounded.MusicNote
     GroupMode.WATCH -> Icons.Rounded.Theaters
@@ -115,18 +125,11 @@ internal fun GroupMode.icon(): ImageVector = when (this) {
     GroupMode.SHARE -> Icons.Rounded.SwapHoriz
 }
 
-internal fun GroupMode.accent(): Color = when (this) {
-    GroupMode.MUSIC -> Color(0xFF6D28D9)
-    GroupMode.WATCH -> Color(0xFFBE123C)
-    GroupMode.WALKIE -> Color(0xFF0F766E)
-    GroupMode.SHARE -> Color(0xFF1D4ED8)
-}
-
-internal fun GroupMode.container(): Color = when (this) {
-    GroupMode.MUSIC -> Color(0xFFEDE9FE)
-    GroupMode.WATCH -> Color(0xFFFFE4E6)
-    GroupMode.WALKIE -> Color(0xFFCCFBF1)
-    GroupMode.SHARE -> Color(0xFFDBEAFE)
+internal fun GroupMode.tint(): ToolTint = when (this) {
+    GroupMode.MUSIC -> ToolTint.PINK
+    GroupMode.WATCH -> ToolTint.ROSE
+    GroupMode.WALKIE -> ToolTint.TEAL
+    GroupMode.SHARE -> ToolTint.BLUE
 }
 
 private fun GroupMode.blurb(): String = when (this) {
@@ -137,13 +140,7 @@ private fun GroupMode.blurb(): String = when (this) {
 }
 
 @Composable
-private fun ModeTile(mode: GroupMode, size: Int = 44) {
-    val cs = MaterialTheme.colorScheme
-    Box(
-        Modifier.size(size.dp).clip(RoundedCornerShape((size / 3).dp)).background(mode.container().copy(alpha = if (cs.isLight) 1f else .22f)),
-        contentAlignment = Alignment.Center,
-    ) { Icon(mode.icon(), null, tint = if (cs.isLight) mode.accent() else mode.container(), modifier = Modifier.size((size * .55f).dp)) }
-}
+private fun ModeTile(mode: GroupMode, size: Int = 42) = ToolTile(mode.icon(), mode.tint(), size.dp)
 
 // ============================================================================ the group bar
 /**
@@ -166,26 +163,27 @@ fun GroupBar(modifier: Modifier = Modifier) {
             n > 1 -> append(" · all on Wi-Fi")
         }
     }
+    val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(GroupGradient)
-            .clickable { sheets.people = true }.padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+        modifier = modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(22.dp)).background(GroupTint.tile)
+            .clickable { sheets.people = true }.padding(start = 14.dp, end = 9.dp, top = 9.dp, bottom = 9.dp),
     ) {
-        Icon(Icons.Rounded.Groups, null, tint = Color.White, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(10.dp))
+        Icon(Icons.Rounded.Groups, null, tint = GroupTint.icon, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(GroupLink.groupName, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(line, color = Color.White.copy(alpha = .85f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(GroupLink.groupName, color = cs.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(line, color = cs.onSurfaceVariant, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (GroupLink.isHost) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.height(34.dp).clip(RoundedCornerShape(17.dp)).background(Color.White).clickable { sheets.switching = true }
-                    .padding(horizontal = 12.dp),
+                modifier = Modifier.padding(start = 8.dp).height(34.dp).clip(RoundedCornerShape(50)).background(GroupTint.icon)
+                    .clickable(onClickLabel = "Switch the group") { sheets.switching = true }.padding(horizontal = 14.dp),
             ) {
-                Icon(Icons.Rounded.SwapHoriz, null, tint = Indigo, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Switch", color = Indigo, fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
+                Icon(Icons.Rounded.SwapHoriz, null, tint = GroupTint.onSolid, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Switch", color = GroupTint.onSolid, fontSize = 13.5.sp, fontWeight = FontWeight.Medium)
             }
         }
     }
@@ -236,17 +234,20 @@ fun GroupSheets(state: GroupSheetState) {
 fun GroupPeopleSheet(onDismiss: () -> Unit, onSwitch: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     var confirmEnd by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = cs.surfaceContainerLowest,
+    ) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 24.dp)) {
-            Text(GroupLink.groupName, fontSize = 20.sp, fontWeight = FontWeight.Medium)
+            Text(GroupLink.groupName, fontSize = 18.sp, fontWeight = FontWeight.Medium)
             Text(
                 "Now: ${GroupLink.mode.label} · ${GroupLink.people.size} of ${GroupLink.MAX_PHONES} phones",
-                fontSize = 13.5.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
+                fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
             )
             GroupLink.people.forEach { p ->
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                    Box(Modifier.size(40.dp).clip(CircleShape).background(IndigoLight.copy(alpha = if (cs.isLight) 1f else .2f)), contentAlignment = Alignment.Center) {
-                        Text(p.name.take(1).uppercase(), color = if (cs.isLight) IndigoDeep else IndigoLight, fontWeight = FontWeight.Medium)
+                    Box(Modifier.size(40.dp).clip(CircleShape).background(GroupTint.tile), contentAlignment = Alignment.Center) {
+                        Text(p.name.take(1).uppercase(), color = GroupTint.icon, fontWeight = FontWeight.Medium)
                     }
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
@@ -264,14 +265,13 @@ fun GroupPeopleSheet(onDismiss: () -> Unit, onSwitch: () -> Unit) {
                     if (GroupLink.isHost && !p.host) TextButton(onClick = { GroupLink.remove(p.name) }) { Text("Remove", color = cs.error) }
                 }
             }
-            Text(
-                "New phones join with the code + Accept. They land in whatever the group is doing now.",
-                fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cs.surfaceContainerHigh).padding(12.dp),
+            NoteBox(
+                Icons.Rounded.Groups, "New phones join with the code + Accept. They land in whatever the group is doing now.",
+                Modifier.padding(top = 8.dp),
             )
             if (GroupLink.isHost) {
                 Button(
-                    onClick = onSwitch, colors = ButtonDefaults.buttonColors(containerColor = Indigo, contentColor = Color.White),
+                    onClick = onSwitch, colors = tintButton(GroupTint),
                     modifier = Modifier.padding(top = 16.dp).fillMaxWidth().height(48.dp),
                 ) {
                     Icon(Icons.Rounded.SwapHoriz, null, modifier = Modifier.size(18.dp))
@@ -297,24 +297,25 @@ fun GroupPeopleSheet(onDismiss: () -> Unit, onSwitch: () -> Unit) {
             text = { Text("Everything stops on every phone, and everyone leaves the group.") },
             confirmButton = { TextButton(onClick = { confirmEnd = false; onDismiss(); GroupLink.end() }) { Text("End group", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { confirmEnd = false }) { Text("Keep going") } },
+            containerColor = cs.dialogSurface,
         )
     }
 }
 
 @Composable
 private fun LinkChip(quality: Int) {
-    val (icon, text, bg, fg) = when (quality) {
-        BandwidthInfo.Quality.LOW -> listOf(Icons.Rounded.Bluetooth, "Bluetooth · slow", Color(0xFFFEF3C7), Color(0xFF78350F))
-        BandwidthInfo.Quality.MEDIUM, BandwidthInfo.Quality.HIGH -> listOf(Icons.Rounded.Wifi, "Wi-Fi", Color(0xFFDCFCE7), Color(0xFF15803D))
-        else -> listOf(Icons.Rounded.Wifi, "Connecting…", Color(0xFFE3E8F0), Color(0xFF475569))
+    val (icon, text, tint) = when (quality) {
+        BandwidthInfo.Quality.LOW -> Triple(Icons.Rounded.Bluetooth, "Bluetooth · slow", ToolTint.AMBER)
+        BandwidthInfo.Quality.MEDIUM, BandwidthInfo.Quality.HIGH -> Triple(Icons.Rounded.Wifi, "Wi-Fi", ToolTint.GREEN)
+        else -> Triple(Icons.Rounded.Wifi, "Connecting…", ToolTint.SLATE)
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(top = 3.dp).clip(RoundedCornerShape(10.dp)).background(bg as Color).padding(horizontal = 8.dp, vertical = 2.dp),
+        modifier = Modifier.padding(top = 3.dp).clip(RoundedCornerShape(50)).background(tint.tile).padding(horizontal = 8.dp, vertical = 2.dp),
     ) {
-        Icon(icon as ImageVector, null, tint = fg as Color, modifier = Modifier.size(13.dp))
+        Icon(icon, null, tint = tint.icon, modifier = Modifier.size(13.dp))
         Spacer(Modifier.width(4.dp))
-        Text(text as String, color = fg, fontSize = 11.5.sp)
+        Text(text, color = tint.icon, fontSize = 11.5.sp)
     }
 }
 
@@ -325,22 +326,26 @@ private fun LinkChip(quality: Int) {
 fun GroupSwitchSheet(onDismiss: () -> Unit, onPickSongs: () -> Unit, onPickVideo: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     var step by remember { mutableStateOf<GroupMode?>(null) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = cs.surfaceContainerLowest,
+    ) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 24.dp)) {
             when (val s = step) {
                 null -> {
-                    Text("Switch the group to…", fontSize = 20.sp, fontWeight = FontWeight.Medium)
-                    Text("Every phone in the group changes too. Nobody has to join again.", fontSize = 13.5.sp, lineHeight = 19.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                    Text("Switch the group to…", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                    Text("Every phone in the group changes too. Nobody has to join again.", fontSize = 13.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
                     val modes = GroupMode.entries
                     Column(Modifier.padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         modes.chunked(2).forEach { pair ->
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 pair.forEach { m ->
                                     val now = m == GroupLink.mode
+                                    val shape = RoundedCornerShape(22.dp)
                                     Column(
-                                        Modifier.weight(1f).height(132.dp).clip(RoundedCornerShape(20.dp))
-                                            .background(if (now) IndigoLight.copy(alpha = if (cs.isLight) .6f else .18f) else cs.surfaceContainerLowest)
-                                            .border(if (now) 2.dp else 1.dp, if (now) Indigo else cs.outlineVariant, RoundedCornerShape(20.dp))
+                                        Modifier.weight(1f).height(132.dp).clip(shape)
+                                            .background(if (now) GroupTint.tile else cs.surfaceContainerLowest)
+                                            .border(if (now) 2.dp else 1.dp, if (now) GroupTint.icon else cs.outlineVariant, shape)
                                             .clickable {
                                                 when {
                                                     now -> onDismiss()
@@ -351,12 +356,17 @@ fun GroupSwitchSheet(onDismiss: () -> Unit, onPickSongs: () -> Unit, onPickVideo
                                                     else -> step = m
                                                 }
                                             }
-                                            .padding(14.dp),
+                                            .padding(if (now) 13.dp else 14.dp),
                                     ) {
                                         Row(verticalAlignment = Alignment.Top) {
                                             ModeTile(m)
                                             Spacer(Modifier.weight(1f))
-                                            if (now) Text("Now", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Medium, modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(Indigo).padding(horizontal = 8.dp, vertical = 2.dp))
+                                            if (now) {
+                                                Text(
+                                                    "Now", color = GroupTint.onSolid, fontSize = 11.sp, fontWeight = FontWeight.Medium,
+                                                    modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(GroupTint.icon).padding(horizontal = 9.dp, vertical = 3.dp),
+                                                )
+                                            }
                                         }
                                         Spacer(Modifier.weight(1f))
                                         Text(m.label, fontSize = 15.sp, fontWeight = FontWeight.Medium)
@@ -366,29 +376,29 @@ fun GroupSwitchSheet(onDismiss: () -> Unit, onPickSongs: () -> Unit, onPickVideo
                             }
                         }
                     }
-                    resumeLine()?.let { Note(Icons.Rounded.MusicNote, it) }
+                    resumeLine()?.let { Note(GroupLink.mode.icon(), it) }
                 }
                 GroupMode.MUSIC -> {
                     SetupTitle(s, "Pick what the group hears.")
                     val songs = Party.queue.size
                     if (songs > 0) {
-                        Option(Icons.Rounded.MusicNote, "Carry on the music", "${Party.current?.title ?: "The queue"} · $songs song${if (songs == 1) "" else "s"}") {
+                        Option(Icons.Rounded.MusicNote, "Carry on the music", "${Party.current?.title ?: "The queue"} · $songs song${if (songs == 1) "" else "s"}", s) {
                             GroupLink.switchTo(GroupMode.MUSIC)
                             onDismiss()
                         }
                     }
-                    Option(Icons.Rounded.Add, "Pick songs from this phone", "They play on every phone, in sync") { onPickSongs() }
+                    Option(Icons.Rounded.Add, "Pick songs from this phone", "They play on every phone, in sync", s) { onPickSongs() }
                     BackRow { step = null }
                 }
                 GroupMode.WATCH -> {
                     SetupTitle(s, "Pick what the group watches.")
                     WatchParty.current?.let { v ->
-                        Option(Icons.Rounded.Theaters, "Carry on “${v.title}”", "From ${formatMs(WatchParty.posMs)}") {
+                        Option(Icons.Rounded.Theaters, "Carry on “${v.title}”", "From ${formatMs(WatchParty.posMs)}", s) {
                             GroupLink.switchTo(GroupMode.WATCH)
                             onDismiss()
                         }
                     }
-                    Option(Icons.Rounded.Add, "Pick a video", "From this phone, or a link") { onPickVideo() }
+                    Option(Icons.Rounded.Add, "Pick a video", "From this phone, or a link", s) { onPickVideo() }
                     if (GroupLink.slowPeople.isNotEmpty()) {
                         Note(
                             Icons.Rounded.Bluetooth,
@@ -400,11 +410,11 @@ fun GroupSwitchSheet(onDismiss: () -> Unit, onPickSongs: () -> Unit, onPickVideo
                 }
                 GroupMode.WALKIE -> {
                     SetupTitle(s, "How does the group talk?")
-                    Option(Icons.Rounded.PanTool, "Hold to talk", "One at a time — hold the button, up to a minute") {
+                    Option(Icons.Rounded.PanTool, "Hold to talk", "One at a time — hold the button, up to a minute", s) {
                         GroupLink.switchTo(GroupMode.WALKIE, JSONObject().put("talk", TalkMode.HOLD.key))
                         onDismiss()
                     }
-                    Option(Icons.Rounded.Mic, "Open talk", "Hands-free — everyone's voice goes out when they speak") {
+                    Option(Icons.Rounded.Mic, "Open talk", "Hands-free — everyone's voice goes out when they speak", s) {
                         GroupLink.switchTo(GroupMode.WALKIE, JSONObject().put("talk", TalkMode.OPEN.key))
                         onDismiss()
                     }
@@ -427,28 +437,28 @@ private fun resumeLine(): String? = when (GroupLink.mode) {
 @Composable
 private fun SetupTitle(mode: GroupMode, sub: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        ModeTile(mode, 40)
+        ModeTile(mode)
         Spacer(Modifier.width(12.dp))
         Column {
-            Text(mode.label, fontSize = 20.sp, fontWeight = FontWeight.Medium)
-            Text(sub, fontSize = 13.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(mode.label, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+            Text(sub, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
     Spacer(Modifier.height(8.dp))
 }
 
+/** One choice after picking a mode: an outlined card with the mode's soft tile. */
 @Composable
-private fun Option(icon: ImageVector, title: String, sub: String, onClick: () -> Unit) {
+private fun Option(icon: ImageVector, title: String, sub: String, mode: GroupMode, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(20.dp)
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cs.surfaceContainerLowest)
-            .border(1.dp, cs.outlineVariant, RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(12.dp),
+        modifier = Modifier.padding(top = 8.dp).fillMaxWidth().clip(shape).border(1.dp, cs.outlineVariant, shape)
+            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
-        Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(cs.surfaceContainerHigh), contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
-        }
-        Spacer(Modifier.width(12.dp))
+        ToolTile(icon, mode.tint(), 40.dp)
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(sub, fontSize = 12.sp, color = cs.onSurfaceVariant, maxLines = 2)
@@ -457,17 +467,18 @@ private fun Option(icon: ImageVector, title: String, sub: String, onClick: () ->
     }
 }
 
+/** The grey note (what's kept), or a soft amber warning. */
 @Composable
 private fun Note(icon: ImageVector, text: String, warn: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.Top,
-        modifier = Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp))
-            .background(if (warn) Color(0xFFFEF3C7).copy(alpha = if (cs.isLight) 1f else .2f) else cs.surfaceContainerHigh).padding(12.dp),
+        modifier = Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp))
+            .background(if (warn) ToolTint.AMBER.tile else cs.surfaceContainer).padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
-        Icon(icon, null, tint = if (warn) Color(0xFFB45309) else cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        Icon(icon, null, tint = if (warn) ToolTint.AMBER.icon else cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(10.dp))
-        Text(text, fontSize = 12.5.sp, lineHeight = 17.sp, color = if (warn && cs.isLight) Color(0xFF78350F) else cs.onSurfaceVariant)
+        Text(text, fontSize = 12.5.sp, lineHeight = 17.sp, color = if (warn) cs.onSurface else cs.onSurfaceVariant)
     }
 }
 
@@ -482,50 +493,58 @@ private fun formatMs(ms: Long): String {
 }
 
 // ============================================================================ joining
-/** A group nearby, with what it's doing now, and Join. */
+/** The groups nearby, inside one card: each with what it's doing now, and Join in its colour. */
 @Composable
-fun GroupRoomCard(room: GroupRoom, onJoin: () -> Unit) {
+fun GroupRoomsCard(rooms: List<GroupRoom>, modifier: Modifier = Modifier, onJoin: (GroupRoom) -> Unit) {
+    Column(modifier.fillMaxWidth().appCard(CardShape)) {
+        rooms.forEachIndexed { i, room ->
+            key(room.endpointId) {
+                if (i > 0) CardDivider()
+                GroupRoomRow(room) { onJoin(room) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupRoomRow(room: GroupRoom, onJoin: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(bottom = 10.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp))
-            .background(cs.surfaceContainerLowest).border(1.dp, cs.outlineVariant, RoundedCornerShape(18.dp)).padding(12.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(start = 16.dp, end = 12.dp, top = 11.dp, bottom = 11.dp),
     ) {
-        ModeTile(room.mode, 48)
-        Spacer(Modifier.width(12.dp))
+        ModeTile(room.mode)
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(room.name, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 listOfNotNull(room.mode.label, room.title.takeIf { it.isNotBlank() }?.let { "“$it”" }, "${room.people} phone${if (room.people == 1) "" else "s"}").joinToString(" · "),
-                fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
         Spacer(Modifier.width(8.dp))
-        Button(onClick = onJoin, colors = ButtonDefaults.buttonColors(containerColor = room.mode.accent(), contentColor = Color.White), contentPadding = PaddingValues(horizontal = 18.dp)) {
-            Text(if (room.people >= GroupLink.MAX_PHONES) "Full" else "Join")
+        Button(onClick = onJoin, colors = tintButton(room.mode.tint()), contentPadding = PaddingValues(horizontal = 16.dp), modifier = Modifier.height(36.dp)) {
+            Text(if (room.people >= GroupLink.MAX_PHONES) "Full" else "Join", fontSize = 13.5.sp)
         }
     }
 }
 
 /** Guest: asking to join — the code both phones show. */
 @Composable
-fun GroupJoiningView(accent: Color, container: Color) {
+fun GroupJoiningView(tint: ToolTint) {
     val cs = MaterialTheme.colorScheme
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.weight(1f))
-        Box(Modifier.size(140.dp).clip(CircleShape).background(container.copy(alpha = if (cs.isLight) 1f else .2f)), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.Groups, null, tint = accent, modifier = Modifier.size(48.dp))
+        Box(Modifier.size(140.dp).clip(CircleShape).background(tint.tile), contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.Groups, null, tint = tint.icon, modifier = Modifier.size(48.dp))
         }
         Text(
             if (GroupLink.joinCode.isBlank()) "Connecting to ${GroupLink.groupName}…" else "Asking ${GroupLink.hostName} to let you in…",
-            fontSize = 19.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 20.dp),
+            fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 20.dp),
         )
         if (GroupLink.joinCode.isNotBlank()) {
-            Text(
-                GroupLink.joinCode.toCharArray().joinToString(" "), fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = 4.sp,
-                modifier = Modifier.padding(top = 16.dp).clip(RoundedCornerShape(16.dp)).background(cs.surfaceContainerHigh).padding(horizontal = 22.dp, vertical = 10.dp),
-            )
-            Text("Check ${GroupLink.hostName}'s phone shows the same code.", fontSize = 14.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+            CodeCard(GroupLink.joinCode, Modifier.padding(top = 28.dp))
+            Text("Check ${GroupLink.hostName}'s phone shows the same code.", fontSize = 13.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 12.dp))
         }
         Spacer(Modifier.weight(1f))
         OutlinedButton(onClick = { GroupLink.cancelJoin() }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Cancel") }
@@ -543,19 +562,18 @@ fun GroupElsewhere(here: GroupMode, onSwitchHere: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         GroupBar(Modifier.padding(top = 4.dp))
         Column(
-            Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(cs.surfaceContainerLowest)
-                .border(1.dp, cs.outlineVariant, RoundedCornerShape(22.dp)).padding(18.dp),
+            Modifier.padding(top = 12.dp).fillMaxWidth().appCard(CardShape).padding(18.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ModeTile(GroupLink.mode)
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text("The group is in ${GroupLink.mode.label}", fontSize = 16.sp, fontWeight = FontWeight.Medium)
                     GroupLink.modeStatus()?.let { Text(it, fontSize = 13.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 }
             }
             Button(
-                onClick = { GroupLink.requestOpen() }, colors = ButtonDefaults.buttonColors(containerColor = GroupLink.mode.accent(), contentColor = Color.White),
+                onClick = { GroupLink.requestOpen() }, colors = tintButton(GroupLink.mode.tint()),
                 modifier = Modifier.padding(top = 14.dp).fillMaxWidth().height(46.dp),
             ) { Text("Open ${GroupLink.mode.label}") }
             if (GroupLink.isHost) {
@@ -617,22 +635,26 @@ fun GroupOverlays() {
             title = { Text("Group over") },
             text = { Text(message) },
             confirmButton = { TextButton(onClick = { GroupLink.dismissEnded() }) { Text("OK") } },
+            containerColor = cs.dialogSurface,
         )
     }
     GroupLink.switched?.let { (from, to) ->
         Dialog(onDismissRequest = {}) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.clip(RoundedCornerShape(28.dp)).background(cs.surfaceContainerLow).padding(28.dp),
+                modifier = Modifier.clip(RoundedCornerShape(28.dp)).background(cs.dialogSurface).padding(28.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    ModeTile(from, 64)
-                    Icon(Icons.Rounded.ArrowForward, null, tint = Indigo, modifier = Modifier.padding(horizontal = 14.dp).size(28.dp))
-                    ModeTile(to, 64)
+                    ModeTile(from, 60)
+                    Icon(Icons.Rounded.ArrowForward, null, tint = GroupTint.icon, modifier = Modifier.padding(horizontal = 14.dp).size(28.dp))
+                    ModeTile(to, 60)
                 }
                 Text("${GroupLink.hostName} switched the group to ${to.label}", fontSize = 19.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 20.dp))
                 Text("You're still in ${GroupLink.groupName} — nothing to join.", fontSize = 13.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp))
-                LinearProgressIndicator(color = Indigo, modifier = Modifier.padding(top = 18.dp).width(200.dp))
+                LinearProgressIndicator(
+                    color = GroupTint.icon, trackColor = cs.outlineVariant,
+                    modifier = Modifier.padding(top = 18.dp).width(200.dp).clip(RoundedCornerShape(2.dp)),
+                )
             }
         }
     }
@@ -648,16 +670,29 @@ fun GroupJoinRequestDialog() {
             text = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     Text("Let them in only if their phone shows this code.", fontSize = 14.sp, textAlign = TextAlign.Center)
-                    Text(
-                        r.code.toCharArray().joinToString(" "), fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = 4.sp,
-                        modifier = Modifier.padding(top = 16.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(horizontal = 22.dp, vertical = 10.dp),
-                    )
+                    CodeCard(r.code, Modifier.padding(top = 16.dp), onCard = false)
                 }
             },
-            confirmButton = { Button(onClick = { GroupLink.acceptJoin(r) }, colors = ButtonDefaults.buttonColors(containerColor = Indigo, contentColor = Color.White)) { Text("Accept") } },
+            confirmButton = { Button(onClick = { GroupLink.acceptJoin(r) }, colors = tintButton(GroupTint)) { Text("Accept") } },
             dismissButton = { OutlinedButton(onClick = { GroupLink.declineJoin(r) }) { Text("Decline") } },
+            containerColor = MaterialTheme.colorScheme.dialogSurface,
         )
     }
+}
+
+/**
+ * The code both phones show: 30 sp, spaced out, on a white card — or on the field grey when it
+ * already sits on a white dialog ([onCard] false).
+ */
+@Composable
+private fun CodeCard(code: String, modifier: Modifier = Modifier, onCard: Boolean = true) {
+    val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(20.dp)
+    Text(
+        code, fontSize = 30.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 8.sp, color = cs.onSurface,
+        modifier = modifier.then(if (onCard) Modifier.appCard(shape) else Modifier.clip(shape).background(cs.surfaceContainer))
+            .padding(start = 36.dp, end = 28.dp, top = 12.dp, bottom = 12.dp),
+    )
 }
 
 // ============================================================================ Walkie talkie & Share files
@@ -666,17 +701,12 @@ fun GroupJoinRequestDialog() {
 fun GroupModeScreen(onBack: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(64.dp).padding(horizontal = 4.dp)) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
-            Text(
-                if (GroupLink.inGroup) GroupLink.mode.label else "Group", fontSize = 22.sp, lineHeight = 28.sp,
-                modifier = Modifier.weight(1f).padding(start = 4.dp),
-            )
-        }
+        ToolTopBar(if (GroupLink.inGroup) GroupLink.mode.label else "Group", onBack)
         when {
-            !GroupLink.inGroup -> Text(
+            !GroupLink.inGroup -> NoteBox(
+                Icons.Rounded.Groups,
                 "You're not in a group. Start one from Radio → Party or Video player → Watch Party, or join one there.",
-                fontSize = 14.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(20.dp),
+                Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
             GroupLink.mode == GroupMode.WALKIE -> WalkieView()
             GroupLink.mode == GroupMode.SHARE -> ShareView()
@@ -689,7 +719,7 @@ fun GroupModeScreen(onBack: () -> Unit) {
 private fun WalkieView() {
     val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
-    val accent = GroupMode.WALKIE.accent()
+    val tint = GroupMode.WALKIE.tint()
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         if (ok) GroupWalkie.micGranted() else GroupWalkie.notice = "Walkie talkie needs the microphone to send your voice. You can still listen."
     }
@@ -740,16 +770,23 @@ private fun WalkieView() {
                 GroupWalkie.micOn -> "Mic on — just speak"
                 else -> "Mic off"
             }
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 26.dp)) {
-                Box(contentAlignment = Alignment.Center) {
+            val off = busy || (!hold && !GroupWalkie.micOn)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 22.dp)) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(228.dp)) {
                     if (hold && floor != null) {
                         val left = 1f - ((now - GroupWalkie.floorSince).toFloat() / GroupWalkie.TALK_LIMIT_MS).coerceIn(0f, 1f)
-                        CircularProgressIndicator(progress = { left }, color = if (mine) accent else Color(0xFF94A3B8), strokeWidth = 6.dp, modifier = Modifier.size(214.dp))
+                        CircularProgressIndicator(
+                            progress = { left }, color = if (mine) WalkieTeal else cs.outline, trackColor = cs.outlineVariant,
+                            strokeWidth = 6.dp, modifier = Modifier.size(220.dp),
+                        )
+                    } else if (!off) {
+                        // The soft teal ring around the button.
+                        Box(Modifier.size(224.dp).clip(CircleShape).background(tint.tile))
                     }
                     Box(
                         contentAlignment = Alignment.Center,
-                        modifier = Modifier.size(190.dp).clip(CircleShape)
-                            .background(if (busy) Color(0xFF94A3B8) else if (!hold && !GroupWalkie.micOn) cs.surfaceContainerHigh else accent)
+                        modifier = Modifier.size(196.dp).clip(CircleShape)
+                            .background(if (off) cs.surfaceContainerHighest else WalkieTeal)
                             .then(
                                 if (hold) Modifier.pointerInput(Unit) {
                                     detectTapGestures(onPress = {
@@ -763,9 +800,9 @@ private fun WalkieView() {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(
                                 if (hold) Icons.Rounded.PanTool else if (GroupWalkie.micOn) Icons.Rounded.Mic else Icons.Rounded.MicOff, null,
-                                tint = if (!hold && !GroupWalkie.micOn) cs.onSurfaceVariant else Color.White, modifier = Modifier.size(46.dp),
+                                tint = if (off) cs.onSurfaceVariant else Color.White, modifier = Modifier.size(50.dp),
                             )
-                            Text(label, color = if (!hold && !GroupWalkie.micOn) cs.onSurfaceVariant else Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 6.dp))
+                            Text(label, color = if (off) cs.onSurfaceVariant else Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 6.dp))
                         }
                     }
                 }
@@ -775,17 +812,20 @@ private fun WalkieView() {
                         hold -> "One at a time · up to a minute each"
                         else -> "Open talk · tap to turn your mic ${if (GroupWalkie.micOn) "off" else "on"}"
                     },
-                    fontSize = 13.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 14.dp, start = 12.dp, end = 12.dp),
+                    fontSize = 13.5.sp, lineHeight = 19.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 8.dp, start = 12.dp, end = 12.dp),
                 )
+                // Loudspeaker (soft teal) or earpiece.
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(top = 10.dp).clip(RoundedCornerShape(17.dp)).background(cs.surfaceContainerHigh)
+                    modifier = Modifier.padding(top = 12.dp).clip(RoundedCornerShape(50))
+                        .background(if (GroupWalkie.loud) tint.tile else cs.surfaceContainer)
                         .clickable { GroupWalkie.toggleSpeaker() }.padding(horizontal = 14.dp, vertical = 8.dp),
                 ) {
-                    Icon(if (GroupWalkie.loud) Icons.AutoMirrored.Rounded.VolumeUp else Icons.Rounded.Phone, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (GroupWalkie.loud) "Loudspeaker" else "Earpiece", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    val fg = if (GroupWalkie.loud) tint.icon else cs.onSurface
+                    Icon(if (GroupWalkie.loud) Icons.AutoMirrored.Rounded.VolumeUp else Icons.Rounded.Phone, null, tint = fg, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (GroupWalkie.loud) "Loudspeaker" else "Earpiece", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = fg)
                 }
             }
         }
@@ -794,31 +834,35 @@ private fun WalkieView() {
                 // Just for this person, this group: hold a volume key to talk.
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(top = 18.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cs.surfaceContainerLow)
-                        .clickable { GroupWalkie.changeVolumeKeyTalk(!GroupWalkie.volumeKeyTalk) }.padding(start = 14.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                    modifier = Modifier.padding(top = 20.dp).fillMaxWidth().appCard(CardShape)
+                        .clickable { GroupWalkie.changeVolumeKeyTalk(!GroupWalkie.volumeKeyTalk) }.padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
                 ) {
-                    Icon(Icons.Rounded.PhoneAndroid, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(12.dp))
+                    ToolTile(Icons.Rounded.PhoneAndroid, tint)
+                    Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("Volume-key talk", fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
-                        Text("Hold a volume key to talk · just for you", fontSize = 12.sp, color = cs.onSurfaceVariant)
+                        Text("Volume-key talk", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        Text("Hold a volume key to talk · just for you", fontSize = 12.5.sp, color = cs.onSurfaceVariant)
                     }
                     androidx.compose.material3.Switch(checked = GroupWalkie.volumeKeyTalk, onCheckedChange = { GroupWalkie.changeVolumeKeyTalk(it) })
                 }
             }
         }
-        item { Text("In the group", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 4.dp, top = 22.dp, bottom = 4.dp)) }
-        items(GroupLink.people, key = { it.token }) { p ->
+        item { SectionHead("In the group", count = GroupLink.people.size.toString()) }
+        val people = GroupLink.people
+        itemsIndexed(people, key = { _, p -> p.token }) { i, p ->
             val talking = p.name in GroupWalkie.speaking || p.name == GroupWalkie.floor
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.cardSlice(first = i == 0, last = i == people.lastIndex).fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
                 Box(
-                    Modifier.size(40.dp).clip(CircleShape).background(if (talking) accent else GroupMode.WALKIE.container().copy(alpha = if (cs.isLight) 1f else .2f)),
+                    Modifier.size(40.dp).clip(CircleShape).background(if (talking) WalkieTeal else tint.tile),
                     contentAlignment = Alignment.Center,
-                ) { Text(p.name.take(1).uppercase(), color = if (talking) Color.White else accent, fontWeight = FontWeight.Medium) }
-                Spacer(Modifier.width(12.dp))
+                ) { Text(p.name.take(1).uppercase(), color = if (talking) Color.White else tint.icon, fontWeight = FontWeight.Medium) }
+                Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text(p.name + if (p.name == GroupLink.myName) " (you)" else "", fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                    Text(if (talking) "talking" else if (p.host) "host" else "listening", fontSize = 12.sp, color = if (talking) accent else cs.onSurfaceVariant)
+                    Text(if (talking) "talking" else if (p.host) "host" else "listening", fontSize = 12.5.sp, color = if (talking) tint.icon else cs.onSurfaceVariant)
                 }
             }
         }
@@ -829,7 +873,7 @@ private fun WalkieView() {
 @Composable
 private fun ShareView() {
     val cs = MaterialTheme.colorScheme
-    val accent = GroupMode.SHARE.accent()
+    val tint = GroupMode.SHARE.tint()
     val chosen = remember { mutableStateListOf<String>() } // empty = everyone
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         if (uris.isNotEmpty()) GroupShare.send(uris, chosen.toList())
@@ -838,39 +882,43 @@ private fun ShareView() {
         item { GroupBar(Modifier.padding(top = 4.dp)) }
         item {
             Button(
-                onClick = { pick.launch(arrayOf("*/*")) }, colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = Color.White),
+                onClick = { pick.launch(arrayOf("*/*")) }, colors = tintButton(tint),
                 modifier = Modifier.padding(top = 14.dp).fillMaxWidth().height(50.dp),
             ) {
                 Icon(Icons.Rounded.Add, null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(if (chosen.isEmpty()) "Send files to the group" else "Send files to ${chosen.joinToString(", ")}")
             }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 12.dp)) {
                 ToChip("Everyone", chosen.isEmpty()) { chosen.clear() }
                 GroupShare.others().forEach { name ->
                     ToChip(name, name in chosen) { if (name in chosen) chosen.remove(name) else chosen.add(name) }
                 }
             }
         }
-        if (GroupShare.received.isNotEmpty()) {
+        val received = GroupShare.received
+        if (received.isNotEmpty()) {
             item {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 4.dp)) {
-                    Text("Received", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                    if (GroupShare.received.any { it.state == GroupFileState.ARRIVED }) TextButton(onClick = { GroupShare.saveAll() }) { Text("Save all") }
-                }
+                SectionHead(
+                    "Received",
+                    action = if (received.any { it.state == GroupFileState.ARRIVED }) {
+                        { TextButton(onClick = { GroupShare.saveAll() }, contentPadding = PaddingValues(horizontal = 10.dp), modifier = Modifier.height(32.dp)) { Text("Save all") } }
+                    } else null,
+                )
             }
-            items(GroupShare.received, key = { "r${it.key}" }) { f -> FileRow(f) }
+            itemsIndexed(received, key = { _, f -> "r${f.key}" }) { i, f -> FileRow(f, Modifier.cardSlice(first = i == 0, last = i == received.lastIndex)) }
         }
-        if (GroupShare.sent.isNotEmpty()) {
-            item { Text("Sent", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 4.dp)) }
-            items(GroupShare.sent, key = { "s${it.key}" }) { f -> FileRow(f) }
+        val sent = GroupShare.sent
+        if (sent.isNotEmpty()) {
+            item { SectionHead("Sent") }
+            itemsIndexed(sent, key = { _, f -> "s${f.key}" }) { i, f -> FileRow(f, Modifier.cardSlice(first = i == 0, last = i == sent.lastIndex)) }
         }
-        if (GroupShare.sent.isEmpty() && GroupShare.received.isEmpty()) {
+        if (sent.isEmpty() && received.isEmpty()) {
             item {
-                Text(
+                NoteBox(
+                    Icons.Rounded.InsertDriveFile,
                     "Files you send go to everyone in the group (or just the people you pick). Files sent to you wait here until you tap Save — then they're in Download / SyncUp.",
-                    fontSize = 13.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 18.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cs.surfaceContainerLow).padding(14.dp),
+                    Modifier.padding(top = 18.dp),
                 )
             }
         }
@@ -880,33 +928,31 @@ private fun ShareView() {
 @Composable
 private fun ToChip(label: String, on: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(50)
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.height(34.dp).clip(RoundedCornerShape(17.dp))
-            .background(if (on) GroupMode.SHARE.container().copy(alpha = if (cs.isLight) 1f else .25f) else cs.surfaceContainerHigh)
-            .clickable(onClick = onClick).padding(horizontal = 12.dp),
+        modifier = Modifier.height(34.dp).clip(shape)
+            .then(if (on) Modifier.background(cs.primaryContainer) else Modifier.background(cs.surfaceContainerLowest).border(1.dp, cs.outlineVariant, shape))
+            .clickable(onClick = onClick).padding(horizontal = 14.dp),
     ) {
         if (on) {
-            Icon(Icons.Rounded.Check, null, tint = GroupMode.SHARE.accent(), modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(4.dp))
+            Icon(Icons.Rounded.Check, null, tint = cs.onPrimaryContainer, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
         }
-        Text(label, fontSize = 13.sp, color = if (on && cs.isLight) Color(0xFF1E3A8A) else cs.onSurface)
+        Text(label, fontSize = 13.5.sp, color = if (on) cs.onPrimaryContainer else cs.onSurface)
     }
 }
 
 @Composable
-private fun FileRow(f: GroupFile) {
+private fun FileRow(f: GroupFile, modifier: Modifier) {
     val cs = MaterialTheme.colorScheme
+    val tint = GroupMode.SHARE.tint()
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cs.surfaceContainerLowest)
-            .border(1.dp, cs.outlineVariant, RoundedCornerShape(16.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
+        modifier = modifier.fillMaxWidth().heightIn(min = 64.dp).padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
     ) {
-        Box(
-            Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(GroupMode.SHARE.container().copy(alpha = if (cs.isLight) 1f else .2f)),
-            contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Rounded.InsertDriveFile, null, tint = GroupMode.SHARE.accent(), modifier = Modifier.size(20.dp)) }
-        Spacer(Modifier.width(12.dp))
+        ToolTile(Icons.Rounded.InsertDriveFile, tint)
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(f.name, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val size = if (f.size > 0) Files.size(f.size) else ""
@@ -918,16 +964,16 @@ private fun FileRow(f: GroupFile) {
             Text(line, fontSize = 12.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (f.state == GroupFileState.MOVING && f.size > 0) {
                 LinearProgressIndicator(
-                    progress = { (f.done.toFloat() / f.size).coerceIn(0f, 1f) }, color = GroupMode.SHARE.accent(),
+                    progress = { (f.done.toFloat() / f.size).coerceIn(0f, 1f) }, color = tint.icon, trackColor = cs.outlineVariant,
                     modifier = Modifier.padding(top = 6.dp).fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
                 )
             }
         }
         Spacer(Modifier.width(8.dp))
         when (f.state) {
-            GroupFileState.ARRIVED -> TextButton(onClick = { GroupShare.save(f) }) { Text("Save", color = GroupMode.SHARE.accent()) }
+            GroupFileState.ARRIVED -> TextButton(onClick = { GroupShare.save(f) }) { Text("Save", color = tint.icon) }
             GroupFileState.SAVING -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            GroupFileState.SAVED, GroupFileState.SENT -> Icon(Icons.Rounded.CheckCircle, if (f.state == GroupFileState.SAVED) "Saved" else "Sent", tint = Color(0xFF15803D), modifier = Modifier.size(22.dp))
+            GroupFileState.SAVED, GroupFileState.SENT -> Icon(Icons.Rounded.CheckCircle, if (f.state == GroupFileState.SAVED) "Saved" else "Sent", tint = cs.success, modifier = Modifier.size(22.dp))
             GroupFileState.FAILED -> Text("Failed", fontSize = 12.sp, color = cs.error)
             GroupFileState.MOVING -> Unit
         }

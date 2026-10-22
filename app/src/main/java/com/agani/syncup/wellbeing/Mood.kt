@@ -33,7 +33,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -60,6 +59,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.ui.BarIcon
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.isLight
 import com.agani.syncup.forest.FDays
 import com.agani.syncup.sync.SyncType
 import org.json.JSONArray
@@ -71,6 +72,10 @@ import kotlin.math.roundToInt
 internal val MOOD_NAMES = mapOf(5 to "Great", 4 to "Good", 3 to "Okay", 2 to "Low", 1 to "Bad")
 internal val MOOD_COLORS = mapOf(5 to 0xFF16A34A, 4 to 0xFF65A30D, 3 to 0xFFD97706, 2 to 0xFFEA580C, 1 to 0xFFE11D48)
 private val MOOD_SOFT = mapOf(5 to 0xFFDCFCE7, 4 to 0xFFECFCCB, 3 to 0xFFFEF3C7, 2 to 0xFFFFEDD5, 1 to 0xFFFFE4E6)
+
+// The faces in Dark: a light line on a deep tile, so they sit well on black.
+private val MOOD_COLORS_DARK = mapOf(5 to 0xFF86EFAC, 4 to 0xFFBEF264, 3 to 0xFFFCD34D, 2 to 0xFFFDBA74, 1 to 0xFFFDA4AF)
+private val MOOD_SOFT_DARK = mapOf(5 to 0xFF0F2A18, 4 to 0xFF1C2A0D, 3 to 0xFF30240C, 2 to 0xFF33200F, 1 to 0xFF34141B)
 internal val MOOD_TAGS = listOf("Work", "Family", "Health", "Sleep", "Friends", "Money", "Weather", "Food")
 
 internal data class MoodEntry(val key: String, val at: Long, val mood: Int, val tags: List<String>, val note: String)
@@ -198,8 +203,9 @@ object Mood {
 /** A round face for a mood (1 Bad … 5 Great). */
 @Composable
 internal fun MoodFace(mood: Int, size: Dp, ring: Boolean = false) {
-    val col = Color(MOOD_COLORS[mood] ?: 0xFF65A30D)
-    val soft = Color(MOOD_SOFT[mood] ?: 0xFFECFCCB)
+    val light = MaterialTheme.colorScheme.isLight
+    val col = Color((if (light) MOOD_COLORS else MOOD_COLORS_DARK)[mood] ?: 0xFF65A30D)
+    val soft = Color((if (light) MOOD_SOFT else MOOD_SOFT_DARK)[mood] ?: 0xFFECFCCB)
     Canvas(Modifier.size(size)) {
         val s = this.size.minDimension / 56f
         drawCircle(soft, (if (ring) 24f else 26f) * s)
@@ -229,7 +235,7 @@ internal fun FacePick(picked: Int, onPick: (Int) -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.clip(RoundedCornerShape(14.dp)).clickable { onPick(m) }.padding(4.dp),
             ) {
-                MoodFace(m, 54.dp, ring = picked == m)
+                MoodFace(m, 52.dp, ring = picked == m)
                 Text(MOOD_NAMES[m]!!, fontSize = 12.5.sp, fontWeight = if (picked == m) FontWeight.Medium else FontWeight.Normal, color = if (picked == m) cs.onSurface else cs.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
             }
         }
@@ -261,17 +267,19 @@ private fun MoodToday(onBack: () -> Unit, onMonth: () -> Unit, onCheckIn: (Int) 
     val today = FDays.today()
     val entries = Mood.on(today)
     var time by remember { mutableStateOf<Int?>(null) }
-    WellPage("Mood", onBack, actions = { TextButton(onClick = onMonth) { Text("Month", color = t.accent) } }) {
+    WellPage("Mood", onBack, actions = { TextButton(onClick = onMonth) { Text("Month") } }) {
         if (Mood.needsCare()) CareCard(onCall = {
             runCatching { ctx.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:14416")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         }, onHide = { Mood.hideCare() })
-        Text(
-            if (entries.isEmpty()) "How are you today?" else "How are you now?", fontSize = 22.sp, fontWeight = FontWeight.Medium, color = cs.onSurface,
-            textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 14.dp),
-        )
-        FacePick(0) { onCheckIn(it) }
+        WCard(Modifier.padding(top = if (Mood.needsCare()) 12.dp else 4.dp)) {
+            Text(
+                if (entries.isEmpty()) "How are you today?" else "How are you now?", fontSize = 20.sp, fontWeight = FontWeight.Medium, color = cs.onSurface,
+                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 12.dp),
+            )
+            Box(Modifier.padding(bottom = 12.dp)) { FacePick(0) { onCheckIn(it) } }
+        }
         if (entries.isNotEmpty()) {
-            Lab("Today · ${entries.size} check-in${if (entries.size == 1) "" else "s"}", t.accent)
+            Lab("Today · ${entries.size} check-in${if (entries.size == 1) "" else "s"}")
             WCard {
                 entries.forEachIndexed { i, e ->
                     if (i > 0) Box(Modifier.fillMaxWidth().padding(start = 62.dp).height(1.dp).background(cs.outlineVariant.copy(alpha = .6f)))
@@ -281,12 +289,17 @@ private fun MoodToday(onBack: () -> Unit, onMonth: () -> Unit, onCheckIn: (Int) 
         }
         val week = (6 downTo 0).map { FDays.add(today, -it) }
         Lab("This week")
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            week.forEach { d ->
-                val avg = Mood.average(d)
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (avg != null) MoodFace(avg.roundToInt().coerceIn(1, 5), 38.dp) else Box(Modifier.size(38.dp).clip(CircleShape).background(cs.surfaceContainer))
-                    Text(weekdayLetter(d), fontSize = 11.5.sp, color = if (d == today) cs.onSurface else cs.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        WCard {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                week.forEach { d ->
+                    val avg = Mood.average(d)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (avg != null) MoodFace(avg.roundToInt().coerceIn(1, 5), 36.dp) else Box(Modifier.size(36.dp).clip(CircleShape).background(cs.surfaceContainer))
+                        Text(
+                            weekdayLetter(d), fontSize = 11.5.sp, fontWeight = if (d == today) FontWeight.Medium else FontWeight.Normal,
+                            color = if (d == today) cs.onSurface else cs.onSurfaceVariant, modifier = Modifier.padding(top = 5.dp),
+                        )
+                    }
                 }
             }
         }
@@ -298,19 +311,19 @@ private fun MoodToday(onBack: () -> Unit, onMonth: () -> Unit, onCheckIn: (Int) 
             }
             Hint("Patterns from your own SyncUp data — not advice.", center = true)
         }
-        Lab("Reminders", t.accent)
+        Lab("Reminders")
         val s = Mood.settings
         WCard {
-            SwitchLine("Remind me to check in", s.times.joinToString(" · ") { timeText(it) }, s.remind, t.accent, { Mood.changeSettings(s.copy(remind = it)) }, icon = { TintIcon(Icons.Rounded.Notifications, t) })
+            SwitchLine("Remind me to check in", s.times.joinToString(" · ") { timeText(it) }, s.remind, { Mood.changeSettings(s.copy(remind = it)) }, icon = { TintIcon(Icons.Rounded.Notifications, t, 42.dp) })
             if (s.remind) {
                 s.times.forEachIndexed { i, m ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.weight(1f)) { TimeLine("Check-in ${i + 1}", m, t, { time = i }) }
+                        Box(Modifier.weight(1f)) { TimeLine("Check-in ${i + 1}", m, { time = i }) }
                         if (s.times.size > 1) TextButton(onClick = { Mood.changeSettings(s.copy(times = s.times.filterIndexed { j, _ -> j != i })) }) { Text("Remove", color = cs.onSurfaceVariant) }
                     }
                 }
                 if (s.times.size < 3) {
-                    TextButton(onClick = { Mood.changeSettings(s.copy(times = (s.times + 13 * 60).distinct().sorted())) }, modifier = Modifier.padding(start = 8.dp)) { Text("Add a time", color = t.accent) }
+                    TextButton(onClick = { Mood.changeSettings(s.copy(times = (s.times + 13 * 60).distinct().sorted())) }, modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)) { Text("Add a time") }
                 }
             }
         }
@@ -331,7 +344,7 @@ private fun MoodToday(onBack: () -> Unit, onMonth: () -> Unit, onCheckIn: (Int) 
 @Composable
 private fun EntryRow(e: MoodEntry) {
     val cs = MaterialTheme.colorScheme
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp, top = 8.dp, bottom = 8.dp)) {
         MoodFace(e.mood, 38.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -345,24 +358,29 @@ private fun EntryRow(e: MoodEntry) {
 
 @Composable
 private fun CareCard(onCall: () -> Unit, onHide: () -> Unit) {
+    val light = MaterialTheme.colorScheme.isLight
+    val ink = Color(if (light) 0xFF4C0519 else 0xFFFFE4E6)
+    val rose = Color(if (light) 0xFFE11D48 else 0xFFFDA4AF)
     Column(
-        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp).clip(RoundedCornerShape(20.dp)).background(Color(0xFFFFF1F2))
-            .border(1.dp, Color(0xFFFECDD3), RoundedCornerShape(20.dp)).padding(horizontal = 16.dp, vertical = 14.dp),
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp).clip(CardShape).background(Color(if (light) 0xFFFFF1F2 else 0xFF34141B))
+            .border(1.dp, Color(if (light) 0xFFFECDD3 else 0xFF4C1D26), CardShape).padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.Favorite, null, tint = Color(0xFFE11D48), modifier = Modifier.size(18.dp))
-            Text("  Rough few days?", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Color(0xFF4C0519))
+            Icon(Icons.Rounded.Favorite, null, tint = rose, modifier = Modifier.size(18.dp))
+            Text("  Rough few days?", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = ink)
         }
-        Text("Talking to someone can help. Tele-MANAS is free, private and open 24×7.", fontSize = 14.sp, lineHeight = 20.sp, color = Color(0xFF4C0519), modifier = Modifier.padding(top = 4.dp))
+        Text("Talking to someone can help. Tele-MANAS is free, private and open 24×7.", fontSize = 14.sp, lineHeight = 20.sp, color = ink, modifier = Modifier.padding(top = 4.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 12.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clip(RoundedCornerShape(18.dp)).background(Color(0xFFE11D48)).clickable(onClick = onCall).padding(horizontal = 16.dp, vertical = 9.dp),
+                modifier = Modifier.height(38.dp).clip(CircleShape).background(rose).clickable(onClick = onCall).padding(horizontal = 16.dp),
             ) {
-                Icon(Icons.Rounded.Call, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                Text("  Call 14416", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = Color.White)
+                Icon(Icons.Rounded.Call, null, tint = if (light) Color.White else Color(0xFF4C0519), modifier = Modifier.size(16.dp))
+                Text("  Call 14416", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = if (light) Color.White else Color(0xFF4C0519))
             }
-            Text("Not now", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = Color(0xFF9F1239), modifier = Modifier.clip(RoundedCornerShape(18.dp)).clickable(onClick = onHide).padding(horizontal = 12.dp, vertical = 9.dp))
+            Box(Modifier.height(38.dp).clip(CircleShape).clickable(onClick = onHide).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+                Text("Not now", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = Color(if (light) 0xFF9F1239 else 0xFFFDA4AF))
+            }
         }
     }
 }
@@ -375,34 +393,33 @@ private fun CheckInSheet(preset: Int, onDone: () -> Unit) {
     var mood by remember { mutableIntStateOf(preset) }
     var tags by remember { mutableStateOf(setOf<String>()) }
     var note by remember { mutableStateOf("") }
-    ModalBottomSheet(onDismissRequest = onDone, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(onDismissRequest = onDone, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = cs.surfaceContainerLowest) {
         Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
-            Text("How are you now?", fontSize = 20.sp, color = cs.onSurface, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp))
+            Text("How are you now?", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp))
             FacePick(mood) { mood = it }
-            Lab("What's behind it? (optional)", t.accent)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 18.dp)) {
+            SheetLab("What's behind it? (optional)", Modifier.padding(top = 6.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(horizontal = 20.dp)) {
                 MOOD_TAGS.forEach { tag ->
                     val on = tag in tags
-                    Text(
-                        tag, fontSize = 13.5.sp, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, color = if (on) t.accent else cs.onSurface,
-                        modifier = Modifier.clip(RoundedCornerShape(17.dp)).background(if (on) t.container else Color.Transparent)
-                            .border(1.dp, if (on) t.accent else cs.outline, RoundedCornerShape(17.dp))
-                            .clickable { tags = if (on) tags - tag else tags + tag }.padding(horizontal = 13.dp, vertical = 7.dp),
-                    )
+                    Box(
+                        Modifier.height(34.dp).clip(CircleShape).background(if (on) t.container else cs.surfaceContainerLowest)
+                            .border(1.dp, if (on) Color.Transparent else cs.outlineVariant, CircleShape)
+                            .clickable { tags = if (on) tags - tag else tags + tag }.padding(horizontal = 14.dp),
+                        contentAlignment = Alignment.Center,
+                    ) { Text(tag, fontSize = 13.5.sp, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, color = if (on) t.accent else cs.onSurface) }
                 }
             }
             OutlinedTextField(
-                note, { note = it.take(500) }, label = { Text("A note (optional)") }, minLines = 2,
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = t.accent, focusedLabelColor = t.accent),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
+                note, { note = it.take(500) }, label = { Text("A note (optional)") }, minLines = 2, shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 16.dp),
             )
-            BigButton("Save", if (mood > 0) t.accent else cs.surfaceContainerHigh, {
+            BigButton("Save", enabled = mood > 0, onClick = {
                 if (mood > 0) {
                     Mood.add(mood, tags.toList(), note)
                     onDone()
                 }
-            }, textColor = if (mood > 0) Color.White else cs.onSurfaceVariant)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+            })
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
                 Icon(Icons.Rounded.Lock, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(14.dp))
                 Text(" Private — the admin never sees your moods", fontSize = 12.5.sp, color = cs.onSurfaceVariant)
             }
@@ -420,7 +437,11 @@ private fun MoodMonth(onBack: () -> Unit) {
     val most = avgs.groupingBy { it.second }.eachCount().maxByOrNull { it.value }?.key
     WellPage("Your moods", onBack) {
         Lab(monthTitle() + (most?.let { " · most often: ${MOOD_NAMES[it]}" } ?: ""))
-        MonthDotsTap(today, shown, t, { d -> Mood.average(d)?.let { Color(MOOD_COLORS[it.roundToInt().coerceIn(1, 5)]!!) to Color.White } }) { shown = it }
+        WCard {
+            Box(Modifier.padding(vertical = 10.dp)) {
+                MonthDotsTap(today, shown, t, { d -> Mood.average(d)?.let { Color(MOOD_COLORS[it.roundToInt().coerceIn(1, 5)]!!) to Color.White } }) { shown = it }
+            }
+        }
         val list = Mood.on(shown)
         Lab(if (shown == today) "Today" else "${weekdayShort(shown)} ${shown % 100}")
         if (list.isEmpty()) Hint("No check-ins this day.")
@@ -440,7 +461,7 @@ private fun MonthDotsTap(today: Int, selected: Int, tint: WTint, style: (Int) ->
     val cs = MaterialTheme.colorScheme
     val first = today / 100 * 100 + 1
     val cells = (0 until mondayIndex(first)).map { 0 } + (first..today).toList()
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         Row(Modifier.fillMaxWidth()) {
             listOf("M", "T", "W", "T", "F", "S", "S").forEach { Text(it, fontSize = 11.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.weight(1f)) }
         }

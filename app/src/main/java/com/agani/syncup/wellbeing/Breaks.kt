@@ -254,7 +254,7 @@ private fun BreaksHome(onBack: () -> Unit, onTry: (String) -> Unit) {
     val next = Breaks.next()
     WellPage("Breaks", onBack) {
         WCard(Modifier.padding(top = 4.dp)) {
-            Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Column(Modifier.padding(16.dp)) {
                 val shown = Breaks.shownToday()
                 val taken = Breaks.takenToday()
                 Text(if (shown == 0 && taken == 0) "No breaks yet today" else "$taken of ${maxOf(shown, taken)} breaks taken today", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
@@ -268,7 +268,7 @@ private fun BreaksHome(onBack: () -> Unit, onTry: (String) -> Unit) {
                     fontSize = 12.5.sp, color = cs.onSurfaceVariant,
                 )
                 if (maxOf(shown, taken) > 0) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
                         repeat(maxOf(shown, taken).coerceAtMost(16)) { i ->
                             Box(Modifier.weight(1f).height(8.dp).clip(RoundedCornerShape(4.dp)).background(if (i < taken) t.accent else t.container))
                         }
@@ -282,10 +282,13 @@ private fun BreaksHome(onBack: () -> Unit, onTry: (String) -> Unit) {
         BreakKind(Icons.Rounded.Accessibility, "Move break", "Stand up & stretch · 2 min", s.setUp && s.moveOn, s.moveEvery, t,
             onSwitch = { Breaks.changeSettings(s.copy(setUp = true, moveOn = it, eyeOn = if (!s.setUp) false else s.eyeOn)) },
             onEvery = { Breaks.changeSettings(s.copy(moveEvery = it.coerceIn(30, 120))) }, step = 15, onTry = { onTry("move") })
-        Lab("When", t.accent)
+        Lab("When")
         DaysPick(s.days, t) { Breaks.changeSettings(s.copy(days = it)) }
-        TimeLine("From", s.start, t, { time = "start" })
-        TimeLine("To", s.end, t, { time = "end" })
+        WCard(Modifier.padding(top = 12.dp)) {
+            TimeLine("From", s.start, { time = "start" })
+            Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant))
+            TimeLine("To", s.end, { time = "end" })
+        }
         Hint("Only while you're using the phone — never when it's lying idle. Quiet during Forest calm time.")
     }
     time?.let { which ->
@@ -302,11 +305,11 @@ private fun BreakKind(
     onSwitch: (Boolean) -> Unit, onEvery: (Int) -> Unit, step: Int, onTry: () -> Unit,
 ) {
     WCard(Modifier.padding(top = 12.dp)) {
-        SwitchLine(title, sub, on, t.accent, onSwitch, icon = { TintIcon(icon, t) })
+        SwitchLine(title, sub, on, onSwitch, icon = { TintIcon(icon, t, 42.dp) })
         if (on) PlusMinusLine("Every", "$every min", { onEvery(every - step) }, { onEvery(every + step) })
         Text(
-            "Try one now", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = t.accent,
-            modifier = Modifier.padding(start = 8.dp, bottom = 8.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onTry).padding(horizontal = 8.dp, vertical = 6.dp),
+            "Try one now", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 6.dp, bottom = 8.dp).clip(CircleShape).clickable(onClick = onTry).padding(horizontal = 10.dp, vertical = 8.dp),
         )
     }
 }
@@ -423,7 +426,7 @@ private fun MoveBreak(onDone: (taken: Boolean) -> Unit) {
         Spacer(Modifier.height(30.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
             PillButton("Skip", cs.surfaceContainerHigh, cs.onSurface, Modifier.weight(1f)) { onDone(false) }
-            PillButton(if (i < MOVES.lastIndex) "Next" else "Done", t.accent, Color.White, Modifier.weight(1f)) { if (i < MOVES.lastIndex) i++ else onDone(true) }
+            PillButton(if (i < MOVES.lastIndex) "Next" else "Done", cs.primary, cs.onPrimary, Modifier.weight(1f)) { if (i < MOVES.lastIndex) i++ else onDone(true) }
         }
     }
 }

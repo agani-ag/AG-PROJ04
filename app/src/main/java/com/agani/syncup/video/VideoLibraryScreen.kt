@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -25,20 +26,22 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Theaters
-import androidx.compose.material.icons.rounded.FolderOpen
-import androidx.compose.material.icons.rounded.Link
-import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -46,8 +49,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -61,10 +62,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -73,14 +76,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.agani.syncup.browser.ui.BarIcon
 import com.agani.syncup.browser.ui.EmptyState
 import com.agani.syncup.downloads.DlState
 import com.agani.syncup.downloads.Downloads
 import com.agani.syncup.downloads.FileKind
 import com.agani.syncup.downloads.Files
+import com.agani.syncup.music.SectionHead
+import com.agani.syncup.music.ToolTile
+import com.agani.syncup.music.ToolTint
+import com.agani.syncup.music.ToolTopBar
+import com.agani.syncup.music.cardSlice
 import com.agani.syncup.music.playAudioOnly
-import com.agani.syncup.party.Segmented
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.PillTabs
+import com.agani.syncup.ui.theme.appCard
 import com.agani.syncup.watchparty.WatchParty
 import com.agani.syncup.watchparty.WatchPartyTab
 import com.agani.syncup.watchparty.WatchSource
@@ -148,26 +157,22 @@ fun VideoLibraryScreen(onBack: () -> Unit, startWith: WatchSource? = null, onSta
         }
     }
 
-    Box(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
+    Box(Modifier.fillMaxSize().background(cs.background).windowInsetsPadding(WindowInsets.safeDrawing)) {
         Column(Modifier.fillMaxSize()) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
-                BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
-                Text("Videos", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
-            }
-            Segmented(
+            ToolTopBar("Videos", onBack)
+            PillTabs(
                 listOf("My videos", "Watch Party"), selected = tab, onSelect = { tab = it },
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-                selectedBg = Color(0xFFFFE4E6), selectedFg = Color(0xFF4C0519),
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 4.dp),
             )
             if (tab == 1) {
-                Box(Modifier.weight(1f)) {
+                Box(Modifier.weight(1f).padding(top = 8.dp)) {
                     WatchPartyTab(startWith = startWith ?: together, onStartWithUsed = { onStartWithUsed(); together = null })
                 }
                 return@Column
             }
             /** The ⋮ on a video. */
             @Composable
-            fun Menu(uri: String, title: String, source: String) = VideoMenu(
+            fun Menu(uri: String, title: String, source: String, tint: Color = cs.onSurfaceVariant) = VideoMenu(
                 onPlay = { play(uri, title, source) },
                 onAudioOnly = { playAudioOnly(context, uri, title, source, WatchHistory.positionOf(context, uri)) },
                 onPlayWith = { playWith = uri to title },
@@ -175,62 +180,71 @@ fun VideoLibraryScreen(onBack: () -> Unit, startWith: WatchSource? = null, onSta
                     together = WatchSource(uri, title, WatchHistory.positionOf(context, uri))
                     tab = 1
                 },
+                tint = tint,
             )
             LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-                item {
+                item(key = "link") {
+                    // Paste a link: a white pill with Play at the end.
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().height(52.dp)
-                            .clip(RoundedCornerShape(26.dp)).background(cs.surfaceContainerHigh).padding(start = 14.dp, end = 6.dp),
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().height(52.dp)
+                            .appCard(RoundedCornerShape(50)).padding(start = 16.dp, end = 7.dp),
                     ) {
-                        Icon(Icons.Rounded.Link, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                        TextField(
+                        Icon(Icons.Rounded.Link, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(10.dp))
+                        BasicTextField(
                             value = link, onValueChange = { link = it }, singleLine = true,
-                            placeholder = { Text("Paste a video link (mp4…)", fontSize = 14.sp) },
+                            textStyle = TextStyle(fontSize = 14.sp, color = cs.onSurface),
+                            cursorBrush = SolidColor(cs.primary),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
                             keyboardActions = KeyboardActions(onGo = { playLink() }),
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
-                            ),
+                            decorationBox = { inner ->
+                                Box(contentAlignment = Alignment.CenterStart) {
+                                    if (link.isEmpty()) Text("Paste a video link (mp4…)", color = cs.onSurfaceVariant, fontSize = 14.sp, maxLines = 1)
+                                    inner()
+                                }
+                            },
                             modifier = Modifier.weight(1f),
                         )
-                        Button(onClick = { playLink() }, enabled = link.isNotBlank(), contentPadding = PaddingValues(horizontal = 16.dp), modifier = Modifier.height(40.dp)) {
-                            Text("Play")
+                        Spacer(Modifier.width(8.dp))
+                        Button(onClick = { playLink() }, enabled = link.isNotBlank(), contentPadding = PaddingValues(horizontal = 18.dp), modifier = Modifier.height(38.dp)) {
+                            Text("Play", fontSize = 13.5.sp)
                         }
                     }
                 }
-                item {
+                item(key = "pick") {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth()
-                            .clip(RoundedCornerShape(18.dp)).clickable { pick.launch(arrayOf("video/*")) }
-                            .background(cs.surfaceContainerHigh).padding(16.dp),
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth()
+                            .appCard(CardShape).clickable { pick.launch(arrayOf("video/*")) }.padding(horizontal = 16.dp, vertical = 14.dp),
                     ) {
-                        Icon(Icons.Rounded.FolderOpen, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                        ToolTile(Icons.Rounded.FolderOpen, ToolTint.ROSE)
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
-                            Text("Pick a video from this phone", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
-                            Text("Opens one file — SyncUp doesn't browse the rest", fontSize = 12.sp, color = cs.onSurfaceVariant)
+                            Text("Pick a video from this phone", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("Opens one file — SyncUp doesn't browse the rest", fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
                         }
+                        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
                     }
                 }
                 if (watching.isNotEmpty()) {
-                    item { SectionLabel("CONTINUE WATCHING") }
-                    item {
+                    item(key = "watching-head") { SectionHead("Continue watching", Modifier.padding(horizontal = 16.dp)) }
+                    item(key = "watching") {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(horizontal = 16.dp)) {
-                            items(watching, key = { it.uri }) { w -> WatchingCard(w, menu = { Menu(w.uri, w.title, w.source) }) { play(w.uri, w.title, w.source) } }
+                            items(watching, key = { it.uri }) { w -> WatchingCard(w, menu = { Menu(w.uri, w.title, w.source, Color.White) }) { play(w.uri, w.title, w.source) } }
                         }
                     }
                 }
-                item { SectionLabel("SYNCUP DOWNLOADS") }
+                item(key = "downloads-head") { SectionHead("SyncUp downloads", Modifier.padding(horizontal = 16.dp)) }
                 if (downloads.isEmpty()) {
-                    item { Empty("Videos you download with SyncUp show here") }
+                    item(key = "downloads-none") { Empty("Videos you download with SyncUp show here") }
                 } else {
-                    items(downloads, key = { it.id }) { t ->
-                        ListRow(Icons.Rounded.Download, t.fileName, Files.size(t.total), menu = { Menu(t.contentUri!!, t.fileName, "SyncUp downloads") }) {
-                            play(t.contentUri!!, t.fileName, "SyncUp downloads")
-                        }
+                    itemsIndexed(downloads, key = { _, t -> t.id }) { i, t ->
+                        DownloadRow(
+                            t.contentUri!!, t.fileName, Files.size(t.total),
+                            first = i == 0, last = i == downloads.lastIndex,
+                            menu = { Menu(t.contentUri!!, t.fileName, "SyncUp downloads") },
+                        ) { play(t.contentUri!!, t.fileName, "SyncUp downloads") }
                     }
                 }
             }
@@ -243,11 +257,11 @@ fun VideoLibraryScreen(onBack: () -> Unit, startWith: WatchSource? = null, onSta
 
 /** ⋮ on a video: Play, Play audio only, Play with another app, Watch together. */
 @Composable
-private fun VideoMenu(onPlay: () -> Unit, onAudioOnly: () -> Unit, onPlayWith: () -> Unit, onTogether: () -> Unit, tint: Color = androidx.compose.material3.LocalContentColor.current) {
+private fun VideoMenu(onPlay: () -> Unit, onAudioOnly: () -> Unit, onPlayWith: () -> Unit, onTogether: () -> Unit, tint: Color) {
     var open by remember { mutableStateOf(false) }
     Box {
-        Box(Modifier.size(40.dp).clip(RoundedCornerShape(20.dp)).clickable { open = true }, contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.MoreVert, "More", tint = tint)
+        Box(Modifier.size(40.dp).clip(CircleShape).clickable { open = true }, contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.MoreVert, "More", tint = tint, modifier = Modifier.size(20.dp))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(text = { Text("Play") }, leadingIcon = { Icon(Icons.Rounded.PlayArrow, null) }, onClick = { open = false; onPlay() })
@@ -256,12 +270,6 @@ private fun VideoMenu(onPlay: () -> Unit, onAudioOnly: () -> Unit, onPlayWith: (
             DropdownMenuItem(text = { Text("Watch together") }, leadingIcon = { Icon(Icons.Rounded.Theaters, null) }, onClick = { open = false; onTogether() })
         }
     }
-}
-
-@Composable
-private fun SectionLabel(text: String, modifier: Modifier = Modifier) {
-    Text(text, fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = .3.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = modifier.padding(start = 20.dp, end = 4.dp, top = 18.dp, bottom = 8.dp))
 }
 
 @Composable
@@ -274,12 +282,11 @@ private fun Empty(text: String) {
 @Composable
 private fun Thumb(uri: Uri, modifier: Modifier) {
     val context = LocalContext.current
-    val cs = MaterialTheme.colorScheme
-    val bmp by produceState<android.graphics.Bitmap?>(null, uri) { value = withContext(Dispatchers.IO) { VideoStore.thumbnail(context, uri) } }
-    Box(modifier.background(cs.surfaceContainerHighest), contentAlignment = Alignment.Center) {
+    val bmp by produceState(VideoStore.cached(uri), uri) { if (value == null) value = withContext(Dispatchers.IO) { VideoStore.thumbnail(context, uri) } }
+    Box(modifier.background(ToolTint.ROSE.tile), contentAlignment = Alignment.Center) {
         val b = bmp
         if (b != null) Image(b.asImageBitmap(), null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        else Icon(Icons.Rounded.Movie, null, tint = cs.onSurfaceVariant)
+        else Icon(Icons.Rounded.Movie, null, tint = ToolTint.ROSE.icon)
     }
 }
 
@@ -287,45 +294,43 @@ private fun Thumb(uri: Uri, modifier: Modifier) {
 private fun WatchingCard(w: Watched, menu: @Composable () -> Unit, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val uri = remember(w.uri) { Uri.parse(w.uri) }
-    Column(Modifier.width(168.dp).clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick)) {
-        Box(Modifier.fillMaxWidth().height(96.dp).clip(RoundedCornerShape(14.dp))) {
+    Column(Modifier.width(168.dp).clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick)) {
+        Box(Modifier.fillMaxWidth().height(96.dp).clip(RoundedCornerShape(16.dp))) {
             if (uri.scheme == "content") Thumb(uri, Modifier.fillMaxSize())
-            else Box(Modifier.fillMaxSize().background(cs.surfaceContainerHighest), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Link, null, tint = cs.onSurfaceVariant)
+            else Box(Modifier.fillMaxSize().background(ToolTint.ROSE.tile), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Link, null, tint = ToolTint.ROSE.icon)
             }
-            Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Color.White.copy(alpha = .35f))) {
+            Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Color.White.copy(alpha = .45f))) {
                 Box(Modifier.fillMaxHeight().fillMaxWidth(w.progress).background(Color(0xFFEF4444)))
             }
-            Box(Modifier.align(Alignment.TopEnd).padding(4.dp).size(32.dp).clip(RoundedCornerShape(16.dp)).background(Color.Black.copy(alpha = .45f)), contentAlignment = Alignment.Center) {
-                CompositionLocalProviderWhite { menu() }
+            Box(Modifier.align(Alignment.TopEnd).padding(5.dp).size(30.dp).clip(CircleShape).background(Color.Black.copy(alpha = .45f)), contentAlignment = Alignment.Center) {
+                menu()
             }
         }
-        Text(w.title, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+        Text(w.title, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 7.dp))
         val left = if (w.durationMs > 0) " · ${duration(w.durationMs - w.positionMs)} left" else ""
-        Text(w.source + left, fontSize = 11.5.sp, color = cs.onSurfaceVariant, maxLines = 1)
+        Text(w.source + left, fontSize = 11.5.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
+/** A SyncUp download: its first frame, name and size, ⋮ — one slice of the downloads card. */
 @Composable
-private fun ListRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, menu: (@Composable () -> Unit)? = null, onClick: () -> Unit) {
+private fun DownloadRow(uri: String, title: String, subtitle: String, first: Boolean, last: Boolean, menu: @Composable () -> Unit, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 10.dp)) {
-        Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(cs.surfaceContainerHigh), contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = cs.onSurfaceVariant)
-        }
-        Spacer(Modifier.width(14.dp))
+    val parsed = remember(uri) { Uri.parse(uri) }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().cardSlice(first, last).clickable(onClick = onClick)
+            .heightIn(min = 66.dp).padding(start = 14.dp, end = 4.dp, top = 9.dp, bottom = 9.dp),
+    ) {
+        Thumb(parsed, Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)))
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(subtitle, fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
         }
-        menu?.invoke()
+        menu()
     }
-}
-
-/** The ⋮ on a thumbnail is white. */
-@Composable
-private fun CompositionLocalProviderWhite(content: @Composable () -> Unit) {
-    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides Color.White) { content() }
 }
 
 private fun duration(ms: Long): String {

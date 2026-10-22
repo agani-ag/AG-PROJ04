@@ -1,12 +1,5 @@
 package com.agani.syncup.walkie
 
-import com.agani.syncup.group.GroupElsewhere
-import com.agani.syncup.group.GroupJoiningView
-import com.agani.syncup.group.GroupLink
-import com.agani.syncup.group.GroupMode
-import com.agani.syncup.group.GroupPhase
-import com.agani.syncup.group.GroupRoom
-import com.agani.syncup.group.GroupRoomCard
 import android.Manifest
 import android.app.Activity
 import android.media.AudioManager
@@ -25,7 +18,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -36,20 +28,20 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Login
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DoorFront
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.HighlightOff
 import androidx.compose.material.icons.rounded.Mic
@@ -59,7 +51,6 @@ import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.PanTool
 import androidx.compose.material.icons.rounded.PersonAddAlt1
 import androidx.compose.material.icons.rounded.PhoneAndroid
-import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.SwapHoriz
@@ -67,7 +58,6 @@ import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.WifiTethering
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -94,7 +84,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -113,18 +102,35 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.agani.syncup.browser.ui.BarIcon
+import com.agani.syncup.group.GroupElsewhere
+import com.agani.syncup.group.GroupJoiningView
+import com.agani.syncup.group.GroupLink
+import com.agani.syncup.group.GroupMode
+import com.agani.syncup.group.GroupPhase
+import com.agani.syncup.group.GroupRoom
+import com.agani.syncup.group.GroupRoomsCard
+import com.agani.syncup.music.NoteBox
+import com.agani.syncup.music.SectionHead
+import com.agani.syncup.music.ToolTile
+import com.agani.syncup.music.ToolTint
+import com.agani.syncup.music.ToolTopBar
+import com.agani.syncup.music.cardSlice
+import com.agani.syncup.music.tintButton
 import com.agani.syncup.party.Party
+import com.agani.syncup.quickshare.OutlinePill
 import com.agani.syncup.quickshare.QsPhase
 import com.agani.syncup.quickshare.QuickShare
 import com.agani.syncup.quickshare.Radios
 import com.agani.syncup.quickshare.RadiosDialog
-import com.agani.syncup.ui.theme.isLight
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.PillTab
+import com.agani.syncup.ui.theme.PillTabs
+import com.agani.syncup.ui.theme.appCard
+import com.agani.syncup.ui.theme.dialogSurface
 import kotlinx.coroutines.delay
 
 private val Teal = Color(0xFF0F766E)
 private val TealBright = Color(0xFF14B8A6)
-private val TealLight = Color(0xFFCCFBF1)
-private val TealOn = Color(0xFF134E4A)
 private val Red = Color(0xFFDC2626)
 private val Amber = Color(0xFFD97706)
 private val Green = Color(0xFF15803D)
@@ -226,13 +232,7 @@ fun WalkieScreen(onBack: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
-            BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
-            Text(
-                if (Walkie.inChannel) Walkie.channelName else "Walkie Talkie",
-                fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(start = 4.dp),
-            )
+        ToolTopBar(if (Walkie.inChannel) Walkie.channelName else "Walkie Talkie", onBack = onBack) {
             if (Walkie.inChannel) {
                 ModeChip(Walkie.mode)
                 Box {
@@ -258,7 +258,7 @@ fun WalkieScreen(onBack: () -> Unit) {
                         }
                     },
                 )
-                GroupLink.phase == GroupPhase.JOINING -> GroupJoiningView(Teal, TealLight)
+                GroupLink.phase == GroupPhase.JOINING -> GroupJoiningView(ToolTint.TEAL)
                 // In a group: what it's doing; the host can switch it to Walkie talkie from here.
                 GroupLink.inGroup -> GroupElsewhere(GroupMode.WALKIE, onSwitchHere = { pickGroupTalk = true })
                 else -> HomeView(
@@ -283,6 +283,7 @@ fun WalkieScreen(onBack: () -> Unit) {
             onDismissRequest = { pickGroupTalk = false },
             title = { Text("Switch the group to Walkie talkie") },
             text = { Text("How does the group talk? Everyone in ${GroupLink.groupName} comes here.", fontSize = 14.sp) },
+            containerColor = cs.dialogSurface,
             confirmButton = {
                 TextButton(onClick = {
                     pickGroupTalk = false
@@ -311,6 +312,7 @@ fun WalkieScreen(onBack: () -> Unit) {
                 }) { Text("Save") }
             },
             dismissButton = { TextButton(onClick = { renaming = false }) { Text("Cancel") } },
+            containerColor = cs.dialogSurface,
         )
     }
 
@@ -336,8 +338,9 @@ fun WalkieScreen(onBack: () -> Unit) {
                     CodeBox(r.code, Modifier.padding(top = 16.dp))
                 }
             },
-            confirmButton = { Button(onClick = { Walkie.acceptJoin(r) }, colors = tealButton()) { Text("Accept") } },
+            confirmButton = { Button(onClick = { Walkie.acceptJoin(r) }, colors = tintButton(ToolTint.TEAL)) { Text("Accept") } },
             dismissButton = { OutlinedButton(onClick = { Walkie.declineJoin(r) }) { Text("Decline") } },
+            containerColor = cs.dialogSurface,
         )
     }
 
@@ -347,6 +350,7 @@ fun WalkieScreen(onBack: () -> Unit) {
             title = { Text("Channel ended") },
             text = { Text(message) },
             confirmButton = { TextButton(onClick = { Walkie.dismissEnded() }) { Text("OK") } },
+            containerColor = cs.dialogSurface,
         )
     }
 
@@ -394,9 +398,10 @@ fun WalkieScreen(onBack: () -> Unit) {
                 TextButton(onClick = {
                     confirmEnd = false
                     Walkie.end()
-                }) { Text("End channel", color = Red) }
+                }) { Text("End channel", color = cs.error) }
             },
             dismissButton = { TextButton(onClick = { confirmEnd = false }) { Text("Keep going") } },
+            containerColor = cs.dialogSurface,
         )
     }
     if (leaveSheet) {
@@ -428,131 +433,110 @@ private fun HomeView(
     onJoinGroup: (GroupRoom) -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    val light = cs.isLight
-    LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
-        item {
+    LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp)) {
+        item(key = "name") {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cs.surfaceContainerLow).padding(start = 12.dp, end = 4.dp),
+                modifier = Modifier.fillMaxWidth().appCard(CardShape).padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
             ) {
-                Icon(Icons.Rounded.RecordVoiceOver, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(10.dp))
+                ToolTile(Icons.Rounded.RecordVoiceOver, ToolTint.TEAL, size = 36.dp)
+                Spacer(Modifier.width(12.dp))
                 Text("Others see you as ", fontSize = 13.5.sp, color = cs.onSurfaceVariant)
                 Text(Walkie.myName, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                TextButton(onClick = onRename) { Text("Change", color = if (light) Teal else TealBright) }
+                TextButton(onClick = onRename) { Text("Change", color = ToolTint.TEAL.icon) }
             }
         }
-        item {
+        item(key = "actions") {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
-                ActionCard(
-                    Icons.Rounded.RecordVoiceOver, "Start a channel", "Friends nearby join you",
-                    if (light) Teal else TealBright, if (light) TealLight else TealOn, Modifier.weight(1f), onStart,
-                )
-                ActionCard(
-                    Icons.AutoMirrored.Rounded.Login, "Join a channel", "Talk on a friend's channel",
-                    cs.primary, cs.primaryContainer, Modifier.weight(1f), onLook,
-                )
+                ActionCard(Icons.Rounded.RecordVoiceOver, "Start a channel", "Friends nearby join you", ToolTint.TEAL, Modifier.weight(1f), onStart)
+                ActionCard(Icons.AutoMirrored.Rounded.Login, "Join a channel", "Talk on a friend's channel", ToolTint.BLUE, Modifier.weight(1f), onLook)
             }
         }
         if (permissionNote) {
-            item {
+            item(key = "permission") {
                 Text(
                     "Walkie Talkie needs the Nearby devices permission to find other phones. Turn it on in Settings → Apps → SyncUp → Permissions.",
                     fontSize = 13.sp, lineHeight = 18.sp, color = cs.onErrorContainer,
-                    modifier = Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cs.errorContainer).padding(14.dp),
+                    modifier = Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(cs.errorContainer).padding(14.dp),
                 )
             }
         }
-        item {
+        item(key = "tabs") {
             // Walkie Talkie channels, or SyncUp groups (a group can switch to Walkie talkie, music, a video, sharing).
-            Box(Modifier.padding(top = 18.dp)) {
-                Segmented(
-                    listOf(Icons.Rounded.RecordVoiceOver to "Channels", Icons.Rounded.Groups to "Groups"),
-                    selected = if (listGroups) 1 else 0, onSelect = { onListGroups(it == 1) },
-                )
-            }
+            PillTabs(
+                listOf(PillTab("Channels", Icons.Rounded.RecordVoiceOver), PillTab("Groups", Icons.Rounded.Groups)),
+                selected = if (listGroups) 1 else 0, onSelect = { onListGroups(it == 1) },
+                modifier = Modifier.padding(top = 18.dp),
+            )
         }
         if (listGroups) {
-            item {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, top = 18.dp, bottom = 8.dp)) {
-                    Text("Groups nearby", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    if (GroupLink.rooms.isNotEmpty()) Text("  · ${GroupLink.rooms.size}", fontSize = 14.sp, color = cs.onSurfaceVariant)
-                }
-            }
+            item(key = "groupsHead") { SectionHead("Groups nearby", count = GroupLink.rooms.size.takeIf { it > 0 }?.toString()) }
             if (GroupLink.rooms.isEmpty()) {
-                item {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainerLow).padding(16.dp),
-                    ) {
-                        if (canBrowse) {
-                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                            Spacer(Modifier.width(14.dp))
-                        }
-                        Text(
-                            "Looking for groups… A group started in Radio → Party or Video player → Watch Party shows here — joining takes you to whatever it's doing.",
-                            fontSize = 13.5.sp, lineHeight = 19.sp, color = cs.onSurfaceVariant,
-                        )
-                    }
+                item(key = "groupsEmpty") {
+                    Looking(
+                        canBrowse,
+                        "Looking for groups… A group started in Radio → Party or Video player → Watch Party shows here — joining takes you to whatever it's doing.",
+                        "Looking for groups… A group started in Radio → Party or Video player → Watch Party shows here — joining takes you to whatever it's doing.",
+                    )
                 }
             }
-            items(GroupLink.rooms, key = { "g" + it.endpointId }) { room -> GroupRoomCard(room) { onJoinGroup(room) } }
+            if (GroupLink.rooms.isNotEmpty()) item(key = "groups") { GroupRoomsCard(GroupLink.rooms) { onJoinGroup(it) } }
             return@LazyColumn
         }
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, top = 18.dp, bottom = 8.dp)) {
-                Text("Channels nearby", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                if (Walkie.channels.isNotEmpty()) Text("  · ${Walkie.channels.size}", fontSize = 14.sp, color = cs.onSurfaceVariant)
-            }
-        }
+        item(key = "channelsHead") { SectionHead("Channels nearby", count = Walkie.channels.size.takeIf { it > 0 }?.toString()) }
         if (Walkie.channels.isEmpty()) {
-            item {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainerLow).padding(16.dp),
-                ) {
-                    if (canBrowse) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(14.dp))
-                        Text("Looking for channels… Ask your friend to start one in Tools → Walkie Talkie.", fontSize = 13.5.sp, lineHeight = 19.sp, color = cs.onSurfaceVariant)
-                    } else {
-                        Text("Tap Join a channel to look for channels nearby.", fontSize = 13.5.sp, color = cs.onSurfaceVariant)
-                    }
-                }
-            }
-        }
-        items(Walkie.channels, key = { it.endpointId }) { ch -> ChannelRow(ch, onJoin = { onJoin(ch) }) }
-        item {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 6.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cs.surfaceContainerLow).padding(12.dp),
-            ) {
-                Icon(Icons.Rounded.WifiTethering, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    "No internet needed. Works across a house, hall or campsite (about 50–100 m, more on the same Wi-Fi). " +
-                        "Voices are live only — never recorded or saved.",
-                    fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant,
+            item(key = "channelsEmpty") {
+                Looking(
+                    canBrowse,
+                    "Looking for channels… Ask your friend to start one in Tools → Walkie Talkie.",
+                    "Tap Join a channel to look for channels nearby.",
                 )
             }
+        }
+        val channels = Walkie.channels
+        itemsIndexed(channels, key = { _, ch -> ch.endpointId }) { i, ch ->
+            ChannelRow(ch, Modifier.cardSlice(first = i == 0, last = i == channels.lastIndex), onJoin = { onJoin(ch) })
+        }
+        item(key = "about") {
+            NoteBox(
+                Icons.Rounded.WifiTethering,
+                "No internet needed. Works across a house, hall or campsite (about 50–100 m, more on the same Wi-Fi). " +
+                    "Voices are live only — never recorded or saved.",
+                Modifier.padding(top = 14.dp),
+            )
         }
     }
 }
 
+/** Nothing found yet: a spinner while looking (else how to start looking), on a white card. */
 @Composable
-private fun ChannelRow(ch: WalkieChannel, onJoin: () -> Unit) {
+private fun Looking(canBrowse: Boolean, looking: String, idle: String) {
     val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(bottom = 10.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp))
-            .background(cs.surfaceContainerLowest).border(1.dp, cs.outlineVariant, RoundedCornerShape(18.dp)).padding(12.dp),
+        modifier = Modifier.fillMaxWidth().appCard(CardShape).padding(16.dp),
+    ) {
+        if (canBrowse) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, trackColor = cs.outlineVariant)
+            Spacer(Modifier.width(14.dp))
+        }
+        Text(if (canBrowse) looking else idle, fontSize = 13.5.sp, lineHeight = 19.sp, color = cs.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun ChannelRow(ch: WalkieChannel, modifier: Modifier, onJoin: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
     ) {
         Letter(ch.name)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(ch.name, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${ch.host} · ${ch.people} ${if (ch.people == 1) "person" else "people"}", fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 5.dp)) {
                 ModeChip(ch.mode)
                 SmallChip(
                     if (ch.join == JoinRule.ASK) Icons.Rounded.PersonAddAlt1 else Icons.Rounded.DoorFront,
@@ -560,7 +544,10 @@ private fun ChannelRow(ch: WalkieChannel, onJoin: () -> Unit) {
                 )
             }
         }
-        Button(onClick = onJoin, colors = tealButton(), contentPadding = PaddingValues(horizontal = 18.dp)) { Text("Join") }
+        Spacer(Modifier.width(8.dp))
+        Button(onClick = onJoin, colors = tintButton(ToolTint.TEAL), contentPadding = PaddingValues(horizontal = 16.dp), modifier = Modifier.height(36.dp)) {
+            Text("Join", fontSize = 13.5.sp)
+        }
     }
 }
 
@@ -573,16 +560,20 @@ private fun StartSheet(onDismiss: () -> Unit) {
     var talk by remember { mutableStateOf(TalkMode.HOLD) }
     var join by remember { mutableStateOf(JoinRule.ASK) }
     // Fully open (the Start button is at the bottom), scrolling on short screens.
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = cs.surfaceContainerLowest,
+    ) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, bottom = 24.dp)) {
             Text("Start a channel", fontSize = 20.sp, fontWeight = FontWeight.Medium)
             OutlinedTextField(
                 value = name, onValueChange = { name = it.take(24) }, singleLine = true, label = { Text("Channel name") },
+                shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
             )
-            Text("How do people talk?", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 18.dp, bottom = 8.dp))
-            Segmented(
-                listOf(Icons.Rounded.PanTool to TalkMode.HOLD.label(), Icons.Rounded.Mic to TalkMode.OPEN.label()),
+            Text("How do people talk?", fontSize = 14.5.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 4.dp, top = 18.dp, bottom = 8.dp))
+            PillTabs(
+                listOf(PillTab(TalkMode.HOLD.label(), Icons.Rounded.PanTool), PillTab(TalkMode.OPEN.label(), Icons.Rounded.Mic)),
                 selected = talk.ordinal, onSelect = { talk = TalkMode.entries[it] },
             )
             Text(
@@ -590,9 +581,9 @@ private fun StartSheet(onDismiss: () -> Unit) {
                 else "Hands-free: everyone can talk any time, like a group call. Best with earphones.",
                 fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp, start = 4.dp),
             )
-            Text("Who can join?", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(top = 18.dp, bottom = 8.dp))
-            Segmented(
-                listOf(Icons.Rounded.PersonAddAlt1 to JoinRule.ASK.label(), Icons.Rounded.DoorFront to JoinRule.ANYONE.label()),
+            Text("Who can join?", fontSize = 14.5.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 4.dp, top = 18.dp, bottom = 8.dp))
+            PillTabs(
+                listOf(PillTab(JoinRule.ASK.label(), Icons.Rounded.PersonAddAlt1), PillTab(JoinRule.ANYONE.label(), Icons.Rounded.DoorFront)),
                 selected = join.ordinal, onSelect = { join = JoinRule.entries[it] },
             )
             Text(
@@ -602,13 +593,13 @@ private fun StartSheet(onDismiss: () -> Unit) {
             )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 18.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(TealLight.copy(alpha = if (cs.isLight) 1f else .2f)).padding(12.dp),
+                modifier = Modifier.padding(top = 18.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(ToolTint.TEAL.tile).padding(horizontal = 14.dp, vertical = 12.dp),
             ) {
-                Icon(if (talk == TalkMode.HOLD) Icons.Rounded.PanTool else Icons.Rounded.Mic, null, tint = if (cs.isLight) TealOn else TealLight, modifier = Modifier.size(18.dp))
+                Icon(if (talk == TalkMode.HOLD) Icons.Rounded.PanTool else Icons.Rounded.Mic, null, tint = ToolTint.TEAL.icon, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(10.dp))
                 Text(
                     "${talk.label()} · ${join.label()} — you can change both later from ⋮ in the channel.",
-                    fontSize = 13.sp, lineHeight = 18.sp, color = if (cs.isLight) TealOn else TealLight,
+                    fontSize = 13.sp, lineHeight = 18.sp, color = cs.onSurface,
                 )
             }
             Button(
@@ -616,7 +607,7 @@ private fun StartSheet(onDismiss: () -> Unit) {
                     onDismiss()
                     Walkie.start(name, talk, join)
                 },
-                colors = tealButton(), modifier = Modifier.padding(top = 14.dp).fillMaxWidth().height(48.dp),
+                colors = tintButton(ToolTint.TEAL), modifier = Modifier.padding(top = 14.dp).fillMaxWidth().height(48.dp),
             ) { Text("Start channel", fontSize = 15.sp) }
         }
     }
@@ -628,8 +619,8 @@ private fun JoiningView() {
     val cs = MaterialTheme.colorScheme
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.weight(1f))
-        Box(Modifier.size(140.dp).clip(CircleShape).background(TealLight.copy(alpha = if (cs.isLight) 1f else .2f)), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.RecordVoiceOver, null, tint = Teal, modifier = Modifier.size(48.dp))
+        Box(Modifier.size(140.dp).clip(CircleShape).background(ToolTint.TEAL.tile), contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.RecordVoiceOver, null, tint = ToolTint.TEAL.icon, modifier = Modifier.size(48.dp))
         }
         val ask = Walkie.joinRule == JoinRule.ASK
         Text(
@@ -637,13 +628,13 @@ private fun JoiningView() {
             fontSize = 19.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 20.dp),
         )
         if (ask && Walkie.code.isNotBlank()) {
-            CodeBox(Walkie.code, Modifier.padding(top = 16.dp))
-            Text("Check ${Walkie.hostName}'s phone shows the same code.", fontSize = 14.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+            CodeBox(Walkie.code, Modifier.padding(top = 20.dp))
+            Text("Check ${Walkie.hostName}'s phone shows the same code.", fontSize = 14.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 12.dp))
             Text("Next time you join ${Walkie.hostName}'s channel, you go straight in.", fontSize = 13.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 18.dp))
         }
         Spacer(Modifier.weight(1f))
-        OutlinedButton(onClick = { Walkie.cancelJoin() }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Cancel") }
-        Spacer(Modifier.height(20.dp))
+        OutlinePill("Cancel", Modifier.fillMaxWidth()) { Walkie.cancelJoin() }
+        Spacer(Modifier.height(16.dp))
     }
 }
 
@@ -653,19 +644,22 @@ private fun ChannelView(onAllowMic: () -> Unit, onLeave: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Walkie.banner?.let { b ->
-            Note(Icons.Rounded.SwapHoriz, b, TealLight, TealOn, onClose = { Walkie.dismissBanner() })
+            Note(Icons.Rounded.SwapHoriz, b, ToolTint.TEAL, onClose = { Walkie.dismissBanner() })
             LaunchedEffect(b) {
                 delay(10_000)
                 if (Walkie.banner == b) Walkie.dismissBanner()
             }
         }
         when {
-            Walkie.phase == WalkiePhase.SWITCHING -> Note(Icons.Rounded.Sync, "Finding the channel again… it carries on by itself.", Color(0xFFFEF3C7), Color(0xFF78350F))
-            Walkie.inPhoneCall -> Note(Icons.Rounded.PhoneAndroid, "Paused for your phone call — back after it.", Color(0xFFFEF3C7), Color(0xFF78350F))
+            Walkie.phase == WalkiePhase.SWITCHING -> Note(Icons.Rounded.Sync, "Finding the channel again… it carries on by itself.", ToolTint.AMBER)
+            Walkie.inPhoneCall -> Note(Icons.Rounded.PhoneAndroid, "Paused for your phone call — back after it.", ToolTint.AMBER)
         }
-        Walkie.callFrom?.let { Note(Icons.Rounded.NotificationsActive, "$it is calling everyone", TealLight, TealOn) }
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, bottom = 10.dp)) {
-            Icon(if (Walkie.isHub) Icons.Rounded.Star else Icons.Rounded.RecordVoiceOver, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(15.dp))
+        Walkie.callFrom?.let { Note(Icons.Rounded.NotificationsActive, "$it is calling everyone", ToolTint.TEAL) }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 2.dp, bottom = 14.dp)) {
+            Icon(
+                if (Walkie.isHub) Icons.Rounded.Star else Icons.Rounded.RecordVoiceOver, null,
+                tint = if (Walkie.isHub) ToolTint.AMBER.icon else cs.onSurfaceVariant, modifier = Modifier.size(15.dp),
+            )
             Spacer(Modifier.width(6.dp))
             val n = Walkie.members.size
             Text(
@@ -679,9 +673,9 @@ private fun ChannelView(onAllowMic: () -> Unit, onLeave: () -> Unit) {
             if (Walkie.mode == TalkMode.HOLD) HoldToTalk(onAllowMic) else OpenLine(onAllowMic)
         }
         if (Walkie.mode == TalkMode.OPEN) {
-            Note(Icons.Rounded.Headphones, "Phones close together can echo. Earphones work best on an open line.", Color(0xFFFEF3C7), Color(0xFF78350F))
+            Note(Icons.Rounded.Headphones, "Phones close together can echo. Earphones work best on an open line.", ToolTint.AMBER)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(bottom = 16.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)) {
             val headset = Walkie.headset
             ToolButton(
                 when {
@@ -694,7 +688,7 @@ private fun ChannelView(onAllowMic: () -> Unit, onLeave: () -> Unit) {
             ) { Walkie.toggleLoudspeaker() }
             ToolButton(Icons.Rounded.NotificationsActive, "Call all", on = false, modifier = Modifier.weight(1f)) { Walkie.callAll() }
             ToolButton(Icons.AutoMirrored.Rounded.VolumeOff, if (Walkie.othersMuted) "Muted" else "Mute others", on = Walkie.othersMuted, modifier = Modifier.weight(1f)) { Walkie.toggleOthersMuted() }
-            ToolButton(Icons.AutoMirrored.Rounded.Logout, "Leave", on = false, color = Red, modifier = Modifier.weight(1f), onClick = onLeave)
+            ToolButton(Icons.AutoMirrored.Rounded.Logout, "Leave", on = false, color = cs.error, modifier = Modifier.weight(1f), onClick = onLeave)
         }
     }
 }
@@ -704,31 +698,39 @@ private fun PeopleGrid() {
     val cs = MaterialTheme.colorScheme
     val people = Walkie.members.toList()
     val cols = if (people.size == 5) 5 else 4
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         people.chunked(cols).take(3).forEach { row ->
             Row(Modifier.fillMaxWidth()) {
                 row.forEach { m ->
                     val me = Walkie.isMe(m)
                     val talking = (me && Walkie.onAir) || (!me && (m.id in Walkie.speaking || Walkie.floorId == m.id))
+                    val onAir = me && Walkie.onAir
+                    // Who's talking gets a ring: red for you on air, teal for the others.
                     val ring = when {
-                        me && Walkie.onAir -> Red
+                        onAir -> Red
                         talking -> TealBright
                         else -> Color.Transparent
+                    }
+                    val tint = when {
+                        onAir -> ToolTint.RED
+                        talking || me -> ToolTint.TEAL
+                        else -> null
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
                         Box {
                             Box(
-                                Modifier.size(56.dp).border(3.dp, ring, CircleShape).padding(5.dp).clip(CircleShape)
-                                    .background(if (talking) (if (me) Color(0xFFFEE2E2) else TealLight) else cs.surfaceContainerHigh),
+                                Modifier.size(56.dp)
+                                    .then(if (tint != null) Modifier.clip(CircleShape).background(tint.tile) else Modifier.appCard(CircleShape))
+                                    .border(3.dp, ring, CircleShape),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Text(m.name.take(1).uppercase(), fontSize = 18.sp, fontWeight = FontWeight.Medium, color = if (talking) (if (me) Red else Teal) else cs.onSurface)
+                                Text(m.name.take(1).uppercase(), fontSize = 18.sp, fontWeight = FontWeight.Medium, color = tint?.icon ?: cs.onSurface)
                             }
                             if (m.token == Walkie.hostToken) {
-                                Icon(
-                                    Icons.Rounded.Star, "Runs the channel", tint = Color(0xFFB45309),
-                                    modifier = Modifier.align(Alignment.BottomEnd).offset(x = 2.dp, y = 2.dp).size(18.dp).clip(CircleShape).background(cs.surface).padding(2.dp),
-                                )
+                                Box(
+                                    Modifier.align(Alignment.BottomEnd).offset(x = 3.dp, y = 3.dp).size(20.dp).clip(CircleShape).background(cs.surface),
+                                    contentAlignment = Alignment.Center,
+                                ) { Icon(Icons.Rounded.Star, "Runs the channel", tint = ToolTint.AMBER.icon, modifier = Modifier.size(14.dp)) }
                             }
                         }
                         Text(
@@ -739,12 +741,12 @@ private fun PeopleGrid() {
                             },
                             fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             color = when {
-                                me && Walkie.onAir -> Red
-                                talking || me -> if (cs.isLight) Teal else TealBright
+                                onAir -> cs.error
+                                talking || me -> ToolTint.TEAL.icon
                                 else -> cs.onSurface
                             },
                             fontWeight = if (talking || me) FontWeight.Medium else FontWeight.Normal,
-                            modifier = Modifier.padding(top = 4.dp),
+                            modifier = Modifier.padding(top = 5.dp),
                         )
                     }
                 }
@@ -768,9 +770,19 @@ private fun HoldToTalk(onAllowMic: () -> Unit) {
     val other = Walkie.floorId?.takeIf { it != Walkie.myId }
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         if (other != null && !Walkie.onAir) {
-            Pill("${Walkie.floorName ?: "Someone"} is talking · ${clock(now - Walkie.floorSinceMs)}")
+            Pill(Icons.Rounded.RecordVoiceOver, "${Walkie.floorName ?: "Someone"} is talking · ${clock(now - Walkie.floorSinceMs)}")
         }
         val usable = Walkie.phase == WalkiePhase.IN_CHANNEL && !Walkie.inPhoneCall
+        // One flat colour: teal ready, red on air, grey while it can't be used.
+        val (fill, title, sub) = when {
+            !Walkie.micAllowed -> Triple(cs.surfaceContainerHighest, "Allow microphone", "to talk — you can listen now")
+            !usable -> Triple(cs.surfaceContainerHighest, if (Walkie.inPhoneCall) "Paused" else "Reconnecting…", "")
+            Walkie.onAir -> Triple(Red, "You're on air", "${clock(now - Walkie.talkStartedMs)} · let go to stop")
+            Walkie.asking -> Triple(Color(0xFF115E59), "Connecting…", "keep holding")
+            other != null -> Triple(cs.surfaceContainerHighest, "Wait…", "your turn when ${Walkie.floorName ?: "they"} stops")
+            else -> Triple(Teal, "Hold to talk", "up to 1 minute")
+        }
+        val grey = fill == cs.surfaceContainerHighest
         Box(contentAlignment = Alignment.Center, modifier = Modifier.size(240.dp)) {
             if (Walkie.onAir) {
                 val left = (Walkie.TALK_LIMIT_MS - (now - Walkie.talkStartedMs)).coerceAtLeast(0)
@@ -787,19 +799,13 @@ private fun HoldToTalk(onAllowMic: () -> Unit) {
                     "${(left + 999) / 1000} s left", fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = if (warn) Amber else Red,
                     modifier = Modifier.align(Alignment.BottomCenter).offset(y = 4.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFFEE2E2)).padding(horizontal = 10.dp, vertical = 3.dp),
                 )
+            } else if (!grey) {
+                // The soft teal ring around the button.
+                Box(Modifier.size(224.dp).clip(CircleShape).background(ToolTint.TEAL.tile))
             }
-            val (top, title, sub) = when {
-                !Walkie.micAllowed -> Triple(listOf(cs.surfaceContainerHighest, cs.surfaceContainerHighest), "Allow microphone", "to talk — you can listen now")
-                !usable -> Triple(listOf(cs.surfaceContainerHighest, cs.surfaceContainerHighest), if (Walkie.inPhoneCall) "Paused" else "Reconnecting…", "")
-                Walkie.onAir -> Triple(listOf(Color(0xFFF87171), Red), "You're on air", "${clock(now - Walkie.talkStartedMs)} · let go to stop")
-                Walkie.asking -> Triple(listOf(Color(0xFF0D9488), Color(0xFF115E59)), "Connecting…", "keep holding")
-                other != null -> Triple(listOf(cs.surfaceContainerHighest, cs.surfaceContainerHighest), "Wait…", "your turn when ${Walkie.floorName ?: "they"} stops")
-                else -> Triple(listOf(Color(0xFF2DD4BF), Teal), "Hold to talk", "up to 1 minute")
-            }
-            val grey = top.first() == cs.surfaceContainerHighest
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
-                modifier = Modifier.size(196.dp).clip(CircleShape).background(Brush.radialGradient(top))
+                modifier = Modifier.size(196.dp).clip(CircleShape).background(fill)
                     .semantics { contentDescription = title }
                     .then(
                         if (!Walkie.micAllowed) Modifier.clickable(onClick = onAllowMic)
@@ -817,16 +823,7 @@ private fun HoldToTalk(onAllowMic: () -> Unit) {
                 if (sub.isNotBlank()) Text(sub, color = if (grey) cs.onSurfaceVariant else Color.White.copy(alpha = .9f), fontSize = 12.5.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 18.dp))
             }
         }
-        if (Walkie.volumeKeyTalk) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(TealLight.copy(alpha = if (cs.isLight) 1f else .2f)).padding(horizontal = 14.dp, vertical = 8.dp),
-            ) {
-                Icon(Icons.Rounded.PhoneAndroid, null, tint = if (cs.isLight) TealOn else TealLight, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Volume-key talk on", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = if (cs.isLight) TealOn else TealLight)
-            }
-        }
+        if (Walkie.volumeKeyTalk) Pill(Icons.Rounded.PhoneAndroid, "Volume-key talk on")
         Text(
             when {
                 Walkie.onAir -> {
@@ -848,11 +845,12 @@ private fun OpenLine(onAllowMic: () -> Unit) {
     val on = Walkie.micAllowed && !Walkie.micMuted && !Walkie.inPhoneCall
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.size(240.dp)) {
-            if (on && Walkie.onAir) Box(Modifier.size(232.dp).clip(CircleShape).background(Green.copy(alpha = .14f)))
+            // A soft green ring while your voice is going out.
+            if (on && Walkie.onAir) Box(Modifier.size(224.dp).clip(CircleShape).background(ToolTint.GREEN.tile))
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
                 modifier = Modifier.size(196.dp).clip(CircleShape)
-                    .background(if (on) Brush.radialGradient(listOf(Color(0xFF4ADE80), Green)) else Brush.radialGradient(listOf(cs.surfaceContainerHighest, cs.surfaceContainerHighest)))
+                    .background(if (on) Green else cs.surfaceContainerHighest)
                     .clickable { if (Walkie.micAllowed) Walkie.toggleMic() else onAllowMic() },
             ) {
                 Icon(if (on) Icons.Rounded.Mic else Icons.Rounded.MicOff, null, tint = if (on) Color.White else cs.onSurfaceVariant, modifier = Modifier.size(54.dp))
@@ -903,9 +901,9 @@ private fun ChannelMenu(open: Boolean, onClose: () -> Unit, onTalkStyle: () -> U
             MenuItem(Icons.Rounded.PersonAddAlt1, "Who can join", Walkie.joinRule.label()) { onClose(); onJoinRule() }
             MenuItem(Icons.Rounded.SwapHoriz, "Hand over to…", "Let someone else run it", enabled = Walkie.members.size > 1) { onClose(); onHandOver() }
             HorizontalDivider()
-            MenuItem(Icons.Rounded.HighlightOff, "End channel", "For everyone", color = Red) { onClose(); onEnd() }
+            MenuItem(Icons.Rounded.HighlightOff, "End channel", "For everyone", color = cs.error) { onClose(); onEnd() }
         } else {
-            MenuItem(Icons.AutoMirrored.Rounded.Logout, "Leave channel", null, color = Red) {
+            MenuItem(Icons.AutoMirrored.Rounded.Logout, "Leave channel", null, color = cs.error) {
                 onClose()
                 Walkie.leave()
             }
@@ -941,39 +939,43 @@ private fun MenuItem(icon: ImageVector, title: String, sub: String?, enabled: Bo
 private fun LeaveSheet(onDismiss: () -> Unit, onChange: () -> Unit, onEnd: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val next = Walkie.successor
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = cs.surfaceContainerLowest,
+    ) {
         Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 24.dp)) {
             Text("Leave ${Walkie.channelName}?", fontSize = 20.sp, fontWeight = FontWeight.Medium)
             Text("You run this channel. Keep it going for the others, or end it.", fontSize = 13.5.sp, lineHeight = 19.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).border(2.dp, Teal, RoundedCornerShape(18.dp))
+                modifier = Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(ToolTint.TEAL.tile.copy(alpha = .5f))
+                    .border(2.dp, ToolTint.TEAL.icon, RoundedCornerShape(20.dp))
                     .clickable {
                         onDismiss()
                         next?.let { Walkie.handOver(it, leave = true) }
-                    }.padding(14.dp),
+                    }.padding(start = 14.dp, end = 6.dp, top = 12.dp, bottom = 12.dp),
             ) {
-                IconTile(Icons.Rounded.SwapHoriz, Teal, TealLight)
+                ToolTile(Icons.Rounded.SwapHoriz, ToolTint.TEAL, size = 40.dp)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Hand over & leave", fontSize = 15.sp, fontWeight = FontWeight.Medium)
                     Text("${next?.name ?: "Someone"} will run the channel", fontSize = 12.5.sp, color = cs.onSurfaceVariant)
                 }
-                TextButton(onClick = onChange) { Text("Change", color = if (cs.isLight) Teal else TealBright) }
+                TextButton(onClick = onChange) { Text("Change", color = ToolTint.TEAL.icon) }
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).border(1.dp, cs.outlineVariant, RoundedCornerShape(18.dp))
+                modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).border(1.dp, cs.outlineVariant, RoundedCornerShape(20.dp))
                     .clickable(onClick = onEnd).padding(14.dp),
             ) {
-                IconTile(Icons.Rounded.HighlightOff, Red, Color(0xFFFEE2E2))
+                ToolTile(Icons.Rounded.HighlightOff, ToolTint.RED, size = 40.dp)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("End channel for everyone", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Red)
+                    Text("End channel for everyone", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.error)
                     Text("Everyone's walkie-talkie stops", fontSize = 12.5.sp, color = cs.onSurfaceVariant)
                 }
             }
-            OutlinedButton(onClick = onDismiss, modifier = Modifier.padding(top = 16.dp).fillMaxWidth().height(48.dp)) { Text("Stay") }
+            OutlinePill("Stay", Modifier.padding(top = 16.dp).fillMaxWidth(), onDismiss)
         }
     }
 }
@@ -1015,6 +1017,7 @@ private fun ChoiceDialog(
             }) { Text(confirm) }
         },
         dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } },
+        containerColor = MaterialTheme.colorScheme.dialogSurface,
     )
 }
 
@@ -1025,11 +1028,11 @@ private fun ModeChip(mode: TalkMode) = SmallChip(if (mode == TalkMode.HOLD) Icon
 @Composable
 private fun SmallChip(icon: ImageVector, text: String, teal: Boolean = false) {
     val cs = MaterialTheme.colorScheme
-    val bg = if (teal) TealLight.copy(alpha = if (cs.isLight) 1f else .2f) else cs.surfaceContainerHigh
-    val fg = if (teal) (if (cs.isLight) TealOn else TealLight) else cs.onSurfaceVariant
+    val bg = if (teal) ToolTint.TEAL.tile else cs.surfaceContainer
+    val fg = if (teal) ToolTint.TEAL.icon else cs.onSurfaceVariant
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(bg).padding(horizontal = 8.dp, vertical = 3.dp),
+        modifier = Modifier.clip(RoundedCornerShape(50)).background(bg).padding(horizontal = 8.dp, vertical = 3.dp),
     ) {
         Icon(icon, null, tint = fg, modifier = Modifier.size(13.dp))
         Spacer(Modifier.width(4.dp))
@@ -1037,31 +1040,33 @@ private fun SmallChip(icon: ImageVector, text: String, teal: Boolean = false) {
     }
 }
 
+/** A soft teal pill: who's talking, "Volume-key talk on". */
 @Composable
-private fun Pill(text: String) {
-    val cs = MaterialTheme.colorScheme
+private fun Pill(icon: ImageVector, text: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(TealLight.copy(alpha = if (cs.isLight) 1f else .2f)).padding(horizontal = 14.dp, vertical = 9.dp),
+        modifier = Modifier.clip(RoundedCornerShape(18.dp)).background(ToolTint.TEAL.tile).padding(horizontal = 14.dp, vertical = 8.dp),
     ) {
-        Icon(Icons.Rounded.RecordVoiceOver, null, tint = if (cs.isLight) TealOn else TealLight, modifier = Modifier.size(18.dp))
+        Icon(icon, null, tint = ToolTint.TEAL.icon, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
-        Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = if (cs.isLight) TealOn else TealLight)
+        Text(text, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = ToolTint.TEAL.icon)
     }
 }
 
+/** A note on a soft tile colour (teal news, amber warnings), with an optional ✕. */
 @Composable
-private fun Note(icon: ImageVector, text: String, bg: Color, fg: Color, onClose: (() -> Unit)? = null) {
+private fun Note(icon: ImageVector, text: String, tint: ToolTint, onClose: (() -> Unit)? = null) {
+    val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(bottom = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(bg).padding(start = 14.dp, end = 4.dp).heightIn(min = 44.dp),
+        modifier = Modifier.padding(bottom = 10.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(tint.tile).padding(start = 14.dp, end = 4.dp).heightIn(min = 44.dp),
     ) {
-        Icon(icon, null, tint = fg, modifier = Modifier.size(18.dp))
+        Icon(icon, null, tint = tint.icon, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(10.dp))
-        Text(text, fontSize = 13.sp, lineHeight = 18.sp, color = fg, modifier = Modifier.weight(1f).padding(vertical = 10.dp))
+        Text(text, fontSize = 13.sp, lineHeight = 18.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(vertical = 10.dp))
         if (onClose != null) {
             Box(Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onClose), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.Close, "Close", tint = fg, modifier = Modifier.size(18.dp))
+                Icon(Icons.Rounded.Close, "Close", tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
             }
         } else {
             Spacer(Modifier.width(10.dp))
@@ -1069,93 +1074,56 @@ private fun Note(icon: ImageVector, text: String, bg: Color, fg: Color, onClose:
     }
 }
 
+/** One of the four buttons under the talk button: a white tile, soft teal while it's on. */
 @Composable
 private fun ToolButton(icon: ImageVector, label: String, on: Boolean, modifier: Modifier, enabled: Boolean = true, color: Color = Color.Unspecified, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(20.dp)
     val fg = when {
         color != Color.Unspecified -> color
-        on -> if (cs.isLight) TealOn else TealLight
+        on -> ToolTint.TEAL.icon
         else -> cs.onSurfaceVariant
     }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
-        modifier = modifier.height(60.dp).clip(RoundedCornerShape(16.dp))
-            .background(if (on) TealLight.copy(alpha = if (cs.isLight) 1f else .2f) else cs.surfaceContainerLow)
+        modifier = modifier.height(64.dp)
+            .then(if (on) Modifier.clip(shape).background(ToolTint.TEAL.tile) else Modifier.appCard(shape))
             .clickable(enabled = enabled, onClick = onClick),
     ) {
         Icon(icon, null, tint = fg, modifier = Modifier.size(20.dp))
-        Text(label, fontSize = 11.5.sp, color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp, start = 4.dp, end = 4.dp))
+        Text(label, fontSize = 11.5.sp, color = fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp, start = 4.dp, end = 4.dp))
     }
 }
 
 @Composable
-private fun ActionCard(icon: ImageVector, title: String, subtitle: String, tint: Color, container: Color, modifier: Modifier, onClick: () -> Unit) {
+private fun ActionCard(icon: ImageVector, title: String, subtitle: String, tint: ToolTint, modifier: Modifier, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Column(
-        modifier.aspectRatio(1f).clip(RoundedCornerShape(22.dp)).background(cs.surfaceContainerLowest)
-            .border(1.dp, cs.outlineVariant, RoundedCornerShape(22.dp)).clickable(onClick = onClick).padding(16.dp),
+        modifier.heightIn(min = 150.dp).appCard(CardShape).clickable(onClick = onClick).padding(14.dp),
     ) {
-        Box(Modifier.size(48.dp).clip(RoundedCornerShape(15.dp)).background(container), contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = tint, modifier = Modifier.size(26.dp))
-        }
-        Spacer(Modifier.weight(1f))
-        Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-        Text(subtitle, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
-    }
-}
-
-@Composable
-private fun IconTile(icon: ImageVector, tint: Color, bg: Color) {
-    Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(bg), contentAlignment = Alignment.Center) {
-        Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp))
-    }
-}
-
-/** A pill row of choices with icons (Start sheet). */
-@Composable
-private fun Segmented(options: List<Pair<ImageVector, String>>, selected: Int, onSelect: (Int) -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    Row(
-        Modifier.fillMaxWidth().height(46.dp).clip(RoundedCornerShape(23.dp)).background(cs.surfaceContainer).padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        options.forEachIndexed { i, (icon, label) ->
-            val on = i == selected
-            val fg = if (on) (if (cs.isLight) TealOn else TealLight) else cs.onSurfaceVariant
-            Row(
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.weight(1f).fillMaxSize().clip(RoundedCornerShape(19.dp))
-                    .background(if (on) TealLight.copy(alpha = if (cs.isLight) 1f else .25f) else Color.Transparent)
-                    .clickable { onSelect(i) },
-            ) {
-                Icon(icon, null, tint = fg, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(label, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = fg)
-            }
-        }
+        ToolTile(icon, tint)
+        Spacer(Modifier.weight(1f).heightIn(min = 16.dp))
+        Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        Text(subtitle, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
     }
 }
 
 @Composable
 private fun Letter(name: String) {
-    val cs = MaterialTheme.colorScheme
     Box(
-        Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(TealLight.copy(alpha = if (cs.isLight) 1f else .2f)),
+        Modifier.size(42.dp).clip(RoundedCornerShape(14.dp)).background(ToolTint.TEAL.tile),
         contentAlignment = Alignment.Center,
-    ) { Text(name.take(1).uppercase(), color = Teal, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+    ) { Text(name.take(1).uppercase(), color = ToolTint.TEAL.icon, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
 }
 
+/** The code both phones show, on a white card. */
 @Composable
 private fun CodeBox(code: String, modifier: Modifier = Modifier) {
     Text(
-        code.toCharArray().joinToString(" "),
-        fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = 4.sp,
-        modifier = modifier.clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(horizontal = 22.dp, vertical = 10.dp),
+        code, fontSize = 30.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 8.sp, color = MaterialTheme.colorScheme.onSurface,
+        modifier = modifier.appCard(RoundedCornerShape(20.dp)).padding(start = 36.dp, end = 28.dp, top = 12.dp, bottom = 12.dp),
     )
 }
-
-@Composable
-private fun tealButton() = ButtonDefaults.buttonColors(containerColor = Teal, contentColor = Color.White)
 
 private fun clock(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)

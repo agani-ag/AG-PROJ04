@@ -41,7 +41,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -56,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -64,6 +64,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.forest.CalmSession
+import com.agani.syncup.ui.theme.isLight
 import com.agani.syncup.forest.FDays
 import com.agani.syncup.sync.SyncType
 import org.json.JSONObject
@@ -381,27 +382,44 @@ private fun HabitsToday(onBack: () -> Unit, onOpen: (Habit) -> Unit, onNew: () -
     WellPage("Habits", onBack, overlay = {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp).height(56.dp).clip(RoundedCornerShape(18.dp)).background(t.accent).clickable(onClick = onNew).padding(horizontal = 20.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 22.dp).height(54.dp)
+                .shadow(if (cs.isLight) 6.dp else 0.dp, CircleShape).clip(CircleShape).background(cs.primary)
+                .clickable(onClick = onNew).padding(start = 18.dp, end = 22.dp),
         ) {
-            Icon(Icons.Rounded.Add, null, tint = Color.White)
+            Icon(Icons.Rounded.Add, null, tint = cs.onPrimary)
             Spacer(Modifier.width(8.dp))
-            Text("New habit", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Color.White)
+            Text("New habit", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onPrimary)
         }
     }) {
-        // The last 7 days: full = every due habit done, ring = some.
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            (6 downTo 0).map { FDays.add(today, -it) }.forEach { d ->
-                val dd = habits.filter { it.dueOn(d) && it.freq != "week" && FDays.of(it.created) <= d }
-                val n = dd.count { Habits.done(it, d) || Habits.isRest(it, d) }
-                val full = dd.isNotEmpty() && n == dd.size
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(weekdayLetter(d), fontSize = 11.5.sp, color = if (d == today) cs.onSurface else cs.onSurfaceVariant, fontWeight = if (d == today) FontWeight.Medium else FontWeight.Normal)
-                    Box(
-                        Modifier.padding(top = 4.dp).size(36.dp).clip(CircleShape).background(if (full) t.accent else Color.Transparent)
-                            .border(2.5.dp, if (full) t.accent else if (n > 0) t.accent.copy(alpha = .55f) else cs.outlineVariant, CircleShape)
-                            .then(if (d == today) Modifier.border(1.dp, cs.onSurface, CircleShape) else Modifier),
-                        contentAlignment = Alignment.Center,
-                    ) { Text("${d % 100}", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (full) Color.White else cs.onSurface) }
+        WCard(Modifier.padding(top = 4.dp)) {
+            // The last 7 days: full = every due habit done, ring = some; today has a thin outline.
+            Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 14.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                (6 downTo 0).map { FDays.add(today, -it) }.forEach { d ->
+                    val dd = habits.filter { it.dueOn(d) && it.freq != "week" && FDays.of(it.created) <= d }
+                    val n = dd.count { Habits.done(it, d) || Habits.isRest(it, d) }
+                    val full = dd.isNotEmpty() && n == dd.size
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(weekdayLetter(d), fontSize = 11.5.sp, color = if (d == today) cs.onSurface else cs.onSurfaceVariant, fontWeight = if (d == today) FontWeight.Medium else FontWeight.Normal)
+                        Box(
+                            Modifier.padding(top = 3.dp).size(42.dp).then(if (d == today) Modifier.border(1.5.dp, cs.onSurface, CircleShape) else Modifier).padding(3.dp)
+                                .clip(CircleShape).background(if (full) t.accent else Color.Transparent)
+                                .border(2.5.dp, if (full) t.accent else if (n > 0) t.accent.copy(alpha = .55f) else cs.outlineVariant, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) { Text("${d % 100}", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (full) cs.surfaceContainerLowest else cs.onSurface) }
+                    }
+                }
+            }
+            if (habits.isNotEmpty() && dueN > 0) {
+                Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant))
+                Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("$doneN of $dueN done today", fontSize = 14.5.sp, color = cs.onSurface, modifier = Modifier.weight(1f))
+                        val left = due.filter { it.freq != "week" && !Habits.done(it, today) && !Habits.isRest(it, today) }.map { it.name }
+                        if (left.isNotEmpty()) Text(left.take(2).joinToString(" and ") + if (left.size > 2) " +${left.size - 2}" else " left", fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1)
+                    }
+                    Box(Modifier.padding(top = 8.dp).fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(t.container)) {
+                        Box(Modifier.fillMaxWidth(doneN / dueN.toFloat()).height(8.dp).clip(RoundedCornerShape(4.dp)).background(t.accent))
+                    }
                 }
             }
         }
@@ -414,20 +432,6 @@ private fun HabitsToday(onBack: () -> Unit, onOpen: (Habit) -> Unit, onNew: () -
             Spacer(Modifier.height(10.dp))
             Starters(t) { Habits.save(it.copy(id = UUID.randomUUID().toString(), created = System.currentTimeMillis())) }
             return@WellPage
-        }
-        if (dueN > 0) {
-            WCard(Modifier.padding(top = 14.dp)) {
-                Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-                    Row {
-                        Text("$doneN of $dueN done today", fontSize = 14.5.sp, color = cs.onSurface, modifier = Modifier.weight(1f))
-                        val left = due.filter { it.freq != "week" && !Habits.done(it, today) && !Habits.isRest(it, today) }.map { it.name }
-                        if (left.isNotEmpty()) Text(left.take(2).joinToString(" and ") + if (left.size > 2) " +${left.size - 2}" else " left", fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1)
-                    }
-                    Box(Modifier.padding(top = 8.dp).fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)).background(t.container)) {
-                        Box(Modifier.fillMaxWidth(doneN / dueN.toFloat()).height(8.dp).clip(RoundedCornerShape(4.dp)).background(t.accent))
-                    }
-                }
-            }
         }
         WCard(Modifier.padding(top = 12.dp)) {
             (due + other).forEachIndexed { i, h ->
@@ -450,18 +454,18 @@ private fun HabitRow(h: Habit, day: Int, onOpen: (Habit) -> Unit) {
     val streak = Habits.streak(h)
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().clickable { onOpen(h) }.alpha(if (dueToday) 1f else .55f).padding(start = 14.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
+        modifier = Modifier.fillMaxWidth().clickable { onOpen(h) }.alpha(if (dueToday) 1f else .55f).padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
     ) {
-        Box(Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(c.copy(alpha = .14f)), contentAlignment = Alignment.Center) {
-            Icon(habitIcon(h.icon), null, tint = c, modifier = Modifier.size(20.dp))
+        Box(Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(c.copy(alpha = if (cs.isLight) .14f else .24f)), contentAlignment = Alignment.Center) {
+            Icon(habitIcon(h.icon), null, tint = c, modifier = Modifier.size(18.dp))
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(h.name, fontSize = 15.sp, color = cs.onSurface, maxLines = 1)
                 if (streak > 0) {
-                    Icon(Icons.Rounded.LocalFireDepartment, null, tint = Color(0xFFEA580C), modifier = Modifier.padding(start = 6.dp).size(14.dp))
-                    Text("$streak", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color(0xFFEA580C))
+                    Icon(Icons.Rounded.LocalFireDepartment, null, tint = flame(), modifier = Modifier.padding(start = 6.dp).size(14.dp))
+                    Text("$streak", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = flame())
                 }
             }
             Text(
@@ -495,13 +499,16 @@ private fun HabitRow(h: Habit, day: Int, onOpen: (Habit) -> Unit) {
 private fun Starters(t: WTint, onPick: (Habit) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
         STARTERS.forEach { s ->
-            Text(
-                s.name, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = t.accent,
-                modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(t.container).clickable { onPick(s) }.padding(horizontal = 14.dp, vertical = 8.dp),
-            )
+            Box(Modifier.height(34.dp).clip(CircleShape).background(t.container).clickable { onPick(s) }.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+                Text(s.name, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = t.accent)
+            }
         }
     }
 }
+
+/** The streak flame's orange. */
+@Composable
+private fun flame(): Color = if (MaterialTheme.colorScheme.isLight) Color(0xFFC2410C) else Color(0xFFFDBA74)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -510,13 +517,12 @@ private fun HabitSheet(existing: Habit?, onDone: (String) -> Unit) {
     val t = habitsTint()
     var h by remember { mutableStateOf(existing ?: Habit()) }
     var time by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = { onDone("") }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(onDismissRequest = { onDone("") }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = cs.surfaceContainerLowest) {
         Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
-            Text(if (existing == null) "New habit" else "Edit habit", fontSize = 20.sp, color = cs.onSurface, modifier = Modifier.padding(start = 20.dp, bottom = 8.dp))
+            Text(if (existing == null) "New habit" else "Edit habit", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.padding(start = 20.dp, bottom = 10.dp))
             if (existing == null) Starters(t) { h = it.copy(id = h.id, created = h.created) }
             OutlinedTextField(
-                h.name, { h = h.copy(name = it.take(40)) }, label = { Text("Name") }, singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = t.accent, focusedLabelColor = t.accent),
+                h.name, { h = h.copy(name = it.take(40)) }, label = { Text("Name") }, singleLine = true, shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
@@ -537,7 +543,7 @@ private fun HabitSheet(existing: Habit?, onDone: (String) -> Unit) {
                     )
                 }
             }
-            Lab("How often", t.accent)
+            SheetLab("How often")
             Choices(listOf("daily", "days", "week"), h.freq, { mapOf("daily" to "Every day", "days" to "Some days", "week" to "Times a week")[it]!! }, t, { h = h.copy(freq = it) })
             Spacer(Modifier.height(8.dp))
             when (h.freq) {
@@ -545,10 +551,10 @@ private fun HabitSheet(existing: Habit?, onDone: (String) -> Unit) {
                 "week" -> PlusMinusLine("Times a week", "${h.perWeek}", { h = h.copy(perWeek = (h.perWeek - 1).coerceAtLeast(1)) }, { h = h.copy(perWeek = (h.perWeek + 1).coerceAtMost(7)) })
             }
             PlusMinusLine("Times a day", "${h.times}", { h = h.copy(times = (h.times - 1).coerceAtLeast(1)) }, { h = h.copy(times = (h.times + 1).coerceAtMost(20)) }, sub = "Tap once each time")
-            SwitchLine("Remind me", if (h.remind >= 0) timeText(h.remind) else "Off", h.remind >= 0, t.accent, { on -> h = h.copy(remind = if (on) 9 * 60 else -1) })
-            if (h.remind >= 0) TimeLine("At", h.remind, t, { time = true })
+            SwitchLine("Remind me", if (h.remind >= 0) timeText(h.remind) else "Off", h.remind >= 0, { on -> h = h.copy(remind = if (on) 9 * 60 else -1) })
+            if (h.remind >= 0) TimeLine("At", h.remind, { time = true })
             Spacer(Modifier.height(12.dp))
-            BigButton("Save", t.accent, {
+            BigButton("Save", enabled = h.name.isNotBlank(), onClick = {
                 if (h.name.isNotBlank()) {
                     Habits.save(h.copy(name = h.name.trim()))
                     onDone("saved")
@@ -568,14 +574,13 @@ private fun HabitSheet(existing: Habit?, onDone: (String) -> Unit) {
 @Composable
 private fun HabitDetail(h: Habit, onBack: () -> Unit, onEdit: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val t = habitsTint()
     val c = Color(h.color)
     val today = FDays.today()
     val streak = Habits.streak(h)
     val unit = if (h.freq == "week") "week" else "day"
-    WellPage(h.name, onBack, actions = { TextButton(onClick = onEdit) { Text("Edit", color = t.accent) } }) {
+    WellPage(h.name, onBack, actions = { TextButton(onClick = onEdit) { Text("Edit") } }) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
-            Icon(Icons.Rounded.LocalFireDepartment, null, tint = Color(0xFFEA580C), modifier = Modifier.size(30.dp))
+            Icon(Icons.Rounded.LocalFireDepartment, null, tint = flame(), modifier = Modifier.size(30.dp))
             Text(" $streak $unit${if (streak == 1) "" else "s"}", fontSize = 32.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
         }
         Text("Current streak · best ${Habits.best(h)} $unit${if (Habits.best(h) == 1) "" else "s"}", fontSize = 13.5.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
@@ -591,11 +596,13 @@ private fun HabitDetail(h: Habit, onBack: () -> Unit, onEdit: () -> Unit) {
             "All time" to "${Habits.items.items("habitlog").count { it.key.startsWith("${h.id}/") && it.data.optInt("count") >= h.times }}",
         )
         Lab(monthTitle())
-        MonthDots(today, WTint(c, c.copy(alpha = .16f))) { d ->
-            when {
-                Habits.done(h, d) -> c to Color.White
-                Habits.isRest(h, d) -> c.copy(alpha = .18f) to c
-                else -> null
+        WCard {
+            MonthDots(today, WTint(c, c.copy(alpha = .16f)), Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)) { d ->
+                when {
+                    Habits.done(h, d) -> c to Color.White
+                    Habits.isRest(h, d) -> c.copy(alpha = .18f) to c
+                    else -> null
+                }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally), modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {

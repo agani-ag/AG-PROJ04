@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Alarm
@@ -64,6 +65,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.agani.syncup.R
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.appCard
 import com.agani.syncup.browser.ui.BarIcon
 import com.agani.syncup.forest.FDays
 import com.agani.syncup.forest.NaturePlayer
@@ -358,26 +361,35 @@ private fun NightPage(title: String, onBack: () -> Unit, content: @Composable an
 }
 
 @Composable
-private fun NightCard(content: @Composable () -> Unit, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
-    Box(
-        modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(20.dp)).background(Color.White.copy(alpha = .08f))
-            .border(1.dp, Color.White.copy(alpha = .12f), RoundedCornerShape(20.dp))
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-    ) { content() }
-}
-
-@Composable
 private fun NightLab(text: String) = Lab(text, NIGHT_MUTED)
 
+/** The sounds, three a row; [night] for the night page, else cards in Sleep's colour. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SoundGrid(s: SleepSettings) {
+private fun SoundGrid(s: SleepSettings, night: Boolean) {
     val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    val t = sleepTint()
+    val shape = RoundedCornerShape(if (night) 18.dp else 20.dp)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp), maxItemsInEachRow = 3, modifier = Modifier.padding(horizontal = 16.dp)) {
         NatureSound.entries.forEach { snd ->
             val on = s.soundA == snd.name || s.soundB == snd.name
+            val fg = when {
+                night && on -> Color(0xFF1E1B4B)
+                night -> NIGHT_TEXT
+                on -> t.accent
+                else -> cs.onSurface
+            }
             Column(
-                Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).background(if (on) Color(0xFFC7D2FE) else Color.White.copy(alpha = .07f))
+                Modifier.weight(1f)
+                    .then(
+                        if (night) {
+                            Modifier.clip(shape).background(if (on) Color(0xFFC7D2FE) else Color.White.copy(alpha = .07f))
+                        } else {
+                            Modifier.appCard(shape, color = if (on) t.container else Color.Unspecified)
+                                .then(if (on) Modifier.border(1.5.dp, t.accent, shape) else Modifier)
+                        },
+                    )
                     .clickable {
                         // Up to two at once: tap to add, tap again to take out.
                         val next = when {
@@ -391,98 +403,128 @@ private fun SoundGrid(s: SleepSettings) {
                         if (!Sleep.soundsOn && (next.soundA != null || next.soundB != null)) Sleep.playSounds(ctx)
                         if (next.soundA == null && next.soundB == null) Sleep.stopSounds(ctx)
                     }
-                    .padding(vertical = 12.dp),
+                    .padding(top = 11.dp, bottom = 9.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(soundIcon(snd), null, tint = if (on) Color(0xFF1E1B4B) else NIGHT_TEXT, modifier = Modifier.size(24.dp))
-                Text(snd.title, fontSize = 12.5.sp, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, color = if (on) Color(0xFF1E1B4B) else NIGHT_TEXT, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
+                Icon(soundIcon(snd), null, tint = fg, modifier = Modifier.size(22.dp))
+                Text(snd.title, fontSize = 12.5.sp, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, color = fg, maxLines = 1, modifier = Modifier.padding(top = 5.dp))
             }
         }
         repeat((3 - NatureSound.entries.size % 3) % 3) { Spacer(Modifier.weight(1f)) }
     }
 }
 
+/** When the sounds fade out; [night] for the night page, else pill chips in Sleep's colour. */
 @Composable
-private fun TimerChips(s: SleepSettings) {
+private fun TimerChips(s: SleepSettings, night: Boolean) {
+    val cs = MaterialTheme.colorScheme
+    val t = sleepTint()
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
         listOf(15, 30, 45, 60, 0).forEach { m ->
             val on = s.timer == m
+            val bg = when {
+                night && on -> NIGHT_TEXT
+                night -> Color.Transparent
+                on -> t.container
+                else -> cs.surfaceContainerLowest
+            }
+            val line = when {
+                on -> Color.Transparent
+                night -> Color.White.copy(alpha = .25f)
+                else -> cs.outlineVariant
+            }
+            val fg = when {
+                night && on -> Color(0xFF1E1B4B)
+                night -> NIGHT_TEXT
+                on -> t.accent
+                else -> cs.onSurface
+            }
             Box(
-                Modifier.weight(if (m == 0) 1.5f else 1f).height(34.dp).clip(RoundedCornerShape(17.dp))
-                    .background(if (on) NIGHT_TEXT else Color.Transparent).border(1.dp, if (on) Color.Transparent else Color.White.copy(alpha = .25f), RoundedCornerShape(17.dp))
+                Modifier.weight(if (m == 0) 1.5f else 1f).height(34.dp).clip(CircleShape)
+                    .background(bg).border(1.dp, line, CircleShape)
                     .clickable { Sleep.changeSettings(s.copy(timer = m)) },
                 contentAlignment = Alignment.Center,
-            ) { Text(if (m == 0) "All night" else if (m == 15) "15 min" else "$m", fontSize = 12.5.sp, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, color = if (on) Color(0xFF1E1B4B) else NIGHT_TEXT) }
+            ) { Text(if (m == 0) "All night" else if (m == 15) "15 min" else "$m", fontSize = 12.5.sp, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, color = fg) }
         }
     }
 }
 
+/** The Bedtime card: the one part of Sleep that stays night blue, in Light and Dark alike. */
+private val NIGHT_CARD = Brush.linearGradient(listOf(Color(0xFF1E1B4B), Color(0xFF312E81)))
+
 @Composable
 private fun SleepHome(onBack: () -> Unit) {
     val ctx = LocalContext.current
+    val cs = MaterialTheme.colorScheme
     val s = Sleep.settings
     var time by remember { mutableStateOf<String?>(null) }
-    NightPage("Sleep", onBack) {
-        NightCard({
-            Column(Modifier.padding(vertical = 4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { time = "bed" }.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFFC7D2FE).copy(alpha = .16f)), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Rounded.Bedtime, null, tint = Color(0xFFC7D2FE), modifier = Modifier.size(20.dp))
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Bedtime ${timeText(s.bedtime)}", fontSize = 15.sp, color = Color.White)
-                        Text(if (s.remind) "Reminder 30 min before · tap to change" else "Reminder off · tap to change the time", fontSize = 12.sp, color = Color(0xFFC7D2FE))
-                    }
-                    Switch(s.remind, { Sleep.changeSettings(s.copy(remind = it)) }, colors = SwitchDefaults.colors(checkedTrackColor = Color(0xFF818CF8)))
+    WellPage("Sleep", onBack) {
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp).fillMaxWidth().clip(CardShape).background(NIGHT_CARD).padding(6.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).clickable { time = "bed" }.padding(start = 10.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+            ) {
+                Box(Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(Color(0xFFC7D2FE).copy(alpha = .16f)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Bedtime, null, tint = Color(0xFFC7D2FE), modifier = Modifier.size(18.dp))
                 }
-                if (s.remind) {
-                    Box(Modifier.padding(bottom = 8.dp)) { DaysPick(s.days, WTint(Color(0xFF1E1B4B), Color(0xFFC7D2FE))) { Sleep.changeSettings(s.copy(days = it)) } }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Bedtime ${timeText(s.bedtime)}", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Color.White)
+                    Text(
+                        if (s.remind) "Reminder 30 min before · tap to change" else "Reminder off · tap to change the time",
+                        fontSize = 12.sp, color = Color(0xFFC7D2FE), modifier = Modifier.padding(top = 1.dp),
+                    )
                 }
+                Switch(
+                    s.remind, { Sleep.changeSettings(s.copy(remind = it)) },
+                    colors = SwitchDefaults.colors(
+                        checkedTrackColor = Color(0xFF818CF8), checkedThumbColor = Color.White,
+                        uncheckedTrackColor = Color.White.copy(alpha = .1f), uncheckedBorderColor = Color.White.copy(alpha = .35f), uncheckedThumbColor = Color(0xFFC7D2FE),
+                    ),
+                )
             }
-        }, Modifier.padding(top = 4.dp))
-        NightLab(if (Sleep.soundsOn) "Sleep sounds · playing" else "Sleep sounds")
-        SoundGrid(s)
-        TimerChips(s)
+            if (s.remind) {
+                DaysPick(
+                    s.days, WTint(Color(0xFF1E1B4B), Color(0xFFC7D2FE)), Modifier.padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 10.dp),
+                    off = Color.White.copy(alpha = .08f), offText = NIGHT_MUTED,
+                ) { Sleep.changeSettings(s.copy(days = it)) }
+            }
+        }
+        Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 10.dp)) {
+            Text(if (Sleep.soundsOn) "Sleep sounds · playing" else "Sleep sounds", fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
+            Text("up to two at once", fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1, modifier = Modifier.padding(start = 8.dp, bottom = 1.dp))
+        }
+        SoundGrid(s, night = false)
+        TimerChips(s, night = false)
         if (Sleep.soundsOn) {
-            BigButton("Stop sounds", Color.White.copy(alpha = .12f), { Sleep.stopSounds(ctx) }, textColor = NIGHT_TEXT, icon = Icons.Rounded.Stop)
+            BigButton("Stop sounds", { Sleep.stopSounds(ctx) }, icon = Icons.Rounded.Stop, color = cs.surfaceContainerHigh, textColor = cs.onSurface)
             Spacer(Modifier.height(10.dp))
         }
-        BigButton("Good night", Color(0xFFC7D2FE), { Sleep.goodNight(ctx) }, textColor = Color(0xFF1E1B4B), icon = Icons.Rounded.Bedtime)
-        Text(
+        BigButton("Good night", { Sleep.goodNight(ctx) }, icon = Icons.Rounded.Bedtime)
+        Hint(
             "Starts your sleep log${if (s.soundA != null || s.soundB != null) " and the sounds" else ""}. In the morning, tap Good morning.",
-            fontSize = 12.5.sp, color = NIGHT_MUTED, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+            Modifier.padding(top = 4.dp), center = true,
         )
         val last = Sleep.lastNight()
         if (last != null) {
-            NightLab("Last night")
-            NightCard({
+            Lab("Last night")
+            WCard {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                     Column(Modifier.weight(1f)) {
-                        Text(hoursText(last.hours), fontSize = 16.sp, fontWeight = FontWeight.Medium, color = Color.White)
-                        Text("${clockText(last.start)} – ${clockText(last.end)}", fontSize = 12.5.sp, color = Color(0xFFC7D2FE))
+                        Text(hoursText(last.hours), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
+                        Text("${clockText(last.start)} – ${clockText(last.end)}", fontSize = 12.5.sp, color = cs.onSurfaceVariant)
                     }
                     if (last.rating > 0) MoodFace(last.rating, 40.dp)
                 }
-            })
-            SleepWeek(dark = true)
-        }
-        NightLab("Mornings")
-        NightCard({
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { time = "wake" }.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Usually up at", fontSize = 15.sp, color = Color.White)
-                        Text("Night quiet ends then; the morning question comes then", fontSize = 12.sp, color = Color(0xFFC7D2FE))
-                    }
-                    Text(timeText(s.wake), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Color(0xFFC7D2FE))
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
-                    Text("Ask how I slept", fontSize = 15.sp, color = Color.White, modifier = Modifier.weight(1f))
-                    Switch(s.morningAsk, { Sleep.changeSettings(s.copy(morningAsk = it)) }, colors = SwitchDefaults.colors(checkedTrackColor = Color(0xFF818CF8)))
-                }
             }
-        })
+            SleepWeek()
+        }
+        Lab("Mornings")
+        WCard {
+            TimeLine("Usually up at", s.wake, { time = "wake" }, sub = "Night quiet ends then; the morning question comes then")
+            Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant))
+            SwitchLine("Ask how I slept", null, s.morningAsk, { Sleep.changeSettings(s.copy(morningAsk = it)) })
+        }
     }
     time?.let { which ->
         TimeDialog(if (which == "bed") "Bedtime" else "Usually up at", if (which == "bed") s.bedtime else s.wake, { m ->
@@ -531,20 +573,20 @@ private fun SleepNight(night: Night, onBack: () -> Unit, onMorning: () -> Unit) 
             }
         } else {
             NightLab("Sounds")
-            SoundGrid(s)
-            TimerChips(s)
+            SoundGrid(s, night = true)
+            TimerChips(s, night = true)
         }
         Spacer(Modifier.height(14.dp))
-        BigButton("Set wake-up alarm", Color.White.copy(alpha = .1f), {
+        BigButton("Set wake-up alarm", {
             runCatching {
                 ctx.startActivity(
                     Intent(AlarmClock.ACTION_SET_ALARM).putExtra(AlarmClock.EXTRA_HOUR, s.wake / 60).putExtra(AlarmClock.EXTRA_MINUTES, s.wake % 60)
                         .putExtra(AlarmClock.EXTRA_MESSAGE, "Good morning").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                 )
             }
-        }, textColor = NIGHT_TEXT, icon = Icons.Rounded.Alarm)
+        }, icon = Icons.Rounded.Alarm, color = Color.White.copy(alpha = .1f), textColor = NIGHT_TEXT)
         Spacer(Modifier.height(10.dp))
-        BigButton("Good morning", Color(0xFFC7D2FE), onMorning, textColor = Color(0xFF1E1B4B), icon = Icons.Rounded.WbSunny)
+        BigButton("Good morning", onMorning, icon = Icons.Rounded.WbSunny, color = Color(0xFFC7D2FE), textColor = Color(0xFF1E1B4B))
     }
 }
 
@@ -569,7 +611,6 @@ internal fun hoursText(h: Float): String {
 private fun SleepMorning(night: Night, onDone: () -> Unit) {
     val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
-    val t = sleepTint()
     var start by rememberSaveable { mutableLongStateOf(night.start) }
     var end by rememberSaveable { mutableLongStateOf(System.currentTimeMillis()) }
     var rating by rememberSaveable { mutableIntStateOf(0) }
@@ -581,18 +622,21 @@ private fun SleepMorning(night: Night, onDone: () -> Unit) {
         Text("Good morning!", fontSize = 24.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
         Text("You slept ${hoursText((end - start) / 3_600_000f)}", fontSize = 15.sp, color = cs.onSurface, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         WCard(Modifier.padding(top = 12.dp)) {
-            TimeLine("Went to bed", Wellbeing.minuteNow(start), t, { time = "start" })
-            TimeLine("Woke up", Wellbeing.minuteNow(end), t, { time = "end" })
+            TimeLine("Went to bed", Wellbeing.minuteNow(start), { time = "start" })
+            Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant))
+            TimeLine("Woke up", Wellbeing.minuteNow(end), { time = "end" })
         }
-        Lab("How did you sleep?", t.accent, Modifier.fillMaxWidth())
-        FacePick(rating) { rating = it }
-        Spacer(Modifier.height(22.dp))
-        BigButton("Save", t.accent, {
+        Lab("How did you sleep?")
+        WCard {
+            Box(Modifier.padding(vertical = 14.dp)) { FacePick(rating) { rating = it } }
+        }
+        Spacer(Modifier.height(20.dp))
+        BigButton("Save", {
             Sleep.goodMorning(ctx, night, start, end, rating)
             onDone()
         })
         Lab("Last 7 nights")
-        SleepWeek(dark = false)
+        SleepWeek()
     }
     time?.let { which ->
         val base = if (which == "start") start else end
@@ -608,7 +652,8 @@ private fun SleepMorning(night: Night, onDone: () -> Unit) {
 
 /** The last 7 nights' hours, average, how regular bedtime was, and the best night. */
 @Composable
-private fun SleepWeek(dark: Boolean) {
+private fun SleepWeek() {
+    val t = sleepTint()
     val today = FDays.today()
     val days = (6 downTo 0).map { FDays.add(today, -it) }
     // A night belongs to the day it ended.
@@ -617,29 +662,13 @@ private fun SleepWeek(dark: Boolean) {
     val logged = Sleep.nights().filter { it.end > 0 }.take(14)
     val starts = logged.map { ((Wellbeing.minuteNow(it.start) + 720) % 1440).toDouble() }
     val spread = if (starts.size >= 2) sqrt(starts.map { (it - starts.average()) * (it - starts.average()) }.average()).roundToInt() else null
-    Bars(
-        hours, days.map { weekdayLetter(it) }, 7f, Color(0xFF6366F1), if (dark) Color(0xFF4338CA).copy(alpha = .45f) else Color(0xFFC7D2FE), "7 h",
-        Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp),
-    )
-    Spacer(Modifier.height(12.dp))
-    if (dark) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            listOf(
-                "Average" to if (logged.isEmpty()) "—" else hoursText(logged.map { it.hours }.average().toFloat()).replace(" min", ""),
-                "Bedtime" to (spread?.let { "± $it min" } ?: "—"),
-                "Best" to if (logged.isEmpty()) "—" else hoursText(logged.maxOf { it.hours }).replace(" min", ""),
-            ).forEach { (l, v) ->
-                Column(Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = .08f)).padding(horizontal = 12.dp, vertical = 10.dp)) {
-                    Text(l, fontSize = 12.sp, color = NIGHT_MUTED)
-                    Text(v, fontSize = 17.sp, fontWeight = FontWeight.Medium, color = Color.White, maxLines = 1)
-                }
-            }
-        }
-    } else {
-        Stats(
-            "Average" to if (logged.isEmpty()) "—" else hoursText(logged.map { it.hours }.average().toFloat()).replace(" min", ""),
-            "Bedtime" to (spread?.let { "± $it min" } ?: "—"),
-            "Best" to if (logged.isEmpty()) "—" else hoursText(logged.maxOf { it.hours }).replace(" min", ""),
-        )
+    WCard(Modifier.padding(top = 10.dp)) {
+        Bars(hours, days.map { weekdayLetter(it) }, 7f, t.accent, t.accent.copy(alpha = .3f), "7 h", Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
     }
+    Spacer(Modifier.height(12.dp))
+    Stats(
+        "Average" to if (logged.isEmpty()) "—" else hoursText(logged.map { it.hours }.average().toFloat()).replace(" min", ""),
+        "Bedtime" to (spread?.let { "± $it min" } ?: "—"),
+        "Best" to if (logged.isEmpty()) "—" else hoursText(logged.maxOf { it.hours }).replace(" min", ""),
+    )
 }

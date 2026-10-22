@@ -25,6 +25,18 @@ object Days {
     /** Midnight of [day] plus [minutes], in this phone's time zone. */
     fun ms(day: Int, minutes: Int = 0): Long = cal(day).apply { add(Calendar.MINUTE, minutes) }.timeInMillis
 
+    /**
+     * [minutes] after midnight of [day] by the clock — below 0 is the day before, past 24 h the day
+     * after. By the clock, so a summer-time change doesn't move a 9:00 reminder to 8:00 or 10:00.
+     */
+    fun at(day: Int, minutes: Int): Long {
+        val m = minutes.mod(24 * 60)
+        return cal(add(day, minutes.floorDiv(24 * 60))).apply {
+            set(Calendar.HOUR_OF_DAY, m / 60)
+            set(Calendar.MINUTE, m % 60)
+        }.timeInMillis
+    }
+
     fun add(day: Int, n: Int): Int = fromCal(cal(day).apply { add(Calendar.DAY_OF_YEAR, n) })
 
     fun addMonths(day: Int, n: Int): Int {
@@ -43,7 +55,8 @@ object Days {
 
     fun firstOfMonth(day: Int): Int = day / 100 * 100 + 1
 
-    fun between(a: Int, b: Int): Int = ((ms(b, 12 * 60) - ms(a, 12 * 60)) / 86_400_000L).toInt()
+    /** Days from [a] to [b] (rounded, so a 23- or 25-hour summer-time day still counts as one). */
+    fun between(a: Int, b: Int): Int = Math.round((ms(b, 12 * 60) - ms(a, 12 * 60)) / 86_400_000.0).toInt()
 
     val monthNames = arrayOf("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
     val shortMonths = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -62,11 +75,20 @@ object Days {
     }
 
     /** "10:00 AM" */
-    fun time(minutes: Int): String {
+    fun time(minutes: Int): String = "${clock(minutes)} ${if (minutes / 60 < 12) "AM" else "PM"}"
+
+    /** "10:00" — no AM / PM. */
+    fun clock(minutes: Int): String {
         val h = minutes / 60
-        val m = minutes % 60
         val h12 = if (h % 12 == 0) 12 else h % 12
-        return "%d:%02d %s".format(h12, m, if (h < 12) "AM" else "PM")
+        return "%d:%02d".format(h12, minutes % 60)
+    }
+
+    /** "10:00 AM", "10:00 – 11:00 AM" (both before or both after noon), "11:30 AM – 1:00 PM". [end] -1 = none. */
+    fun timeRange(start: Int, end: Int): String = when {
+        end < 0 -> time(start)
+        (start < 12 * 60) == (end < 12 * 60) -> "${clock(start)} – ${time(end)}"
+        else -> "${time(start)} – ${time(end)}"
     }
 }
 
@@ -185,7 +207,8 @@ data class CheckItem(val id: String, val text: String, val done: Boolean = false
 
 /**
  * One to-do. [day] 0 = no date; [time] minutes after midnight, -1 = all day; [endTime] -1 = none.
- * [reminders]: minutes before the time (all-day ones count from 9:00 on the day).
+ * [reminders]: minutes before the time (all-day ones count from 9:00 on the day, and may be below 0 =
+ * later that day) — see [Reminders].
  * For a repeating to-do, [day] is the occurrence that's up next; [start] the first one.
  *
  * Not synced, this phone only: [dirty] (waiting to go up), [local] (made while signed out, not in
@@ -217,7 +240,17 @@ data class Task(
     val hasDate: Boolean get() = day > 0
 
     /** When the to-do starts, for reminders (all day = 9:00). */
-    fun startMs(onDay: Int = day): Long = Days.ms(onDay, if (time >= 0) time else ALL_DAY_REMINDER_AT)
+    fun startMs(onDay: Int = day): Long = Days.at(onDay, if (time >= 0) time else ALL_DAY_REMINDER_AT)
+
+    /**
+     * Its day and time in one line, for [onDay] (one of its days): "Today, 10:00 AM",
+     * "Today, 10:00 – 11:00 AM", "Mon 2 Nov, 9:30 AM", "Sat 24 Oct · All day". "" without a date.
+     */
+    fun whenText(onDay: Int = day, today: Int = Days.today()): String {
+        if (onDay <= 0) return ""
+        val d = Days.friendly(onDay, today)
+        return if (allDay) "$d · All day" else "$d, ${Days.timeRange(time, endTime)}"
+    }
 
     /** Every day it falls on between [from] and [to] (inclusive) — repeats included. */
     fun occurrences(from: Int, to: Int, limit: Int = 400): List<Int> {
@@ -277,6 +310,104 @@ data class Task(
 
         fun fromStore(o: JSONObject): Task = fromJson(o.optString("id"), o, o.optLong("updated_ms"), o.optBoolean("deleted"))
             .copy(dirty = o.optBoolean("dirty"), local = o.optBoolean("local"), phoneOnly = o.optBoolean("phone_only"))
+    }
+}
+
+// ============================================================================ reminders
+/**
+ * A to-do's reminders are kept as minutes before it starts — all day: before 9:00 on the day
+ * ([Task.ALL_DAY_REMINDER_AT]). So a reminder repeats with its to-do, and older SyncUp versions (and
+ * the server, which keeps a to-do as it comes) read every one as it is.
+ *
+ * The quick choices are [TIMED] / [ALL_DAY]; anything else was set with "Custom…": any number of
+ * minutes, hours, days or weeks before, or an exact moment turned into minutes before. Only an
+ * all-day to-do's may be below 0 — later on the day than 9:00 (-510 = 5:30 PM).
+ */
+object Reminders {
+    private const val DAY = 24 * 60
+    private const val WEEK = 7 * DAY
+
+    val TIMED = listOf(0, 5, 10, 15, 30, 60, 120, DAY, 2 * DAY)
+    val ALL_DAY = listOf(0, DAY, 2 * DAY, WEEK)
+
+    fun presets(allDay: Boolean): List<Int> = if (allDay) ALL_DAY else TIMED
+
+    /** Set with "Custom…" (or kept when the to-do changed between all day and a time). */
+    fun isCustom(t: Task, m: Int): Boolean = m !in presets(t.allDay)
+
+    /** What reminders count back from: the to-do's time, or 9:00 when it's all day. */
+    private fun anchor(t: Task): Int = if (t.time >= 0) t.time else Task.ALL_DAY_REMINDER_AT
+
+    /** The day reminder [m] goes off, and the minute of that day — for the to-do on [onDay]. */
+    fun moment(t: Task, m: Int, onDay: Int = t.day): Pair<Int, Int> {
+        val total = anchor(t) - m
+        return Days.add(onDay, total.floorDiv(DAY)) to total.mod(DAY)
+    }
+
+    /** When reminder [m] goes off for the to-do on [onDay] (any [m], below 0 too). */
+    fun atMs(t: Task, m: Int, onDay: Int = t.day): Long = Days.at(onDay, anchor(t) - m)
+
+    /** The other way round: a reminder at [minute] on [momentDay], as minutes before the to-do on [onDay]. */
+    fun offset(t: Task, momentDay: Int, minute: Int, onDay: Int = t.day): Int =
+        anchor(t) - (Days.between(onDay, momentDay) * DAY + minute)
+
+    /** A reminder comes at or before the start — all day: any time up to the end of the day. */
+    fun allowed(t: Task, m: Int): Boolean = if (t.allDay) m > Task.ALL_DAY_REMINDER_AT - DAY else m >= 0
+
+    /** "10 min before", "3 hours before", "1 day before", "2 weeks before", "1 h 30 min before" ([m] above 0). */
+    fun duration(m: Int): String = when {
+        m % WEEK == 0 -> count(m / WEEK, "week") + " before"
+        m % DAY == 0 -> count(m / DAY, "day") + " before"
+        m % 60 == 0 -> count(m / 60, "hour") + " before"
+        m < 60 -> "$m min before"
+        else -> "${m / 60} h ${m % 60} min before"
+    }
+
+    private fun count(n: Int, unit: String) = "$n $unit" + if (n == 1) "" else "s"
+
+    /** Reads well as an amount of time: under an hour, whole hours up to two days, whole days. */
+    private fun plain(t: Task, m: Int): Boolean =
+        if (t.allDay) m > 0 && m % DAY == 0 else m in 1..59 || (m > 0 && m % 60 == 0 && (m <= 2 * DAY || m % DAY == 0))
+
+    /** "On the day, 5:30 PM", "1 day before, 8:00 PM", "2 weeks before, 9:00 AM". */
+    private fun daysBefore(days: Int, minute: Int): String = when {
+        days <= 0 -> "On the day, ${Days.time(minute)}"
+        days % 7 == 0 -> count(days / 7, "week") + " before, ${Days.time(minute)}"
+        else -> count(days, "day") + " before, ${Days.time(minute)}"
+    }
+
+    /**
+     * Reminder [m] in words, for the editor. Quick choices as always ("At 9:30 AM", "10 min before",
+     * "1 day before, 9:00 AM"); custom ones naturally ("3 hours before", "1 day before, 8:00 PM") — on a
+     * to-do that doesn't repeat, a moment on another day reads as itself ("Sun 1 Nov, 8:00 PM").
+     */
+    fun label(t: Task, m: Int): String {
+        val day = t.day.takeIf { it > 0 } ?: Days.today()
+        val (momentDay, minute) = moment(t, m, day)
+        val days = Days.between(momentDay, day)
+        val plain = plain(t, m)
+        return when {
+            !t.repeat.repeats && t.hasDate && days > 0 && isCustom(t, m) && !plain -> "${Days.friendly(momentDay)}, ${Days.time(minute)}"
+            t.allDay -> daysBefore(days, minute)
+            m == 0 -> "At ${Days.time(t.time)}"
+            plain || days == 0 -> duration(m)
+            else -> daysBefore(days, minute)
+        }
+    }
+
+    /** Reminder [m] on a to-do's row, where space is short: "At the time", "10 min before", "5:30 PM" (all day, on the day). */
+    fun short(t: Task, m: Int): String = if (!t.allDay && m == 0) "At the time" else label(t, m).removePrefix("On the day, ")
+
+    /** "The evening before", "3 days before", "1 h 30 min before" — how [m] stands to the to-do, for the custom sheet. */
+    fun phrase(t: Task, m: Int): String {
+        val (momentDay, minute) = moment(t, m)
+        val days = Days.between(momentDay, t.day)
+        return when {
+            days <= 0 -> if (t.allDay) "On the day" else if (m <= 0) "At the time" else duration(m).replaceFirstChar { it.uppercase() }
+            days == 1 -> "The " + (if (minute < 12 * 60) "morning" else if (minute < 17 * 60) "afternoon" else "evening") + " before"
+            days % 7 == 0 -> count(days / 7, "week") + " before"
+            else -> count(days, "day") + " before"
+        }
     }
 }
 

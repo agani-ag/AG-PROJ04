@@ -1,5 +1,6 @@
 package com.agani.syncup.sensors
 
+import com.agani.syncup.ui.theme.appCard
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -57,9 +58,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
@@ -134,17 +138,21 @@ private fun SensorsHome(list: LazyListState, onBack: () -> Unit, onOpen: (Sensor
     val via = remember { SensorTool.entries.associateWith { it.via(context) } }
     ToolPage("Sensors", onBack) {
         LazyColumn(state = list, contentPadding = PaddingValues(bottom = 24.dp)) {
-            for (group in SensorGroup.entries) {
+            SensorGroup.entries.forEachIndexed { g, group ->
                 val tools = SensorTool.entries.filter { it.group == group }
                 item(key = group.name) {
                     Text(
-                        group.title.uppercase(), fontSize = 12.5.sp, fontWeight = FontWeight.Medium, letterSpacing = .6.sp, color = cs.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 8.dp),
+                        group.title, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = cs.onSurface,
+                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = if (g == 0) 6.dp else 18.dp, bottom = 12.dp),
                     )
                 }
-                for (row in tools.chunked(3)) {
+                // Four a row; a tool this phone can't do stays in its place, greyed.
+                for (row in tools.chunked(4)) {
                     item(key = row.joinToString { it.name }) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Top,
+                            modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp).fillMaxWidth(),
+                        ) {
                             row.forEach { t ->
                                 ToolTile(
                                     t,
@@ -158,14 +166,14 @@ private fun SensorsHome(list: LazyListState, onBack: () -> Unit, onOpen: (Sensor
                                     onClick = { if (works.getValue(t)) onOpen(t) else why = t },
                                 )
                             }
-                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                            repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
                 }
             }
-            item {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                    Text("Units", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
+            item(key = "units") {
+                Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 14.dp)) {
+                    Text("Units", fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.padding(start = 4.dp, bottom = 10.dp))
                     Choice(
                         listOf("km/h · m · °C", "mph · ft · °F"),
                         selected = if (SensorPrefs.imperial) 1 else 0,
@@ -174,14 +182,14 @@ private fun SensorsHome(list: LazyListState, onBack: () -> Unit, onOpen: (Sensor
                 }
             }
             if (works.values.any { !it }) {
-                item {
+                item(key = "greyed") {
                     Note(
                         "Greyed tools need a sensor this phone doesn't have — tap one to see why.",
                         Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     )
                 }
             }
-            item {
+            item(key = "about") {
                 Text(
                     "Each tool uses its sensors only while it's open. Nothing leaves the phone. Readings are a guide, not certified measurements.",
                     fontSize = 12.5.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant,
@@ -192,7 +200,7 @@ private fun SensorsHome(list: LazyListState, onBack: () -> Unit, onOpen: (Sensor
     }
 
     why?.let { t ->
-        ModalBottomSheet(onDismissRequest = { why = null }) {
+        ModalBottomSheet(onDismissRequest = { why = null }, containerColor = cs.surfaceContainerLowest) {
             NotInPhone(
                 t,
                 onAllSensors = {
@@ -205,51 +213,44 @@ private fun SensorsHome(list: LazyListState, onBack: () -> Unit, onOpen: (Sensor
     }
 }
 
+/** One tool: its icon on a sky tile, the name and a short note under it. Missing parts: a dashed, faded tile. */
 @Composable
 private fun ToolTile(tool: SensorTool, enabled: Boolean, note: String?, modifier: Modifier, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val light = cs.isLight
-    val shape = RoundedCornerShape(18.dp)
-    val grey = cs.onSurfaceVariant.copy(alpha = .55f)
-    val dash = cs.outline.copy(alpha = .6f)
+    val sky = if (cs.isLight) Sky.light else Sky.dark
+    val muted = cs.onSurfaceVariant
+    val tile = RoundedCornerShape(18.dp)
     Column(
-        modifier
-            .heightIn(min = 104.dp)
-            .clip(shape)
-            .background(if (enabled) cs.surfaceContainerLowest else cs.surfaceContainerLow)
-            .then(
-                if (enabled) {
-                    Modifier.border(1.dp, cs.outlineVariant, shape)
-                } else {
-                    Modifier.drawBehind {
-                        drawRoundRect(
-                            dash, cornerRadius = CornerRadius(18.dp.toPx()),
-                            style = Stroke(1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx()))),
-                        )
-                    }
-                },
-            )
-            .clickable(onClick = onClick)
-            .padding(start = 6.dp, end = 6.dp, top = 12.dp, bottom = 10.dp),
+        modifier.clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = tool.title, onClick = onClick).padding(top = 2.dp, bottom = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            Modifier.size(40.dp).clip(RoundedCornerShape(13.dp))
-                .background(if (!enabled) cs.surfaceContainerHigh else if (light) Sky.containerLight else Sky.containerDark),
+            Modifier.size(54.dp).then(
+                if (enabled) {
+                    Modifier.clip(tile).background(if (cs.isLight) Sky.containerLight else Sky.containerDark)
+                } else {
+                    Modifier.alpha(.65f).drawBehind {
+                        val w = 1.5.dp.toPx()
+                        drawRoundRect(
+                            muted, topLeft = Offset(w / 2, w / 2), size = Size(size.width - w, size.height - w), cornerRadius = CornerRadius(18.dp.toPx() - w / 2),
+                            style = Stroke(w, pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx()))),
+                        )
+                    }
+                },
+            ),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(tool.icon, null, tint = if (!enabled) grey else if (light) Sky.light else Sky.dark, modifier = Modifier.size(22.dp))
+            Icon(tool.icon, null, tint = if (enabled) sky else muted, modifier = Modifier.size(24.dp))
         }
-        Spacer(Modifier.height(7.dp))
+        Spacer(Modifier.height(6.dp))
         Text(
-            tool.title, fontSize = 12.5.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center,
-            color = if (enabled) cs.onSurface else grey, maxLines = 2,
+            tool.title, fontSize = 12.sp, lineHeight = 14.5.sp, textAlign = TextAlign.Center,
+            color = if (enabled) cs.onSurface else muted, maxLines = 2,
         )
         if (note != null) {
             Text(
-                note, fontSize = 11.sp, lineHeight = 14.sp, textAlign = TextAlign.Center, maxLines = 1,
-                color = if (enabled) (if (light) Sky.light else Sky.dark) else grey,
-                modifier = Modifier.padding(top = 2.dp),
+                note, fontSize = 10.5.sp, lineHeight = 12.5.sp, textAlign = TextAlign.Center, maxLines = 2,
+                color = if (enabled) sky else muted, modifier = Modifier.padding(top = 1.dp),
             )
         }
     }
@@ -283,8 +284,7 @@ private fun NotInPhone(tool: SensorTool, onAllSensors: () -> Unit, onOk: () -> U
             fontSize = 14.sp, lineHeight = 21.sp, color = cs.onSurface, modifier = Modifier.padding(top = 16.dp),
         )
         Column(
-            Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cs.surfaceContainerLowest)
-                .border(1.dp, cs.outlineVariant, RoundedCornerShape(16.dp)).padding(horizontal = 14.dp, vertical = 4.dp),
+            Modifier.padding(top = 14.dp).fillMaxWidth().appCard(RoundedCornerShape(16.dp)).padding(horizontal = 14.dp, vertical = 4.dp),
         ) {
             tool.needs.forEach { part ->
                 val has = part.present(context)

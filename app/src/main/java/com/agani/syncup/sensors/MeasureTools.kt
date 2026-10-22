@@ -63,6 +63,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.ui.StepSlider
+import com.agani.syncup.ui.theme.appCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
@@ -143,7 +144,7 @@ fun LevelTool(onBack: () -> Unit) {
                 BubbleTube(edge, level, Modifier.fillMaxWidth().height(90.dp))
             }
             Spacer(Modifier.height(16.dp))
-            Text("%.1f°".format(tilt), fontSize = 52.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = if (level) GOOD else cs.onSurface)
+            Text("%.1f°".format(tilt), fontSize = 52.sp, fontWeight = FontWeight.Medium, style = TextStyle(fontFeatureSettings = "tnum"), color = if (level) GOOD else cs.onSurface)
             Text(
                 if (level) "Level ✓" else if (mode == 0) "Tilted — the bubble shows the high side" else "Turn it ${"%.1f".format(abs(edge))}° ${if (edge > 0) "clockwise" else "anticlockwise"}",
                 fontSize = 15.sp, fontWeight = FontWeight.Medium, color = if (level) GOOD else cs.onSurfaceVariant,
@@ -277,7 +278,7 @@ private fun Ruler() {
         val cm = abs(b - a) / pxPerCm
         Text(
             "%.1f cm · %.2f in".format(cm, cm / 2.54f),
-            fontSize = 26.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = cs.onSurface,
+            fontSize = 26.sp, fontWeight = FontWeight.Medium, style = TextStyle(fontFeatureSettings = "tnum"), color = cs.onSurface,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp).align(Alignment.End),
         )
         Canvas(
@@ -367,7 +368,7 @@ private fun Protractor() {
     val sky = cs.primary
     Column(Modifier.fillMaxSize()) {
         Text(
-            "%.0f°".format(angle), fontSize = 44.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = cs.onSurface,
+            "%.0f°".format(angle), fontSize = 44.sp, fontWeight = FontWeight.Medium, style = TextStyle(fontFeatureSettings = "tnum"), color = cs.onSurface,
             modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp),
         )
         Canvas(
@@ -433,7 +434,7 @@ private fun Tilt() {
     val angle = held ?: live ?: 0f
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(40.dp))
-        Text("%.1f°".format(angle), fontSize = 64.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = cs.onSurface)
+        Text("%.1f°".format(angle), fontSize = 64.sp, fontWeight = FontWeight.Medium, style = TextStyle(fontFeatureSettings = "tnum"), color = cs.onSurface)
         Text(
             if (angle < 89.5f) "Slope ${"%.1f".format(tan(Math.toRadians(angle.toDouble())) * 100)} %" else "Straight up",
             fontSize = 16.sp, color = cs.onSurfaceVariant,
@@ -480,7 +481,7 @@ fun LightTool(onBack: () -> Unit) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(30.dp))
             Row(verticalAlignment = Alignment.Bottom) {
-                Text(if (raw == null) "—" else "%,d".format(lux.roundToInt()), fontSize = 64.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = cs.onSurface)
+                Text(if (raw == null) "—" else "%,d".format(lux.roundToInt()), fontSize = 64.sp, fontWeight = FontWeight.Medium, style = TextStyle(fontFeatureSettings = "tnum"), color = cs.onSurface)
                 Text(" lux", fontSize = 18.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(bottom = 12.dp))
             }
             Text(lightWords(lux), fontSize = 16.sp, fontWeight = FontWeight.Medium, color = cs.primary)
@@ -631,7 +632,7 @@ fun SoundTool(onBack: () -> Unit) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.Bottom) {
-                Text(if (count == 0) "—" else "${now.roundToInt()}", fontSize = 64.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = cs.onSurface)
+                Text(if (count == 0) "—" else "${now.roundToInt()}", fontSize = 64.sp, fontWeight = FontWeight.Medium, style = TextStyle(fontFeatureSettings = "tnum"), color = cs.onSurface)
                 Text(" dB", fontSize = 18.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(bottom = 12.dp))
             }
             Text(if (count == 0) "Listening…" else soundWords(now), fontSize = 16.sp, fontWeight = FontWeight.Medium, color = if (now >= 85) Color(0xFFDC2626) else cs.primary)
@@ -674,7 +675,7 @@ fun SoundTool(onBack: () -> Unit) {
 internal fun LineGraph(points: List<Float>, lo: Float, hi: Float, modifier: Modifier, danger: Float? = null, slots: Int = 300) {
     val cs = MaterialTheme.colorScheme
     val line = cs.primary
-    Canvas(modifier.clip(RoundedCornerShape(14.dp)).background(cs.surfaceContainerLow)) {
+    Canvas(modifier.appCard(RoundedCornerShape(16.dp))) {
         val step = size.width / (slots - 1).coerceAtLeast(1)
         fun y(v: Float) = size.height - ((v - lo) / (hi - lo)).coerceIn(0f, 1f) * size.height
         danger?.let { d -> drawLine(Color(0xFFDC2626).copy(alpha = .4f), Offset(0f, y(d)), Offset(size.width, y(d)), 1.dp.toPx()) }
@@ -738,7 +739,7 @@ fun VibrationTool(onBack: () -> Unit) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.Bottom) {
-                Text("%.2f".format(current), fontSize = 60.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = cs.onSurface)
+                Text("%.2f".format(current), fontSize = 60.sp, fontWeight = FontWeight.Medium, style = TextStyle(fontFeatureSettings = "tnum"), color = cs.onSurface)
                 Text(" m/s²", fontSize = 18.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(bottom = 12.dp))
             }
             Text(shakeWords(current), fontSize = 16.sp, fontWeight = FontWeight.Medium, color = cs.primary)
@@ -802,7 +803,7 @@ fun StepsTool(onBack: () -> Unit) {
                     drawArc(ring, -90f, 360f * (today.toFloat() / goal).coerceIn(0f, 1f), false, Offset(s / 2, s / 2), Size(size.width - s, size.height - s), style = Stroke(s, cap = StrokeCap.Round))
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(if (live == null) "—" else "%,d".format(today), fontSize = 44.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = cs.onSurface)
+                    Text(if (live == null) "—" else "%,d".format(today), fontSize = 44.sp, fontWeight = FontWeight.Medium, style = TextStyle(fontFeatureSettings = "tnum"), color = cs.onSurface)
                     Text("of ${"%,d".format(goal)} today", fontSize = 14.sp, color = cs.onSurfaceVariant)
                 }
             }

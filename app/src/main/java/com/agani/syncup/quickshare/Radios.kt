@@ -1,5 +1,9 @@
 package com.agani.syncup.quickshare
 
+import com.agani.syncup.music.ToolTile
+import com.agani.syncup.music.ToolTint
+import com.agani.syncup.ui.theme.dialogSurface
+import com.agani.syncup.ui.theme.success
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.BroadcastReceiver
@@ -183,7 +187,7 @@ internal fun RadiosDialog(receiving: Boolean, onReady: () -> Unit, onCancel: () 
         },
         confirmButton = {},
         dismissButton = { TextButton(onClick = onCancel) { Text("Cancel") } },
-        containerColor = cs.surfaceContainerHigh,
+        containerColor = cs.dialogSurface,
     )
 }
 
@@ -196,7 +200,7 @@ private fun RadioRow(radio: Radio, isOn: Boolean, onTurnOn: () -> Unit) {
         Radio.LOCATION -> Triple(Icons.Rounded.LocationOn, "Location", "This Android version needs it to find phones")
     }
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Icon(icon, null, tint = if (isOn) cs.primary else cs.onSurfaceVariant, modifier = Modifier.size(24.dp))
+        ToolTile(icon, if (isOn) ToolTint.GREEN else ToolTint.SLATE, size = 40.dp)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(name, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
@@ -204,9 +208,9 @@ private fun RadioRow(radio: Radio, isOn: Boolean, onTurnOn: () -> Unit) {
         }
         if (isOn) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp)) {
-                Icon(Icons.Rounded.CheckCircle, null, tint = cs.primary, modifier = Modifier.size(18.dp))
+                Icon(Icons.Rounded.CheckCircle, null, tint = cs.success, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("On", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.primary)
+                Text("On", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.success)
             }
         } else {
             Button(onClick = onTurnOn, modifier = Modifier.padding(start = 8.dp)) { Text("Turn on") }

@@ -11,17 +11,16 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.MoreVert
@@ -29,7 +28,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -50,6 +48,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.ui.BarIcon
 import com.agani.syncup.browser.ui.EmptyState
+import com.agani.syncup.music.ToolTile
+import com.agani.syncup.music.ToolTint
+import com.agani.syncup.music.ToolTopBar
+import com.agani.syncup.music.cardSlice
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -114,11 +116,9 @@ fun ChannelsHomeScreen(onBack: () -> Unit) {
         return
     }
 
-    Box(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
+    Box(Modifier.fillMaxSize().background(cs.background).windowInsetsPadding(WindowInsets.safeDrawing)) {
         Column(Modifier.fillMaxSize()) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
-                BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
-                Text("Channels", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
+            ToolTopBar("Channels", onBack) {
                 BarIcon(Icons.Rounded.Add, "Add a channel list") { showAdd = true }
             }
             if (entries.isEmpty()) {
@@ -130,9 +130,12 @@ fun ChannelsHomeScreen(onBack: () -> Unit) {
                     )
                 }
             } else {
-                LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
-                    items(entries, key = { it.url }) { e ->
-                        PlaylistRow(e, loading = openingUrl == e.url, onClick = { openList(e) }, onDelete = { SavedPlaylists.remove(context, e.url); refresh() })
+                LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp)) {
+                    itemsIndexed(entries, key = { _, e -> e.url }) { i, e ->
+                        PlaylistRow(
+                            e, loading = openingUrl == e.url, first = i == 0, last = i == entries.lastIndex,
+                            onClick = { openList(e) }, onDelete = { SavedPlaylists.remove(context, e.url); refresh() },
+                        )
                     }
                 }
             }
@@ -154,16 +157,20 @@ fun ChannelsHomeScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun PlaylistRow(entry: SavedPlaylistEntry, loading: Boolean, onClick: () -> Unit, onDelete: () -> Unit) {
+private fun PlaylistRow(entry: SavedPlaylistEntry, loading: Boolean, first: Boolean, last: Boolean, onClick: () -> Unit, onDelete: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     var menu by remember { mutableStateOf(false) }
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().clickable(enabled = !loading, onClick = onClick).padding(horizontal = 20.dp, vertical = 10.dp),
+        modifier = Modifier.fillMaxWidth().cardSlice(first, last).clickable(enabled = !loading, onClick = onClick)
+            .heightIn(min = 66.dp).padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
     ) {
-        Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(cs.surfaceContainerHigh), contentAlignment = Alignment.Center) {
-            if (loading) CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-            else Icon(Icons.Rounded.LiveTv, null, tint = cs.onSurfaceVariant)
+        if (loading) {
+            Box(Modifier.size(42.dp).clip(RoundedCornerShape(14.dp)).background(ToolTint.GREEN.tile), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = ToolTint.GREEN.icon)
+            }
+        } else {
+            ToolTile(Icons.Rounded.LiveTv, ToolTint.GREEN)
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {

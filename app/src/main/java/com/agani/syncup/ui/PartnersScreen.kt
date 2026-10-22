@@ -2,7 +2,10 @@ package com.agani.syncup.ui
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -43,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.PasswordField
@@ -52,6 +56,8 @@ import com.agani.syncup.browser.ui.IconTile
 import com.agani.syncup.browser.ui.StatusChip
 import com.agani.syncup.browser.ui.TonalRow
 import com.agani.syncup.data.PartnerDto
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.appCard
 import com.agani.syncup.ui.theme.dialogSurface
 import com.agani.syncup.ui.theme.success
 import kotlinx.coroutines.launch
@@ -95,24 +101,24 @@ fun PartnersScreen(
     }
 
     Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(horizontal = 4.dp, vertical = 4.dp)) {
             BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
-            Text("Partners", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
+            Text("Partners", fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
             BarIcon(Icons.Rounded.Refresh, "Refresh", tint = cs.onSurfaceVariant) { version++ }
         }
         Row(
             modifier = Modifier
-                .padding(start = 20.dp, end = 20.dp, bottom = 8.dp)
+                .padding(start = 16.dp, end = 16.dp, bottom = 4.dp)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(cs.surfaceContainerLow)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .clip(RoundedCornerShape(16.dp))
+                .background(cs.surfaceContainer)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
         ) {
-            Icon(Icons.Rounded.Info, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(16.dp))
+            Icon(Icons.Rounded.Info, null, tint = cs.onSurfaceVariant, modifier = Modifier.padding(top = 1.dp).size(16.dp))
             Spacer(Modifier.width(10.dp))
             Text(
                 "Services that added you to SyncUp. A partner can send you links, notices and verification prompts only while it's enabled. Enable one with the password it gave you.",
-                fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant,
+                fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant,
             )
         }
 
@@ -126,7 +132,12 @@ fun PartnersScreen(
                 Icons.Rounded.Handshake, "No partners yet",
                 "When a service like GSTSync adds you, it shows up here for you to enable.",
             )
-            else -> LazyColumn(Modifier.fillMaxSize()) {
+            // Each partner on its own card (there are only ever a few).
+            else -> LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 items(partners, key = { it.id }) { p ->
                     val (chip, container, content) = when (p.status) {
                         "enabled" -> Triple("Enabled", cs.success.copy(alpha = .16f), cs.success)
@@ -135,6 +146,7 @@ fun PartnersScreen(
                         else -> Triple("Disabled", cs.surfaceContainerHighest, cs.onSurfaceVariant)
                     }
                     TonalRow(
+                        modifier = Modifier.appCard(CardShape),
                         title = p.partner,
                         subtitle = when {
                             p.lockedUntil != null -> "Too many wrong tries — try again later"

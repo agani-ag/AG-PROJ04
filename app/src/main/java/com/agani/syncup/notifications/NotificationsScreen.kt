@@ -1,9 +1,8 @@
 package com.agani.syncup.notifications
 
+import com.agani.syncup.ui.theme.appCard
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -56,13 +55,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -75,7 +70,10 @@ import com.agani.syncup.browser.ui.BadgeTextStyle
 import com.agani.syncup.browser.ui.BarIcon
 import com.agani.syncup.browser.ui.EmptyState
 import com.agani.syncup.data.NotificationItem
-import com.agani.syncup.ui.theme.isLight
+import com.agani.syncup.home.ToolTint
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.PillTab
+import com.agani.syncup.ui.theme.PillTabs
 import kotlinx.coroutines.launch
 
 private enum class Tab(val key: String) { NEW("new"), READ("read") }
@@ -151,20 +149,32 @@ fun NotificationsScreen(onBack: () -> Unit, onOpen: (NotificationItem) -> Unit) 
     }
 
     Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(horizontal = 4.dp, vertical = 4.dp)) {
             BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
-            Text("Notifications", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
+            Text(
+                "Notifications", fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium, color = cs.onSurface,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = 4.dp),
+            )
             TextButton(
                 enabled = tab == Tab.NEW && Inbox.newCount > 0,
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                modifier = Modifier.padding(end = 4.dp).height(36.dp),
                 onClick = {
                     items.clear()
                     PushTray.clearAll(context)
                     Inbox.setCount(0)
                     scope.launch { runCatching { Inbox.markRead(context, all = true) } }
                 },
-            ) { Text("Mark all read") }
+            ) { Text("Mark all read", fontSize = 13.5.sp, fontWeight = FontWeight.Medium) }
         }
-        TabSwitch(tab = tab, newCount = Inbox.newCount, onSelect = { tab = it })
+        // New / Read: the pill switch; New carries how many are waiting.
+        val newCount = Inbox.newCount
+        PillTabs(
+            listOf(PillTab("New", count = newCount), PillTab("Read")),
+            selected = tab.ordinal,
+            onSelect = { tab = Tab.entries[it] },
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 4.dp),
+        )
 
         PullToRefreshBox(
             isRefreshing = refreshing,
@@ -185,25 +195,46 @@ fun NotificationsScreen(onBack: () -> Unit, onOpen: (NotificationItem) -> Unit) 
                 items.isEmpty() -> EmptyState(
                     Icons.Rounded.NotificationsNone, "Nothing read yet", "Notifications you open move here.",
                 )
-                else -> LazyColumn(state = listState, contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 24.dp)) {
-                    var lastDay = ""
-                    items.forEachIndexed { index, n ->
+                else -> LazyColumn(state = listState, contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+                    // Grouped by day, newest first. New ones each sit on their own card; read ones share
+                    // one card a day (rows with lines between them), so a long list stays light.
+                    val days = ArrayList<Pair<String, MutableList<Pair<NotificationItem, Long?>>>>()
+                    items.forEach { n ->
                         val ms = parseIsoMs(n.sentAt)
                         val day = ms?.let(::dayLabel).orEmpty()
-                        if (day != lastDay) {
-                            lastDay = day
-                            item(key = "day-$index-$day") {
-                                Text(day, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant,
-                                     modifier = Modifier.padding(start = 8.dp, top = 14.dp, bottom = 6.dp))
+                        if (days.lastOrNull()?.first != day) days.add(day to mutableListOf())
+                        days.last().second.add(n to ms)
+                    }
+                    days.forEach { (day, list) ->
+                        val firstId = list.first().first.id
+                        item(key = "day-$firstId") {
+                            Text(
+                                day, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 6.dp, top = 16.dp, bottom = 8.dp),
+                            )
+                        }
+                        if (tab == Tab.NEW) {
+                            list.forEach { (n, ms) ->
+                                item(key = n.id) {
+                                    NotificationRow(n, ms, isNew = true, modifier = Modifier.padding(bottom = 10.dp).appCard(CardShape)) { open(n) }
+                                }
+                            }
+                        } else {
+                            item(key = "read-$firstId") {
+                                Column(Modifier.fillMaxWidth().appCard(CardShape)) {
+                                    list.forEachIndexed { i, (n, ms) ->
+                                        if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant))
+                                        NotificationRow(n, ms, isNew = false) { open(n) }
+                                    }
+                                }
                             }
                         }
-                        item(key = n.id) { NotificationRow(n, ms, isNew = tab == Tab.NEW) { open(n) } }
                     }
                     if (loadingMore) {
-                        item { Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) } }
+                        item(key = "more") { Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) } }
                     }
                     if (tab == Tab.READ && !hasMore) {
-                        item {
+                        item(key = "end") {
                             Text(
                                 "Old notifications are removed automatically.", fontSize = 12.5.sp, color = cs.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -216,53 +247,11 @@ fun NotificationsScreen(onBack: () -> Unit, onOpen: (NotificationItem) -> Unit) 
     }
 }
 
-/** New / Read — a two-part pill like the tab switcher's sections. */
+/** One notification: who sent it, the title (a blue dot while new), the text, then sender · time and Open. */
 @Composable
-private fun TabSwitch(tab: Tab, newCount: Int, onSelect: (Tab) -> Unit) {
+private fun NotificationRow(item: NotificationItem, sentMs: Long?, isNew: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    Row(
-        Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp).fillMaxWidth().height(48.dp)
-            .clip(RoundedCornerShape(24.dp)).background(cs.surfaceContainer).padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Tab.entries.forEach { t ->
-            val selected = t == tab
-            Row(
-                Modifier.weight(1f).fillMaxSize().clip(RoundedCornerShape(20.dp))
-                    .background(if (selected) cs.primaryContainer else Color.Transparent)
-                    .clickable { onSelect(t) }
-                    .semantics { role = Role.Tab; this.selected = selected },
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    if (t == Tab.NEW) "New" else "Read", fontSize = 15.sp, fontWeight = FontWeight.Medium,
-                    color = if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant,
-                )
-                if (t == Tab.NEW && newCount > 0) {
-                    Spacer(Modifier.width(8.dp))
-                    Box(
-                        Modifier.heightIn(min = 20.dp).widthIn(min = 20.dp).clip(RoundedCornerShape(10.dp)).background(cs.primary)
-                            .padding(horizontal = 6.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(if (newCount > 99) "99+" else "$newCount", style = BadgeTextStyle, fontSize = 12.sp, lineHeight = 14.sp, fontWeight = FontWeight.Bold, color = cs.onPrimary)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NotificationRow(item: NotificationItem, sentMs: Long?, isNew: Boolean, onClick: () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(16.dp)
-    Row(
-        Modifier.fillMaxWidth().padding(bottom = if (isNew) 8.dp else 2.dp).clip(shape)
-            .then(if (isNew) Modifier.background(cs.surfaceContainerLowest).border(1.dp, cs.outlineVariant, shape) else Modifier)
-            .clickable(onClick = onClick).padding(12.dp),
-    ) {
+    Row(Modifier.fillMaxWidth().then(modifier).clickable(onClick = onClick).padding(14.dp)) {
         Leading(item)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
@@ -285,7 +274,7 @@ private fun NotificationRow(item: NotificationItem, sentMs: Long?, isNew: Boolea
             if (!item.image.isNullOrBlank()) {
                 AsyncImage(
                     model = item.image, contentDescription = null, contentScale = ContentScale.Crop,
-                    modifier = Modifier.padding(top = 8.dp).fillMaxWidth().aspectRatio(2f).clip(RoundedCornerShape(12.dp)).background(cs.surfaceContainer),
+                    modifier = Modifier.padding(top = 8.dp).fillMaxWidth().aspectRatio(2f).clip(RoundedCornerShape(16.dp)).background(cs.surfaceContainer),
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
@@ -295,7 +284,7 @@ private fun NotificationRow(item: NotificationItem, sentMs: Long?, isNew: Boolea
                 )
                 if (!item.linkUrl.isNullOrBlank()) {
                     Text("Open", fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = cs.primary)
-                    Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, tint = cs.primary, modifier = Modifier.padding(start = 2.dp).size(14.dp))
+                    Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, tint = cs.primary, modifier = Modifier.padding(start = 3.dp).size(15.dp))
                 }
             }
         }
@@ -305,15 +294,14 @@ private fun NotificationRow(item: NotificationItem, sentMs: Long?, isNew: Boolea
 /** Who sent it, as a coloured tile: SyncUp, a partner / website, a reminder, "a partner added you". */
 @Composable
 private fun Leading(item: NotificationItem) {
-    val light = MaterialTheme.colorScheme.isLight
-    fun c(light: Long, dark: Long, isLight: Boolean) = Color(if (isLight) light else dark)
-    val (bg, fg) = when (item.kind) {
-        "partner", "site" -> c(0xFFCCFBF1, 0xFF134E4A, light) to c(0xFF0F766E, 0xFF5EEAD4, light)
-        "reminder" -> c(0xFFFEF3C7, 0xFF451A03, light) to c(0xFFB45309, 0xFFFCD34D, light)
-        "partners" -> c(0xFFEDE9FE, 0xFF2E1065, light) to c(0xFF6D28D9, 0xFFC4B5FD, light)
-        else -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.primary
+    val tint = when (item.kind) {
+        "partner", "site" -> ToolTint.TEAL
+        "reminder" -> ToolTint.AMBER
+        "partners" -> ToolTint.VIOLET
+        else -> ToolTint.BLUE
     }
-    Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(bg), contentAlignment = Alignment.Center) {
+    val fg = tint.icon
+    Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(tint.tile), contentAlignment = Alignment.Center) {
         when (item.kind) {
             "partner" -> Text(item.sender.take(1).uppercase().ifBlank { "P" }, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = fg)
             "site" -> Icon(Icons.Rounded.Language, null, tint = fg, modifier = Modifier.size(24.dp))

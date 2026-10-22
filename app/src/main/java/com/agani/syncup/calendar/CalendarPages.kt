@@ -1,5 +1,7 @@
 package com.agani.syncup.calendar
 
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.appCard
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
@@ -27,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,7 +49,6 @@ import androidx.compose.material.icons.rounded.Snooze
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -72,7 +74,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.ui.BarIcon
-import com.agani.syncup.ui.theme.isLight
 
 @Composable
 private fun Page(title: String, onBack: () -> Unit, actions: @Composable () -> Unit = {}, content: @Composable () -> Unit) {
@@ -170,11 +171,10 @@ internal fun DayView(day: Int, onDay: (Int) -> Unit, onBack: () -> Unit, onOpen:
                     }
                 }
             }
-            FloatingActionButton(
+            AddButton(
                 onClick = { onAdd(if (day == today) ((java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) + 1) * 60).coerceAtMost(23 * 60) else 9 * 60) },
-                containerColor = indigo(), contentColor = if (cs.isLight) Color.White else Color(0xFF1E1B4B),
-                modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
-            ) { Icon(Icons.Rounded.Add, "New to-do", modifier = Modifier.size(28.dp)) }
+                modifier = Modifier.align(Alignment.BottomEnd),
+            )
         }
     }
 }
@@ -220,7 +220,7 @@ internal fun ListsPage(onBack: () -> Unit, onDone: () -> Unit) {
         LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp)) {
             item { Section("Lists") }
             item {
-                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainerLowest).border(1.dp, cs.outlineVariant, RoundedCornerShape(18.dp))) {
+                Box(Modifier.fillMaxWidth().appCard(CardShape)) {
                     Column {
                         CalendarStore.lists.forEach { l ->
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { editing = l }.padding(horizontal = 16.dp, vertical = 14.dp)) {
@@ -242,7 +242,7 @@ internal fun ListsPage(onBack: () -> Unit, onDone: () -> Unit) {
             }
             item { Section("Done") }
             item {
-                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainerLowest).border(1.dp, cs.outlineVariant, RoundedCornerShape(18.dp))) {
+                Box(Modifier.fillMaxWidth().appCard(CardShape)) {
                     Column {
                         SettingLine(Icons.Rounded.Check, "Done to-dos", "${CalendarStore.tasks.count { it.done && it.doneMs >= weekAgo }} this week — tap to see or undo", onClick = onDone)
                         SettingLine(Icons.Rounded.Delete, "Clear done older than a month", null, onClick = { CalendarStore.clearOldDone() })
@@ -251,7 +251,7 @@ internal fun ListsPage(onBack: () -> Unit, onDone: () -> Unit) {
             }
             item { Section("Settings") }
             item {
-                Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainerLowest).border(1.dp, cs.outlineVariant, RoundedCornerShape(18.dp))) {
+                Box(Modifier.fillMaxWidth().appCard(CardShape)) {
                     Column {
                         SettingLine(Icons.Rounded.Notifications, "Reminders on this phone", if (CalendarStore.remindersOn) "Notifications for your to-dos" else "Off — this phone stays quiet", onClick = { CalendarStore.changeRemindersOn(!CalendarStore.remindersOn) }) {
                             Switch(checked = CalendarStore.remindersOn, onCheckedChange = { CalendarStore.changeRemindersOn(it) }, colors = SwitchDefaults.colors(checkedTrackColor = indigo()))
@@ -337,7 +337,7 @@ internal fun ListsPage(onBack: () -> Unit, onDone: () -> Unit) {
 
 @Composable
 private fun Section(text: String) {
-    Text(text.uppercase(), fontSize = 12.5.sp, fontWeight = FontWeight.Medium, letterSpacing = .5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 6.dp, top = 18.dp, bottom = 8.dp))
+    Text(text, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 10.dp))
 }
 
 @Composable
@@ -368,17 +368,23 @@ internal fun DonePage(onBack: () -> Unit, onOpen: (Task) -> Unit) {
             }
             val recent = done.filter { it.doneMs >= weekAgo }
             val older = done.filter { it.doneMs < weekAgo }
-            if (recent.isNotEmpty()) item { Text("THIS WEEK", fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, top = 8.dp, bottom = 6.dp)) }
-            items(recent, key = { it.id }) { t -> TaskRowWithPadding(t, onOpen) }
-            if (older.isNotEmpty()) item { Text("EARLIER", fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, top = 14.dp, bottom = 6.dp)) }
-            items(older, key = { it.id }) { t -> TaskRowWithPadding(t, onOpen) }
+            if (recent.isNotEmpty()) item(key = "hw") { ListHeader("This week") }
+            itemsIndexed(recent, key = { _, t -> t.id }) { i, t -> TaskRowWithPadding(t, onOpen, i == 0, i == recent.lastIndex) }
+            if (older.isNotEmpty()) item(key = "he") { ListHeader("Earlier") }
+            itemsIndexed(older, key = { _, t -> t.id }) { i, t -> TaskRowWithPadding(t, onOpen, i == 0, i == older.lastIndex) }
         }
     }
 }
 
+/** A to-do in one grouped card of a plain list (Done, Search). */
 @Composable
-private fun TaskRowWithPadding(t: Task, onOpen: (Task) -> Unit) {
-    Box(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) { TaskRow(t, onOpen, onTick = {}, showDate = true) }
+private fun TaskRowWithPadding(t: Task, onOpen: (Task) -> Unit, first: Boolean, last: Boolean) {
+    Box(Modifier.padding(horizontal = 16.dp)) { TaskRow(t, onOpen, onTick = {}, first = first, last = last) }
+}
+
+@Composable
+private fun ListHeader(text: String) {
+    Text(text, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 10.dp))
 }
 
 // ============================================================================ search
@@ -400,9 +406,9 @@ internal fun SearchPage(onBack: () -> Unit, onOpen: (Task) -> Unit) {
             leadingIcon = { Icon(Icons.Rounded.Search, null) }, placeholder = { Text("Search your to-dos") },
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).focusRequester(focus),
         )
-        LazyColumn(contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp)) {
+        LazyColumn(contentPadding = PaddingValues(top = 14.dp, bottom = 32.dp)) {
             if (q.isNotBlank() && found.isEmpty()) item { Text("Nothing found", fontSize = 14.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(24.dp)) }
-            items(found, key = { it.id }) { t -> TaskRowWithPadding(t, onOpen) }
+            itemsIndexed(found, key = { _, t -> t.id }) { i, t -> TaskRowWithPadding(t, onOpen, i == 0, i == found.lastIndex) }
         }
     }
 }

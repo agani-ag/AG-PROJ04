@@ -1,5 +1,8 @@
 package com.agani.syncup.sso
 
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.appCard
+import com.agani.syncup.ui.theme.isLight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +23,7 @@ import androidx.compose.material.icons.rounded.Mail
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -69,7 +73,11 @@ fun SignInConsentHost(user: User?) {
     val cs = MaterialTheme.colorScheme
     // The tools that use it, by their link names (e.g. "Hibiscus · Pocket Money · J6").
     val tools = KnownLinks.byId.values.filter { SyncUpSignIn.hostOf(it.url) != null }.map { it.title }.distinct()
-    ModalBottomSheet(onDismissRequest = { p.answer(false) }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(
+        onDismissRequest = { p.answer(false) },
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = sheetColor(),
+    ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp).navigationBarsPadding().padding(bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(cs.primary), contentAlignment = Alignment.Center) {
@@ -82,14 +90,15 @@ fun SignInConsentHost(user: User?) {
                 }
             }
             if (user != null) {
+                // Who is signing in: a plain outlined box, so it doesn't read as something to tap.
+                val box = RoundedCornerShape(18.dp)
                 Spacer(Modifier.height(16.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cs.surfaceContainerLowest)
-                        .border(1.dp, cs.outlineVariant, RoundedCornerShape(16.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
+                    modifier = Modifier.fillMaxWidth().clip(box).border(1.dp, cs.outlineVariant, box).padding(horizontal = 14.dp, vertical = 12.dp),
                 ) {
-                    Box(Modifier.size(38.dp).clip(CircleShape).background(cs.primary), contentAlignment = Alignment.Center) {
-                        Text(user.name.trim().take(1).uppercase().ifBlank { "?" }, color = cs.onPrimary, fontWeight = FontWeight.Medium)
+                    Box(Modifier.size(36.dp).clip(CircleShape).background(cs.primary), contentAlignment = Alignment.Center) {
+                        Text(user.name.trim().take(1).uppercase().ifBlank { "?" }, color = cs.onPrimary, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                     }
                     Spacer(Modifier.width(12.dp))
                     Column {
@@ -104,13 +113,19 @@ fun SignInConsentHost(user: User?) {
             Shares(Icons.Rounded.Mail, "Your email")
             Shares(Icons.Rounded.PhoneAndroid, "Your phone number")
             Spacer(Modifier.height(6.dp))
-            Text("What you do in ${p.client} stays there — SyncUp never sees it.", fontSize = 12.5.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant)
+            Text("What you do in ${p.client} stays there. SyncUp never sees it.", fontSize = 12.5.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant)
             Spacer(Modifier.height(18.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                FilledTonalButton(onClick = { p.answer(false) }, modifier = Modifier.weight(1f).height(46.dp)) { Text("Cancel") }
-                Button(onClick = { p.answer(true) }, modifier = Modifier.weight(1f).height(46.dp)) { Text("Continue") }
+                FilledTonalButton(
+                    onClick = { p.answer(false) },
+                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = cs.primaryContainer, contentColor = cs.onPrimaryContainer),
+                    modifier = Modifier.weight(1f).height(46.dp),
+                ) { Text("Cancel", fontSize = 15.sp, fontWeight = FontWeight.Medium) }
+                Button(onClick = { p.answer(true) }, modifier = Modifier.weight(1f).height(46.dp)) {
+                    Text("Continue", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                }
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
             Text(
                 "Asked once. Disconnect any time in You → Signed-in sites.",
                 fontSize = 12.5.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
@@ -123,11 +138,15 @@ fun SignInConsentHost(user: User?) {
 private fun Shares(icon: ImageVector, text: String) {
     val cs = MaterialTheme.colorScheme
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 6.dp)) {
-        Icon(icon, null, tint = cs.primary, modifier = Modifier.size(20.dp))
+        Icon(icon, null, tint = cs.primary, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(10.dp))
         Text(text, fontSize = 14.5.sp, color = cs.onSurface)
     }
 }
+
+/** These sheets are white paper in Light, like a card (the usual raised tier in Dark). */
+@Composable
+private fun sheetColor() = MaterialTheme.colorScheme.let { if (it.isLight) it.surfaceContainerLowest else it.surfaceContainerLow }
 
 /** You → Signed-in sites: where SyncUp signs this person in, what each gets, and Disconnect. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -146,10 +165,10 @@ fun SignedInSitesSheet(onDismiss: () -> Unit) {
         sites = got?.sites ?: sites
     }
     LaunchedEffect(Unit) { load() }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = sheetColor()) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).navigationBarsPadding().padding(bottom = 16.dp)) {
-            Text("Signed-in sites", fontSize = 20.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
-            Text("Sites SyncUp signs you in to, and what they get.", fontSize = 13.sp, color = cs.onSurfaceVariant)
+            Text("Signed-in sites", fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
+            Text("Sites SyncUp signs you in to, and what they get.", fontSize = 13.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant)
             Spacer(Modifier.height(14.dp))
             val list = sites
             when {
@@ -161,8 +180,7 @@ fun SignedInSitesSheet(onDismiss: () -> Unit) {
                 )
                 else -> list.forEach { site ->
                     Column(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cs.surfaceContainerLowest)
-                            .border(1.dp, cs.outlineVariant, RoundedCornerShape(20.dp)).padding(16.dp),
+                        Modifier.fillMaxWidth().appCard(CardShape).padding(16.dp),
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(cs.inverseSurface), contentAlignment = Alignment.Center) {

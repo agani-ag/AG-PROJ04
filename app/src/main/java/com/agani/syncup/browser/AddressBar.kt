@@ -1,7 +1,5 @@
 package com.agani.syncup.browser
 
-import com.agani.syncup.browser.ui.chrome
-
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -90,8 +87,8 @@ import java.net.URLEncoder
 
 // ============================================================================ page address bar
 /**
- * Normal / Incognito web pages: 60 dp strip, 44 dp tonal pill with lock · host + path · reload/stop
- * inside; the bookmark star sits outside (Normal only). Work pages never get this bar.
+ * Normal / Incognito web pages: 60 dp strip on the bar's paper, 46 dp grey pill with lock · host +
+ * path · reload/stop inside; the bookmark star sits outside (Normal only). Work pages never get this bar.
  */
 @Composable
 internal fun PageBar(tab: BrowserTab, db: BrowserDb, atBottom: Boolean, onTap: () -> Unit, onReload: () -> Unit, onStop: () -> Unit) {
@@ -107,13 +104,15 @@ internal fun PageBar(tab: BrowserTab, db: BrowserDb, atBottom: Boolean, onTap: (
         modifier = Modifier
             .fillMaxWidth()
             .height(60.dp)
-            .background(cs.chrome)
+            .background(cs.bar)
             .padding(start = 12.dp, end = if (normal) 4.dp else 12.dp),
     ) {
         SyncPill(
             modifier = Modifier.weight(1f),
-            height = 44.dp,
-            container = cs.surfaceContainerHigh,
+            height = 46.dp,
+            container = cs.field,
+            startPadding = 14.dp,
+            endPadding = 4.dp,
             onClick = onTap,
         ) {
             val icon = when {
@@ -121,20 +120,20 @@ internal fun PageBar(tab: BrowserTab, db: BrowserDb, atBottom: Boolean, onTap: (
                 UrlInput.isSecure(tab.url) -> Icons.Rounded.Lock
                 else -> Icons.Rounded.Info
             }
-            Icon(icon, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            Icon(icon, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
             val (host, path) = UrlInput.hostAndPath(tab.url)
             Text(
                 buildAnnotatedString {
                     withStyle(SpanStyle(color = cs.onSurface)) { append(host) }
                     withStyle(SpanStyle(color = cs.onSurfaceVariant)) { append(path) }
                 },
-                fontSize = 15.sp, letterSpacing = .2.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                fontSize = 14.5.sp, letterSpacing = .2.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
             if (tab.loading) {
-                PillButton(Icons.Rounded.Close, "Stop", onClick = onStop)
+                PillButton(Icons.Rounded.Close, "Stop", size = 38.dp, tint = cs.onSurface, onClick = onStop)
             } else {
-                PillButton(Icons.Rounded.Refresh, "Reload", onClick = onReload)
+                PillButton(Icons.Rounded.Refresh, "Reload", size = 38.dp, tint = cs.onSurface, onClick = onReload)
             }
         }
         if (normal) {
@@ -174,7 +173,7 @@ internal fun EditBar(
         modifier = Modifier.fillMaxWidth().height(60.dp).background(cs.surface).padding(start = 4.dp, end = 12.dp),
     ) {
         BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Cancel", onClick = onCancel)
-        SyncPill(modifier = Modifier.weight(1f), height = 44.dp, focused = true) {
+        SyncPill(modifier = Modifier.weight(1f), height = 46.dp, focused = true, startPadding = 14.dp, endPadding = 4.dp) {
             if (incognito) Icon(Icons.Rounded.VisibilityOff, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
             BasicTextField(
                 value = value,
@@ -219,10 +218,10 @@ internal fun FindBar(webViewProvider: () -> android.webkit.WebView, onClose: () 
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().height(60.dp).background(cs.chrome).padding(start = 12.dp, end = 4.dp),
+        modifier = Modifier.fillMaxWidth().height(60.dp).background(cs.bar).padding(start = 12.dp, end = 4.dp),
     ) {
-        SyncPill(modifier = Modifier.weight(1f), height = 44.dp, endPadding = 12.dp) {
-            Icon(Icons.Rounded.Search, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        SyncPill(modifier = Modifier.weight(1f), height = 46.dp, container = cs.field, startPadding = 14.dp, endPadding = 14.dp) {
+            Icon(Icons.Rounded.Search, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
             BasicTextField(
                 value = query,
                 onValueChange = {
@@ -242,11 +241,11 @@ internal fun FindBar(webViewProvider: () -> android.webkit.WebView, onClose: () 
                 },
                 modifier = Modifier.weight(1f).focusRequester(focus),
             )
-            if (query.isNotEmpty()) Text("$current/$total", fontSize = 12.sp, color = cs.onSurfaceVariant)
+            if (query.isNotEmpty()) Text("$current/$total", fontSize = 12.5.sp, color = cs.onSurfaceVariant)
         }
-        BarIcon(Icons.Rounded.KeyboardArrowUp, "Previous match", enabled = total > 0) { webViewProvider().findNext(false) }
-        BarIcon(Icons.Rounded.KeyboardArrowDown, "Next match", enabled = total > 0) { webViewProvider().findNext(true) }
-        BarIcon(Icons.Rounded.Close, "Close find", onClick = onClose)
+        BarIcon(Icons.Rounded.KeyboardArrowUp, "Previous match", enabled = total > 0, tint = cs.onSurfaceVariant) { webViewProvider().findNext(false) }
+        BarIcon(Icons.Rounded.KeyboardArrowDown, "Next match", enabled = total > 0, tint = cs.onSurfaceVariant) { webViewProvider().findNext(true) }
+        BarIcon(Icons.Rounded.Close, "Close find", tint = cs.onSurfaceVariant, onClick = onClose)
     }
 }
 
@@ -329,22 +328,11 @@ internal fun Suggestions(query: String, section: Section, db: BrowserDb, onPick:
             }
             if (section == Section.INCOGNITO && query.isNotBlank()) {
                 item {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .padding(horizontal = 20.dp, vertical = 12.dp)
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(cs.surfaceContainerLow)
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                    ) {
-                        Icon(Icons.Rounded.VisibilityOff, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(10.dp))
-                        Text(
-                            "Incognito doesn't send what you type for suggestions or show your history",
-                            fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant,
-                        )
-                    }
+                    InfoNote(
+                        "Incognito doesn't send what you type for suggestions or show your history",
+                        Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                        icon = Icons.Rounded.VisibilityOff,
+                    )
                 }
             }
         }
@@ -358,7 +346,7 @@ private fun ShortcutSuggestion(sc: CatalogShortcut, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 8.dp),
     ) {
-        Box(Modifier.size(40.dp).clip(CircleShape).background(cs.surfaceContainerHigh), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(40.dp).clip(CircleShape).background(cs.field), contentAlignment = Alignment.Center) {
             SiteMark(sc.url, sc.title, circle = 40.dp, iconSize = 24.dp)
         }
         Spacer(Modifier.width(16.dp))

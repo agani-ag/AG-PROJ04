@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -68,9 +67,6 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import com.agani.syncup.data.LoginMode
@@ -81,6 +77,7 @@ import com.agani.syncup.browser.ui.IconTile
 import com.agani.syncup.browser.ui.SectionTheme
 import com.agani.syncup.browser.ui.SheetDivider
 import com.agani.syncup.browser.ui.TonalRow
+import com.agani.syncup.ui.theme.PillTabs
 import com.agani.syncup.ui.theme.dialogSurface
 
 /** Indian mobile number check (the backend is the judge; this only catches typos early). */
@@ -163,16 +160,19 @@ fun SignInSheet(
 private fun SheetTitle(title: String, subtitle: String) {
     val cs = MaterialTheme.colorScheme
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(44.dp).clip(CircleShape).background(cs.primary), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(cs.primary), contentAlignment = Alignment.Center) {
             Image(painterResource(R.drawable.ic_sync), null, colorFilter = ColorFilter.tint(cs.onPrimary), modifier = Modifier.size(24.dp))
         }
-        Spacer(Modifier.width(14.dp))
+        Spacer(Modifier.width(12.dp))
         Column {
-            Text(title, fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface)
-            Text(subtitle, fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant)
+            Text(title, fontSize = 19.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
+            Text(subtitle, fontSize = 13.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant)
         }
     }
 }
+
+/** Text fields in the sign-in sheets: 16 dp corners, like the design's fields. */
+private val FieldShape = RoundedCornerShape(16.dp)
 
 @Composable
 internal fun PasswordField(
@@ -196,7 +196,7 @@ internal fun PasswordField(
         },
         isError = error != null,
         supportingText = (error ?: supporting)?.let { { Text(it) } },
-        singleLine = true, shape = RoundedCornerShape(12.dp),
+        singleLine = true, shape = FieldShape,
         visualTransformation = if (show) VisualTransformation.None else PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = imeAction),
         keyboardActions = KeyboardActions(onDone = { if (onDone != null) onDone() else defaultKeyboardAction(ImeAction.Done) }),
@@ -236,15 +236,8 @@ private fun SignInForm(
 
     SheetTitle("Sign in to SyncUp", "Sync your bookmarks, history and tabs across devices")
     Spacer(Modifier.height(20.dp))
-    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-        LoginMode.entries.forEachIndexed { i, m ->
-            SegmentedButton(
-                selected = mode == m,
-                onClick = { mode = m },
-                shape = SegmentedButtonDefaults.itemShape(i, LoginMode.entries.size),
-            ) { Text(m.label) }
-        }
-    }
+    // Email · Phone · Username as the design's pill switch.
+    PillTabs(LoginMode.entries.map { it.label }, LoginMode.entries.indexOf(mode), { mode = LoginMode.entries[it] })
     Spacer(Modifier.height(14.dp))
     OutlinedTextField(
         value = login, onValueChange = { values[mode] = it },
@@ -268,7 +261,7 @@ private fun SignInForm(
             )
         },
         prefix = if (mode == LoginMode.PHONE) ({ Text("+91 ") }) else null,
-        singleLine = true, shape = RoundedCornerShape(12.dp),
+        singleLine = true, shape = FieldShape,
         keyboardOptions = KeyboardOptions(
             keyboardType = when (mode) {
                 LoginMode.EMAIL -> KeyboardType.Email
@@ -349,7 +342,7 @@ private fun SignUpForm(
 ) {
     val cs = MaterialTheme.colorScheme
     val context = LocalContext.current
-    val shape = RoundedCornerShape(12.dp)
+    val shape = FieldShape
     var name by form::name
     var email by form::email
     var phone by form::phone

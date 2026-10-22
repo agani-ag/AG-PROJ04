@@ -1,5 +1,7 @@
 package com.agani.syncup.wellbeing
 
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.appCard
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.LinearEasing
@@ -65,7 +67,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.agani.syncup.ui.theme.isLight
 import com.agani.syncup.browser.ui.BarIcon
 import com.agani.syncup.forest.FDays
 import com.agani.syncup.sync.SyncType
@@ -279,12 +280,14 @@ private fun WaterIntro(onBack: () -> Unit) {
                 modifier = Modifier.padding(horizontal = 36.dp, vertical = 6.dp),
             )
         }
-        Lab("Your daily goal", t.accent)
+        Lab("Your daily goal")
         Choices(listOf(1500, 2000, 2500, 3000), goal, { "${it / 1000.0}".removeSuffix(".0") + " L" }, t, { goal = it })
         Hint("About 2 litres is a common goal. Pick what suits you — you can change it any time.")
-        SwitchLine("Remind me during the day", "8 AM – 10 PM · every 90 min", remind, t.accent, { remind = it })
+        WCard(Modifier.padding(top = 8.dp)) {
+            SwitchLine("Remind me during the day", "8 AM – 10 PM · every 90 min", remind, { remind = it }, icon = { TintIcon(Icons.Rounded.Notifications, t, 42.dp) })
+        }
         Spacer(Modifier.height(24.dp))
-        BigButton("Start", t.accent, { Water.changeSettings(Water.settings.copy(setUp = true, goal = goal, remind = remind)) })
+        BigButton("Start", { Water.changeSettings(Water.settings.copy(setUp = true, goal = goal, remind = remind)) })
     }
 }
 
@@ -303,45 +306,51 @@ private fun WaterToday(onBack: () -> Unit, onHistory: () -> Unit) {
         BarIcon(Icons.Rounded.BarChart, "History", onClick = onHistory)
         BarIcon(Icons.Rounded.Settings, "Water settings", onClick = { settings = true })
     }) {
-        Box(Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.Center) {
-            WaterGauge(total, s.goal, s.oz)
+        WCard(Modifier.padding(top = 4.dp)) {
+            Box(Modifier.fillMaxWidth().padding(top = 16.dp), contentAlignment = Alignment.Center) {
+                WaterGauge(total, s.goal, s.oz, t)
+            }
+            if (left == 0) {
+                Text(
+                    "Goal reached — well done!", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = t.accent, textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 14.dp),
+                )
+            } else {
+                val cups = (left + s.cups[0].ml - 1) / s.cups[0].ml
+                val name = s.cups[0].name.lowercase()
+                Text(
+                    "${Water.fmt(left)} to go · about $cups ${if (cups == 1) name else if (name.endsWith("s")) "${name}es" else "${name}s"}",
+                    fontSize = 14.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 14.dp),
+                )
+            }
         }
         if (left == 0) {
-            Text("Goal reached — well done!", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = t.accent, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
             Stats("Streak" to "${Water.streak()} day${if (Water.streak() == 1) "" else "s"}", "This week" to "${(0..6).count { Water.goalMetOn(FDays.add(today, -it)) }} of 7", "Reminders" to "Done")
-        } else {
-            val cups = (left + s.cups[0].ml - 1) / s.cups[0].ml
-            val name = s.cups[0].name.lowercase()
-            Text(
-                "${Water.fmt(left)} to go · about $cups ${if (cups == 1) name else if (name.endsWith("s")) "${name}es" else "${name}s"}",
-                fontSize = 14.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp)) {
             s.cups.forEachIndexed { i, c ->
                 Column(
-                    Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainerLowest)
-                        .border(1.dp, cs.outlineVariant, RoundedCornerShape(18.dp)).clickable { Water.add(c.ml, c.name) }.padding(vertical = 12.dp),
+                    Modifier.weight(1f).appCard(CardShape).clickable { Water.add(c.ml, c.name) }.padding(top = 12.dp, bottom = 10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    TintIcon(cupIcon(i), t, 40.dp)
-                    Text(c.name, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.padding(top = 4.dp))
+                    TintIcon(cupIcon(i), t, 42.dp)
+                    Text(c.name, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.padding(top = 6.dp))
                     Text("+ ${Water.fmt(c.ml)}", fontSize = 12.sp, color = cs.onSurfaceVariant)
                 }
             }
         }
         Text(
-            "Other amount", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = t.accent,
-            modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 6.dp).clip(RoundedCornerShape(10.dp)).clickable { other = true }.padding(horizontal = 12.dp, vertical = 6.dp),
+            "Other amount", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.primary,
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 6.dp, bottom = 4.dp).clip(CircleShape).clickable { other = true }.padding(horizontal = 14.dp, vertical = 8.dp),
         )
         val next = Water.nextReminder()
-        WCard(Modifier.padding(top = 10.dp)) {
+        WCard(Modifier.padding(top = 4.dp)) {
             SwitchLine(
                 if (s.remind && next != null) "Next reminder ${if (FDays.of(next) != today) "tomorrow " else ""}${clockText(next)}" else "Reminders off",
                 "Every ${s.every} min · ${timeText(s.start)} – ${timeText(s.end)}",
-                s.remind, t.accent, { Water.changeSettings(s.copy(remind = it)) },
-                icon = { TintIcon(Icons.Rounded.Notifications, t) },
+                s.remind, { Water.changeSettings(s.copy(remind = it)) },
+                icon = { TintIcon(Icons.Rounded.Notifications, t, 42.dp) },
             )
         }
         val drinks = Water.drinksOn(today)
@@ -369,7 +378,7 @@ private fun WaterToday(onBack: () -> Unit, onHistory: () -> Unit) {
         Water.add(ml, "Other")
     }, onDismiss = { other = false })
     if (settings) {
-        ModalBottomSheet(onDismissRequest = { settings = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        ModalBottomSheet(onDismissRequest = { settings = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = cs.surfaceContainerLowest) {
             WaterSettingsSheet()
         }
     }
@@ -384,16 +393,15 @@ private fun cupIcon(i: Int): ImageVector = when (i) {
 
 /** The circle that fills like a glass, with a gentle moving wave on top. */
 @Composable
-private fun WaterGauge(ml: Int, goal: Int, oz: Boolean) {
+private fun WaterGauge(ml: Int, goal: Int, oz: Boolean, t: WTint) {
     val p by animateFloatAsState((ml / goal.toFloat()).coerceIn(0f, 1f), tween(700), label = "water")
     val wave by rememberInfiniteTransition(label = "wave").animateFloat(0f, (2 * PI).toFloat(), infiniteRepeatable(tween(3_000, easing = LinearEasing), RepeatMode.Restart), label = "phase")
-    val light = MaterialTheme.colorScheme.isLight
-    Box(Modifier.size(232.dp), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(232.dp)) {
+    Box(Modifier.size(196.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.size(196.dp)) {
             val r = size.minDimension / 2
-            drawCircle(Color(if (light) 0xFFBAE6FD else 0xFF0C4A6E), r - 2.dp.toPx(), style = Stroke(4.dp.toPx()))
-            val inner = r - 8.dp.toPx()
-            drawCircle(Color(if (light) 0xFFF0F9FF else 0xFF082F49), inner)
+            drawCircle(t.accent.copy(alpha = .25f), r - 2.dp.toPx(), style = Stroke(3.5.dp.toPx()))
+            val inner = r - 7.dp.toPx()
+            drawCircle(t.container.copy(alpha = .55f), inner)
             val circle = Path().apply { addOval(androidx.compose.ui.geometry.Rect(Offset(size.width / 2 - inner, size.height / 2 - inner), androidx.compose.ui.geometry.Size(inner * 2, inner * 2))) }
             clipPath(circle) {
                 val level = size.height * (1 - p) + (if (p >= 1f) -8f else 0f)
@@ -417,11 +425,11 @@ private fun WaterGauge(ml: Int, goal: Int, oz: Boolean) {
         // White once the water reaches each line (the number sits mid-circle, the small line just below).
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                if (oz) "${(ml / 29.5735).roundToInt()}" else ml.grouped(), fontSize = 44.sp, fontWeight = FontWeight.Medium,
+                if (oz) "${(ml / 29.5735).roundToInt()}" else ml.grouped(), fontSize = 42.sp, fontWeight = FontWeight.Medium,
                 color = if (p > .58f) Color.White else MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                "of ${Water.fmt(goal, oz)} · ${(ml * 100f / goal).roundToInt()}%", fontSize = 15.sp,
+                "of ${Water.fmt(goal, oz)} · ${(ml * 100f / goal).roundToInt()}%", fontSize = 14.sp,
                 color = if (p > .4f) Color.White.copy(alpha = .9f) else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -452,13 +460,13 @@ private fun WaterSettingsSheet() {
     val s = Water.settings
     var time by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
-        Text("Water settings", fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(start = 20.dp, bottom = 4.dp))
-        Lab("Daily goal", t.accent)
+        Text("Water settings", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(start = 20.dp, bottom = 4.dp))
+        SheetLab("Daily goal")
         PlusMinusLine("Goal", Water.fmt(s.goal), { Water.changeSettings(s.copy(goal = (s.goal - 100).coerceAtLeast(500))) }, { Water.changeSettings(s.copy(goal = (s.goal + 100).coerceAtMost(6000))) })
         Choices(listOf(1500, 2000, 2500, 3000), s.goal, { "${it / 1000.0}".removeSuffix(".0") + " L" }, t, { Water.changeSettings(s.copy(goal = it)) }, Modifier.padding(top = 4.dp))
-        Lab("Units", t.accent)
+        SheetLab("Units")
         Choices(listOf(false, true), s.oz, { if (it) "oz" else "ml" }, t, { Water.changeSettings(s.copy(oz = it)) })
-        Lab("Your cups", t.accent)
+        SheetLab("Your cups")
         s.cups.forEachIndexed { i, c ->
             PlusMinusLine(c.name, Water.fmt(c.ml), {
                 Water.changeSettings(s.copy(cups = s.cups.mapIndexed { j, x -> if (j == i) x.copy(ml = (x.ml - 25).coerceAtLeast(50)) else x }))
@@ -466,14 +474,14 @@ private fun WaterSettingsSheet() {
                 Water.changeSettings(s.copy(cups = s.cups.mapIndexed { j, x -> if (j == i) x.copy(ml = (x.ml + 25).coerceAtMost(2000)) else x }))
             })
         }
-        Lab("Reminders", t.accent)
-        SwitchLine("Remind me to drink", "${timeText(s.start)} – ${timeText(s.end)} · every ${s.every} min", s.remind, t.accent, { Water.changeSettings(s.copy(remind = it)) })
+        SheetLab("Reminders")
+        SwitchLine("Remind me to drink", "${timeText(s.start)} – ${timeText(s.end)} · every ${s.every} min", s.remind, { Water.changeSettings(s.copy(remind = it)) })
         if (s.remind) {
-            TimeLine("From", s.start, t, { time = "start" })
-            TimeLine("To", s.end, t, { time = "end" })
+            TimeLine("From", s.start, { time = "start" })
+            TimeLine("To", s.end, { time = "end" })
             PlusMinusLine("Every", "${s.every} min", { Water.changeSettings(s.copy(every = (s.every - 15).coerceAtLeast(30))) }, { Water.changeSettings(s.copy(every = (s.every + 15).coerceAtMost(240))) })
-            SwitchLine("Stop once the goal is reached", null, s.stopAtGoal, t.accent, { Water.changeSettings(s.copy(stopAtGoal = it)) })
-            SwitchLine("Quiet during Forest calm time", null, s.quietCalm, t.accent, { Water.changeSettings(s.copy(quietCalm = it)) })
+            SwitchLine("Stop once the goal is reached", null, s.stopAtGoal, { Water.changeSettings(s.copy(stopAtGoal = it)) })
+            SwitchLine("Quiet during Forest calm time", null, s.quietCalm, { Water.changeSettings(s.copy(quietCalm = it)) })
         }
     }
     time?.let { which ->
@@ -495,20 +503,24 @@ private fun WaterHistory(onBack: () -> Unit) {
     val all = (0 until 60).map { Water.totalOn(FDays.add(today, -it)) }.filter { it > 0 }
     WellPage("History", onBack) {
         Lab("Last 7 days")
-        Bars(totals.map { it.toFloat() }, days.map { weekdayLetter(it) }, s.goal.toFloat(), Color(0xFF0EA5E9), Color(if (cs.isLight) 0xFFBAE6FD else 0xFF0C4A6E), "Goal ${Water.fmt(s.goal)}", Modifier.padding(horizontal = 20.dp))
-        Spacer(Modifier.height(14.dp))
+        WCard {
+            Bars(totals.map { it.toFloat() }, days.map { weekdayLetter(it) }, s.goal.toFloat(), t.accent, t.accent.copy(alpha = .3f), "Goal ${Water.fmt(s.goal)}", Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
+        }
+        Spacer(Modifier.height(12.dp))
         Stats(
             "Average" to if (all.isEmpty()) "—" else Water.fmt(all.average().roundToInt()),
             "Streak" to "${Water.streak()} day${if (Water.streak() == 1) "" else "s"}",
             "Best" to if (all.isEmpty()) "—" else Water.fmt(all.max()),
         )
         Lab(monthTitle())
-        MonthDots(today, t) { d ->
-            val tot = Water.totalOn(d)
-            when {
-                tot >= s.goal -> Color(0xFF0EA5E9) to Color.White
-                tot >= s.goal * .6 -> Color(if (cs.isLight) 0xFFBAE6FD else 0xFF0C4A6E) to cs.onSurface
-                else -> null
+        WCard {
+            MonthDots(today, t, Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)) { d ->
+                val tot = Water.totalOn(d)
+                when {
+                    tot >= s.goal -> t.accent to cs.surfaceContainerLowest
+                    tot >= s.goal * .6 -> t.container to t.accent
+                    else -> null
+                }
             }
         }
         Hint("Full drop = goal met · light = close.", center = true)
@@ -517,12 +529,12 @@ private fun WaterHistory(onBack: () -> Unit) {
 
 /** This month as a Monday-first grid of round days; [style] gives a day its fill and text colour (null = plain). */
 @Composable
-internal fun MonthDots(today: Int, tint: WTint, style: (Int) -> Pair<Color, Color>?) {
+internal fun MonthDots(today: Int, tint: WTint, modifier: Modifier = Modifier.padding(horizontal = 20.dp), style: (Int) -> Pair<Color, Color>?) {
     val cs = MaterialTheme.colorScheme
     val first = today / 100 * 100 + 1
     val lead = mondayIndex(first)
     val cells = (0 until lead).map { 0 } + (first..today).toList()
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+    Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth()) {
             listOf("M", "T", "W", "T", "F", "S", "S").forEach { Text(it, fontSize = 11.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.weight(1f)) }
         }

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -27,6 +29,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -82,9 +85,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.agani.syncup.browser.Tint
+import com.agani.syncup.browser.browserCard
+import com.agani.syncup.browser.cardRow
+import com.agani.syncup.browser.field
+import com.agani.syncup.browser.paper
+import com.agani.syncup.browser.sheet
 import com.agani.syncup.browser.ui.BarIcon
 import com.agani.syncup.browser.ui.EmptyState
 import com.agani.syncup.ui.theme.dialogSurface
+import com.agani.syncup.ui.theme.isLight
 import kotlinx.coroutines.delay
 import java.util.Calendar
 
@@ -139,16 +149,19 @@ fun DownloadsScreen(link: String?, onLinkUsed: () -> Unit, onBack: () -> Unit) {
                         searching = false
                     }
                 } else {
-                    Text("Downloads", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
+                    Text(
+                        "Downloads", fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.Medium, color = cs.onSurface,
+                        modifier = Modifier.weight(1f).padding(start = 4.dp),
+                    )
                     BarIcon(Icons.Rounded.Search, "Search downloads") { searching = true }
                     BarIcon(Icons.Rounded.Tune, "Download settings") { showSettings = true }
                 }
             }
             if (all.isNotEmpty()) {
                 val counts = all.groupingBy { it.kind }.eachCount()
-                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-                    item { FilterChipX("All ${all.size}", filter == null) { filter = null } }
-                    items(FileKind.entries.filter { (counts[it] ?: 0) > 0 }) { k ->
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 4.dp)) {
+                    item(key = "all") { FilterChipX("All ${all.size}", filter == null) { filter = null } }
+                    items(FileKind.entries.filter { (counts[it] ?: 0) > 0 }, key = { it.name }) { k ->
                         FilterChipX("${k.label} ${counts[k]}", filter == k) { filter = if (filter == k) null else k }
                     }
                 }
@@ -160,6 +173,8 @@ fun DownloadsScreen(link: String?, onLinkUsed: () -> Unit, onBack: () -> Unit) {
                     if (all.isEmpty()) "Files you download in any section show up here. Tap Add link to download any link." else null,
                 )
             } else {
+                // Finished files: one card per day, drawn row by row.
+                val days = remember(done) { done.groupBy { dayLabel(it.finishedAt.takeIf { f -> f > 0 } ?: it.createdAt) } }
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp)) {
                     if (active.isNotEmpty()) {
                         item(key = "h-active") {
@@ -174,28 +189,25 @@ fun DownloadsScreen(link: String?, onLinkUsed: () -> Unit, onBack: () -> Unit) {
                         }
                         items(active, key = { "a${it.id}" }) { t -> ActiveCard(t) }
                     }
-                    var lastDay = ""
-                    done.forEach { t ->
-                        val day = dayLabel(t.finishedAt.takeIf { it > 0 } ?: t.createdAt)
-                        if (day != lastDay) {
-                            lastDay = day
-                            item(key = "d$day${t.id}") { ListHeader(day) }
-                        }
-                        item(key = "f${t.id}") { DoneRow(t) }
+                    days.forEach { (day, files) ->
+                        item(key = "d:$day") { ListHeader(day) }
+                        itemsIndexed(files, key = { _, t -> "f${t.id}" }) { i, t -> DoneRow(t, first = i == 0, last = i == files.lastIndex) }
                     }
                 }
             }
         }
+        // Add link: a soft pill at the bottom right.
         ExtendedFloatingActionButton(
             onClick = {
                 addLink = null
                 adding = true
             },
             icon = { Icon(Icons.Rounded.Add, null) },
-            text = { Text("Add link") },
+            text = { Text("Add link", fontSize = 15.sp, fontWeight = FontWeight.Medium) },
+            shape = RoundedCornerShape(50),
             containerColor = cs.primaryContainer,
             contentColor = cs.onPrimaryContainer,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp),
         )
     }
 
@@ -216,64 +228,70 @@ fun DownloadsScreen(link: String?, onLinkUsed: () -> Unit, onBack: () -> Unit) {
 @Composable
 private fun FilterChipX(text: String, selected: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(17.dp)
     Box(
-        Modifier.height(32.dp).clip(RoundedCornerShape(16.dp))
-            .background(if (selected) cs.secondaryContainer else cs.surfaceContainerHigh)
+        Modifier.height(34.dp).clip(shape)
+            .background(if (selected) cs.primaryContainer else cs.paper)
+            .then(if (selected) Modifier else Modifier.border(1.dp, cs.outlineVariant, shape))
             .clickable(onClick = onClick).padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (selected) cs.onSecondaryContainer else cs.onSurface)
+        Text(
+            text, fontSize = 13.5.sp, fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+            color = if (selected) cs.onPrimaryContainer else cs.onSurface, maxLines = 1,
+        )
     }
 }
 
 @Composable
 private fun ListHeader(text: String, action: String? = null, onAction: (() -> Unit)? = null) {
     val cs = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth().padding(start = 4.dp, top = 14.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f))
+    Row(Modifier.fillMaxWidth().padding(start = 4.dp, top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(text, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.weight(1f))
         if (action != null && onAction != null) {
             Text(
-                action, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = cs.primary,
+                action, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = cs.primary,
                 modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onAction).padding(horizontal = 8.dp, vertical = 4.dp),
             )
         }
     }
 }
 
-/** The kind's coloured tile (video red, music violet, docs blue …). */
+/** The kind's soft tile, the same colour everywhere it shows (video red, music violet, docs blue …). */
 @Composable
 fun KindTile(kind: FileKind, size: androidx.compose.ui.unit.Dp = 44.dp) {
     val (icon, tint) = kindLook(kind)
-    Box(Modifier.size(size).clip(RoundedCornerShape(12.dp)).background(tint.copy(alpha = .14f)), contentAlignment = Alignment.Center) {
-        Icon(icon, null, tint = tint, modifier = Modifier.size(24.dp))
+    val light = MaterialTheme.colorScheme.isLight
+    Box(Modifier.size(size).clip(RoundedCornerShape(size * .32f)).background(tint.tile(light)), contentAlignment = Alignment.Center) {
+        Icon(icon, null, tint = tint.ink(light), modifier = Modifier.size(if (size >= 40.dp) 24.dp else 18.dp))
     }
 }
 
-@Composable
-private fun kindLook(kind: FileKind): Pair<ImageVector, Color> = when (kind) {
-    FileKind.VIDEO -> Icons.Rounded.Movie to Color(0xFFDC2626)
-    FileKind.MUSIC -> Icons.Rounded.MusicNote to Color(0xFF7C3AED)
-    FileKind.IMAGE -> Icons.Rounded.Image to Color(0xFFD97706)
-    FileKind.DOCUMENT -> Icons.Rounded.Description to Color(0xFF2563EB)
-    FileKind.APP -> Icons.Rounded.Android to Color(0xFF16A34A)
-    FileKind.OTHER -> Icons.Rounded.FolderZip to MaterialTheme.colorScheme.onSurfaceVariant
+private fun kindLook(kind: FileKind): Pair<ImageVector, Tint> = when (kind) {
+    FileKind.VIDEO -> Icons.Rounded.Movie to Tint.RED
+    FileKind.MUSIC -> Icons.Rounded.MusicNote to Tint.VIOLET
+    FileKind.IMAGE -> Icons.Rounded.Image to Tint.AMBER
+    FileKind.DOCUMENT -> Icons.Rounded.Description to Tint.BLUE
+    FileKind.APP -> Icons.Rounded.Android to Tint.GREEN
+    FileKind.OTHER -> Icons.Rounded.FolderZip to Tint.SLATE
 }
 
 @Composable
 private fun ActiveCard(t: DownloadTask) {
     val cs = MaterialTheme.colorScheme
+    // Each running / waiting download is its own white card (there are only ever a few).
     Column(
-        Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(20.dp)).background(cs.surfaceContainerLow)
+        Modifier.fillMaxWidth().padding(bottom = 12.dp).browserCard()
             .padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            KindTile(t.kind)
+            KindTile(t.kind, 34.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(t.fileName, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val sizeText = if (t.total > 0) "${Files.size(t.downloaded)} of ${Files.size(t.total)}" else Files.size(t.downloaded)
                 val parts = t.parts.size.takeIf { it > 1 }?.let { " · $it parts" }.orEmpty()
-                Text("$sizeText$parts", fontSize = 12.sp, color = cs.onSurfaceVariant, maxLines = 1)
+                Text("$sizeText$parts", fontSize = 12.sp, color = cs.onSurfaceVariant, maxLines = 1, modifier = Modifier.padding(top = 2.dp))
             }
             when (t.state) {
                 DlState.PAUSED -> RoundAction(Icons.Rounded.PlayArrow, "Resume") { Downloads.resume(t) }
@@ -289,10 +307,11 @@ private fun ActiveCard(t: DownloadTask) {
         if (t.total <= 0 && t.state == DlState.RUNNING) {
             LinearProgressIndicator(Modifier.fillMaxWidth().padding(end = 6.dp).height(6.dp).clip(RoundedCornerShape(3.dp)))
         } else {
-            val fill = if (t.state == DlState.RUNNING) cs.primary else cs.outline
+            // One small bar per part: blue while it runs, grey while it waits or is paused.
+            val fill = if (t.state == DlState.RUNNING) cs.primary else cs.onSurfaceVariant.copy(alpha = .5f)
             Row(Modifier.fillMaxWidth().padding(end = 6.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                 (bars.ifEmpty { listOf(if (t.total > 0) t.downloaded.toFloat() / t.total else 0f) }).forEach { f ->
-                    Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)).background(cs.surfaceContainerHighest)) {
+                    Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)).background(cs.outlineVariant)) {
                         Box(Modifier.fillMaxWidth(f.coerceIn(0f, 1f)).height(6.dp).clip(RoundedCornerShape(3.dp)).background(fill))
                     }
                 }
@@ -326,15 +345,16 @@ private fun StatusText(text: String) {
 private fun RoundAction(icon: ImageVector, desc: String, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Box(
-        Modifier.size(40.dp).clip(CircleShape).background(cs.surfaceContainerHighest).clickable(onClick = onClick),
+        Modifier.size(42.dp).clip(CircleShape).background(cs.field).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, desc, tint = cs.onSurface, modifier = Modifier.size(22.dp))
     }
 }
 
+/** A finished file: one row of its day's card ([first] / [last] round the card's corners). */
 @Composable
-private fun DoneRow(t: DownloadTask) {
+private fun DoneRow(t: DownloadTask, first: Boolean, last: Boolean) {
     val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
     var menu by remember { mutableStateOf(false) }
@@ -342,12 +362,13 @@ private fun DoneRow(t: DownloadTask) {
     var deleting by remember { mutableStateOf(false) }
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable { open(context, t) }.padding(vertical = 8.dp, horizontal = 4.dp),
+        modifier = Modifier.fillMaxWidth().cardRow(first, last).clickable { open(context, t) }
+            .heightIn(min = 60.dp).padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
     ) {
-        KindTile(t.kind)
+        KindTile(t.kind, 34.dp)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(t.fileName, fontSize = 15.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(t.fileName, fontSize = 15.sp, lineHeight = 20.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val time = DateUtils.formatDateTime(context, t.finishedAt.takeIf { it > 0 } ?: t.createdAt, DateUtils.FORMAT_SHOW_TIME)
             val source = when {
                 t.incognito -> "Incognito"
@@ -356,8 +377,8 @@ private fun DoneRow(t: DownloadTask) {
             }
             Text(
                 listOf(if (t.total > 0) Files.size(t.total) else "", source, time).filter { it.isNotBlank() }.joinToString(" · "),
-                fontSize = 12.sp, color = if (t.work) MaterialTheme.colorScheme.primary.copy(alpha = .9f) else cs.onSurfaceVariant, maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                fontSize = 12.5.sp, lineHeight = 17.sp, color = if (t.work) MaterialTheme.colorScheme.primary.copy(alpha = .9f) else cs.onSurfaceVariant, maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp),
             )
         }
         Box {
@@ -392,7 +413,7 @@ private fun DoneRow(t: DownloadTask) {
             containerColor = cs.dialogSurface,
             onDismissRequest = { renaming = false },
             title = { Text("Rename") },
-            text = { OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("File name") }) },
+            text = { OutlinedTextField(name, { name = it }, singleLine = true, shape = FieldShape, label = { Text("File name") }) },
             confirmButton = {
                 TextButton(onClick = {
                     renaming = false
@@ -549,7 +570,7 @@ private fun AddLinkDialog(initial: String?, onDismiss: () -> Unit, onDownload: (
                 Spacer(Modifier.height(14.dp))
                 OutlinedTextField(
                     value = text, onValueChange = { text = it; fromClipboard = false }, label = { Text("Link") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    singleLine = true, shape = FieldShape, modifier = Modifier.fillMaxWidth(),
                 )
                 if (fromClipboard) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
@@ -562,7 +583,7 @@ private fun AddLinkDialog(initial: String?, onDismiss: () -> Unit, onDownload: (
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
                         value = name, onValueChange = { name = it; nameEdited = true }, label = { Text("File name") },
-                        singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        singleLine = true, shape = FieldShape, modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(12.dp))
                     LinkFacts(name, info, checking, problem)
@@ -578,6 +599,9 @@ private fun AddLinkDialog(initial: String?, onDismiss: () -> Unit, onDownload: (
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
+
+/** Text fields here: 16 dp corners, like the design's fields. */
+private val FieldShape = RoundedCornerShape(16.dp)
 
 private val LINK = Regex("""https?://[^\s"'<>]+""", RegexOption.IGNORE_CASE)
 
@@ -605,7 +629,7 @@ fun DownloadPromptSheet(req: DownloadRequest, onDismiss: () -> Unit) {
         checking = false
     }
     val kind = FileKind.of(name, info?.mime ?: req.mime.orEmpty())
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.sheet) {
         Column(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 24.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 KindTile(kind)
@@ -618,7 +642,7 @@ fun DownloadPromptSheet(req: DownloadRequest, onDismiss: () -> Unit) {
             Spacer(Modifier.height(16.dp))
             OutlinedTextField(
                 value = name, onValueChange = { name = it; nameEdited = true }, label = { Text("File name") },
-                singleLine = true, modifier = Modifier.fillMaxWidth(),
+                singleLine = true, shape = FieldShape, modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(12.dp))
             // Without a check, the browser's own facts are all there is.
@@ -652,7 +676,7 @@ fun DownloadPromptSheet(req: DownloadRequest, onDismiss: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadSettingsSheet(onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MaterialTheme.colorScheme.sheet) {
         Column(Modifier.padding(bottom = 24.dp)) {
             Text("Download settings", fontSize = 18.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 24.dp, bottom = 8.dp))
             DownloadSettingsRows()

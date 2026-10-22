@@ -84,6 +84,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -315,7 +316,7 @@ fun SpeakerTool(onBack: () -> Unit) {
                         Icon(Icons.AutoMirrored.Rounded.VolumeUp, null, tint = cs.primary, modifier = Modifier.size(70.dp))
                     }
                     Spacer(Modifier.height(16.dp))
-                    Text(if (cleaning) "0:%02d".format(left) else "0:30", fontSize = 48.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = cs.onSurface)
+                    Text(if (cleaning) "0:%02d".format(left) else "0:30", fontSize = 48.sp, fontWeight = FontWeight.Medium, style = TextStyle(fontFeatureSettings = "tnum"), color = cs.onSurface)
                     Text(
                         if (cleaning) "Pushing water out… keep the speaker facing down" else "After rain or a splash",
                         fontSize = 15.sp, color = cs.primary, textAlign = TextAlign.Center,
@@ -334,7 +335,7 @@ fun SpeakerTool(onBack: () -> Unit) {
                 }
                 1 -> {
                     val hz = hzFromSlider(pitch)
-                    Text(if (hz >= 1000) "%.1f kHz".format(hz / 1000) else "${hz.roundToInt()} Hz", fontSize = 48.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = cs.onSurface)
+                    Text(if (hz >= 1000) "%.1f kHz".format(hz / 1000) else "${hz.roundToInt()} Hz", fontSize = 48.sp, fontWeight = FontWeight.Medium, style = TextStyle(fontFeatureSettings = "tnum"), color = cs.onSurface)
                     Spacer(Modifier.height(12.dp))
                     StepSlider(value = pitch, range = 0f..1f, step = 1f / 120f, label = "pitch", onChange = { pitch = it })
                     Spacer(Modifier.height(8.dp))
@@ -760,7 +761,7 @@ private fun Battery() {
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(12.dp))
-        Text(level?.let { "$it%" } ?: "—", fontSize = 56.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = cs.onSurface)
+        Text(level?.let { "$it%" } ?: "—", fontSize = 56.sp, fontWeight = FontWeight.Medium, style = TextStyle(fontFeatureSettings = "tnum"), color = cs.onSurface)
         Text("$status · $plugged", fontSize = 15.sp, color = cs.primary)
         Spacer(Modifier.height(16.dp))
         Card {

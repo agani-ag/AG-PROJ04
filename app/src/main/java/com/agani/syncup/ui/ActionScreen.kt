@@ -1,5 +1,6 @@
 package com.agani.syncup.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -37,7 +38,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -107,23 +107,24 @@ fun ActionScreen(
         ) {
             androidx.compose.foundation.layout.Box(
                 modifier = Modifier
-                    .size(72.dp)
+                    .size(76.dp)
                     .clip(CircleShape)
-                    .then(Modifier),
+                    .background(MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     if (done) Icons.Rounded.CheckCircle else Icons.Rounded.VerifiedUser,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(56.dp),
+                    modifier = Modifier.size(36.dp),
                 )
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(20.dp))
             Text(
                 if (done) "Done" else action.title.ifBlank { "Verification" },
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
+                fontSize = 24.sp,
+                lineHeight = 30.sp,
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onBackground,
                 textAlign = TextAlign.Center,
             )
@@ -146,7 +147,7 @@ fun ActionScreen(
                         textAlign = TextAlign.Center,
                     )
                     Spacer(Modifier.height(20.dp))
-                    Button(onClick = onClose, modifier = Modifier.fillMaxWidth().widthIn(max = 320.dp)) {
+                    Button(onClick = onClose, modifier = Modifier.fillMaxWidth().widthIn(max = 320.dp).height(48.dp)) {
                         Text("Close")
                     }
                 }
@@ -173,7 +174,7 @@ fun ActionScreen(
                     Button(
                         onClick = { submit("") },
                         enabled = !submitting,
-                        modifier = Modifier.fillMaxWidth().widthIn(max = 320.dp),
+                        modifier = Modifier.fillMaxWidth().widthIn(max = 320.dp).height(48.dp),
                     ) { Text(if (submitting) "…" else "Done") }
                 }
 
@@ -191,7 +192,7 @@ fun ActionScreen(
                     Button(
                         onClick = { submit(codeInput) },
                         enabled = !submitting && codeInput.length == len,
-                        modifier = Modifier.fillMaxWidth().widthIn(max = 320.dp),
+                        modifier = Modifier.fillMaxWidth().widthIn(max = 320.dp).height(48.dp),
                     ) { Text(if (submitting) "Submitting…" else "Submit") }
                 }
 
@@ -219,13 +220,13 @@ fun ActionScreen(
                     Button(
                         onClick = { submit("approved") },
                         enabled = !submitting,
-                        modifier = Modifier.fillMaxWidth().widthIn(max = 320.dp),
+                        modifier = Modifier.fillMaxWidth().widthIn(max = 320.dp).height(48.dp),
                     ) { Text(action.params.approveLabel?.ifBlank { "Approve" } ?: "Approve") }
                     Spacer(Modifier.height(12.dp))
                     OutlinedButton(
                         onClick = { submit("rejected") },
                         enabled = !submitting,
-                        modifier = Modifier.fillMaxWidth().widthIn(max = 320.dp),
+                        modifier = Modifier.fillMaxWidth().widthIn(max = 320.dp).height(48.dp),
                     ) {
                         Text(
                             action.params.rejectLabel?.ifBlank { "Reject" } ?: "Reject",
@@ -249,7 +250,7 @@ fun ActionScreen(
             }
             if (!done) {
                 Spacer(Modifier.height(10.dp))
-                TextButton(onClick = onClose) { Text("Cancel", color = Color.Gray) }
+                TextButton(onClick = onClose) { Text("Cancel", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         }
     }
@@ -303,8 +304,9 @@ private fun NoticeContent(
             if (action.title.isNotBlank()) {
                 Text(
                     action.title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 24.sp,
+                    lineHeight = 30.sp,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onBackground,
                     textAlign = TextAlign.Center,
                 )
@@ -360,10 +362,10 @@ private fun NoticeContent(
         Button(
             onClick = onAcknowledge,
             enabled = atBottom && !submitting,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().height(48.dp),
         ) { Text(if (submitting) "…" else "I Acknowledge") }
         TextButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
-            Text("Close", color = Color.Gray)
+            Text("Close", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

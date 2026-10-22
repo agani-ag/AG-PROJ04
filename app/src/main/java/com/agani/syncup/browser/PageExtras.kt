@@ -1,5 +1,6 @@
 package com.agani.syncup.browser
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -56,13 +57,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.agani.syncup.browser.ui.IconTile
 import com.agani.syncup.browser.ui.MenuRow
 import com.agani.syncup.browser.ui.SheetDivider
 import com.agani.syncup.downloads.DownloadRequest
 import com.agani.syncup.downloads.Downloads
 import com.agani.syncup.downloads.Files
 import com.agani.syncup.downloads.KindTile
+import com.agani.syncup.ui.theme.isLight
 
 // ============================================================================ pull to refresh
 /** The round arrow that follows a pull at the top of the page, then spins while the page reloads. */
@@ -109,10 +110,12 @@ fun PressMenuSheet(target: PressTarget, tab: BrowserTab, onAction: (PressAction)
     val image = target.image
     val web = { u: String -> u.startsWith("http://") || u.startsWith("https://") }
     val hideAddress = tab.isWork
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = cs.sheet) {
         Column(Modifier.padding(bottom = 16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp)) {
-                IconTile(if (link != null) Icons.Rounded.Link else Icons.Rounded.Image, container = cs.surfaceContainerHigh, content = cs.onSurfaceVariant, size = 48.dp)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 10.dp)) {
+                Box(Modifier.size(42.dp).clip(RoundedCornerShape(14.dp)).background(cs.field), contentAlignment = Alignment.Center) {
+                    Icon(if (link != null) Icons.Rounded.Link else Icons.Rounded.Image, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                }
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     val title = target.linkText ?: if (link != null) "Link" else imageName(image.orEmpty())
@@ -171,10 +174,12 @@ fun SitePermissionCard(prompt: SitePermissions.Prompt, modifier: Modifier = Modi
         SitePerm.LOCATION in perms -> "know your location"
         else -> "send you notifications"
     }
+    // A card floating over the page: a soft shadow in Light, a thin edge in Dark and Incognito.
     Surface(
         shape = RoundedCornerShape(24.dp),
-        color = cs.surfaceContainerLowest,
-        shadowElevation = 8.dp,
+        color = cs.paper,
+        shadowElevation = if (cs.isLight) 8.dp else 0.dp,
+        border = if (cs.isLight) null else BorderStroke(1.dp, cs.outlineVariant),
         modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp),
     ) {
         Column(Modifier.padding(start = 18.dp, end = 12.dp, top = 18.dp, bottom = 8.dp)) {
@@ -192,10 +197,14 @@ fun SitePermissionCard(prompt: SitePermissions.Prompt, modifier: Modifier = Modi
                     )
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = { SitePermissions.answer(false) }) { Text("Block") }
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { SitePermissions.answer(false) }) { Text("Block", fontSize = 15.sp, fontWeight = FontWeight.Medium) }
                 Spacer(Modifier.width(8.dp))
-                Button(onClick = { SitePermissions.answer(true) }) { Text("Allow") }
+                Button(
+                    onClick = { SitePermissions.answer(true) },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                    modifier = Modifier.height(36.dp),
+                ) { Text("Allow", fontSize = 13.5.sp, fontWeight = FontWeight.Medium) }
             }
         }
     }
@@ -235,7 +244,7 @@ fun DetectedSheet(
     onPlay: ((DetectedFile) -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = cs.sheet) {
         Column(Modifier.padding(bottom = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 20.dp, end = 16.dp, bottom = 6.dp)) {
                 Text("Found on this page · ${files.size}", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.weight(1f))
@@ -250,17 +259,10 @@ fun DetectedSheet(
             LazyColumn(Modifier.heightIn(max = 420.dp)) {
                 items(files, key = { it.url }) { f -> DetectedRow(f, requestFor, onSave, onPlay) }
             }
-            Row(
-                Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                    .background(cs.surfaceContainerHigh).padding(12.dp),
-            ) {
-                Icon(Icons.Rounded.Info, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(16.dp).padding(top = 1.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "Only files the site lets you load. YouTube and protected videos (Netflix, Prime, Hotstar…) can't be downloaded.",
-                    fontSize = 12.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant,
-                )
-            }
+            InfoNote(
+                "Only files the site lets you load. YouTube and protected videos (Netflix, Prime, Hotstar…) can't be downloaded.",
+                Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp),
+            )
         }
     }
 }

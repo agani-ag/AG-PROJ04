@@ -34,14 +34,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.agani.syncup.ui.theme.isLight
 import com.agani.syncup.data.TokenStore
 import com.agani.syncup.forest.FDays
 import com.agani.syncup.sensors.Part
@@ -219,18 +217,20 @@ private fun StepsIntro(onBack: () -> Unit, onAllowed: () -> Unit) {
                 modifier = Modifier.padding(horizontal = 32.dp, vertical = 6.dp),
             )
         }
-        Lab("Your daily goal", t.accent)
+        Lab("Your daily goal")
         Choices(listOf(5000, 8000, 10000, 12000), goal, { it.grouped() }, t, { goal = it })
-        SwitchLine("Nudge me at 6 PM if I'm behind", "One gentle reminder a day", nudge, t.accent, { nudge = it })
+        WCard(Modifier.padding(top = 16.dp)) {
+            SwitchLine("Nudge me at 6 PM if I'm behind", "One gentle reminder a day", nudge, { nudge = it }, icon = { TintIcon(Icons.Rounded.Notifications, t, 42.dp) })
+        }
         Spacer(Modifier.height(20.dp))
         if (refused) {
             Hint("Steps needs the Physical activity permission. You can allow it in SyncUp's settings.", center = true)
-            BigButton("Open settings", t.accent, {
+            BigButton("Open settings", {
                 runCatching { ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             })
         } else {
             Hint("Android will ask you to allow Physical activity.", center = true)
-            BigButton("Allow & start", t.accent, {
+            BigButton("Allow & start", {
                 if (Build.VERSION.SDK_INT >= 29 && ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACTIVITY_RECOGNITION) != PackageManager.PERMISSION_GRANTED) {
                     ask.launch(Manifest.permission.ACTIVITY_RECOGNITION)
                 } else {
@@ -276,19 +276,21 @@ private fun StepsToday(onBack: () -> Unit) {
     val week = days.map { if (it == today) steps else Steps.on(it) }
     val met = steps >= s.goal
     WellPage("Steps", onBack) {
-        Box(Modifier.fillMaxWidth().padding(top = 6.dp), contentAlignment = Alignment.Center) {
-            Ring(steps / s.goal.toFloat(), Color(0xFFF59E0B), t.container) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(steps.grouped(), fontSize = 40.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
-                    Text("of ${s.goal.grouped()} steps", fontSize = 14.sp, color = cs.onSurfaceVariant)
+        WCard(Modifier.padding(top = 4.dp)) {
+            Box(Modifier.fillMaxWidth().padding(top = 18.dp), contentAlignment = Alignment.Center) {
+                Ring(steps / s.goal.toFloat(), t.accent, t.container, size = 184.dp, stroke = 16.dp) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(steps.grouped(), fontSize = 38.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
+                        Text("of ${s.goal.grouped()} steps", fontSize = 14.sp, color = cs.onSurfaceVariant)
+                    }
                 }
             }
+            Text(
+                if (met) "Goal reached — nice walking!" else "${(s.goal - steps).grouped()} to go · about ${Steps.km(steps)} km walked today",
+                fontSize = if (met) 15.sp else 14.sp, fontWeight = if (met) FontWeight.Medium else FontWeight.Normal,
+                color = if (met) t.accent else cs.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 14.dp),
+            )
         }
-        Text(
-            if (met) "Goal reached — nice walking!" else "${(s.goal - steps).grouped()} to go · about ${Steps.km(steps)} km walked today",
-            fontSize = if (met) 16.sp else 14.sp, fontWeight = if (met) FontWeight.Medium else FontWeight.Normal,
-            color = if (met) t.accent else cs.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-        )
         Spacer(Modifier.height(12.dp))
         val past = (1..30).map { Steps.on(FDays.add(today, -it)) }.filter { it > 0 }
         Stats(
@@ -297,11 +299,13 @@ private fun StepsToday(onBack: () -> Unit) {
             "Average" to if (past.isEmpty()) "—" else past.average().roundToInt().grouped(),
         )
         Lab("Last 7 days")
-        Bars(week.map { it.toFloat() }, days.map { weekdayLetter(it) }, s.goal.toFloat(), Color(0xFFF59E0B), Color(if (cs.isLight) 0xFFFDE68A else 0xFF78350F), "Goal ${s.goal.grouped()}", Modifier.padding(horizontal = 20.dp))
+        WCard {
+            Bars(week.map { it.toFloat() }, days.map { weekdayLetter(it) }, s.goal.toFloat(), t.accent, t.accent.copy(alpha = .3f), "Goal ${s.goal.grouped()}", Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
+        }
         Lab("Settings")
         WCard {
             PlusMinusLine("Daily goal", s.goal.grouped(), { Steps.changeSettings(s.copy(goal = (s.goal - 500).coerceAtLeast(1000))) }, { Steps.changeSettings(s.copy(goal = (s.goal + 500).coerceAtMost(40000))) })
-            SwitchLine("6 PM nudge", "Only when you're behind your goal", s.nudge, t.accent, { Steps.changeSettings(s.copy(nudge = it)) }, icon = { TintIcon(Icons.Rounded.Notifications, t) })
+            SwitchLine("6 PM nudge", "Only when you're behind your goal", s.nudge, { Steps.changeSettings(s.copy(nudge = it)) }, icon = { TintIcon(Icons.Rounded.Notifications, t, 42.dp) })
         }
         Hint("Counted while the phone is with you. Signed in, your other phones' steps count too — the higher number for each day.")
     }

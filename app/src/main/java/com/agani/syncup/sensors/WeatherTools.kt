@@ -48,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.agani.syncup.ui.theme.appCard
 import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.math.max
@@ -105,7 +106,7 @@ fun WeatherTool(onBack: () -> Unit) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(20.dp))
             Row(verticalAlignment = Alignment.Bottom) {
-                Text(now?.let { "%.0f".format(it) } ?: "—", fontSize = 64.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = cs.onSurface)
+                Text(now?.let { "%.0f".format(it) } ?: "—", fontSize = 64.sp, fontWeight = FontWeight.Medium, style = TextStyle(fontFeatureSettings = "tnum"), color = cs.onSurface)
                 Text(" hPa", fontSize = 18.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(bottom = 12.dp))
             }
             Text(words, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = color ?: cs.primary, modifier = Modifier.padding(top = 6.dp))
@@ -152,7 +153,7 @@ private fun PressureGraph(history: List<Pair<Long, Float>>, now: Float?, hours: 
     val end = System.currentTimeMillis()
     val start = end - hours * 3_600_000L
     val points = history.filter { it.first >= start } + listOfNotNull(now?.let { end to it })
-    Canvas(modifier.clip(RoundedCornerShape(14.dp)).background(cs.surfaceContainerLow).padding(horizontal = 10.dp, vertical = 12.dp)) {
+    Canvas(modifier.appCard(RoundedCornerShape(16.dp)).padding(horizontal = 10.dp, vertical = 12.dp)) {
         val labelH = 16.dp.toPx()
         val h = size.height - labelH
         if (points.size >= 2 && points.last().first - points.first().first >= 20 * 60_000L) {
@@ -286,12 +287,12 @@ fun ClimateTool(onBack: () -> Unit) {
 private fun BigReading(icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, value: String, label: String, modifier: Modifier) {
     val cs = MaterialTheme.colorScheme
     Column(
-        modifier.clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainerLow).padding(vertical = 20.dp, horizontal = 8.dp),
+        modifier.appCard(RoundedCornerShape(20.dp)).padding(vertical = 20.dp, horizontal = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(icon, null, tint = tint, modifier = Modifier.size(30.dp))
         Spacer(Modifier.height(8.dp))
-        Text(value, fontSize = 34.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = cs.onSurface)
+        Text(value, fontSize = 34.sp, fontWeight = FontWeight.Medium, style = TextStyle(fontFeatureSettings = "tnum"), color = cs.onSurface)
         Text(label, fontSize = 12.5.sp, color = cs.onSurfaceVariant)
     }
 }

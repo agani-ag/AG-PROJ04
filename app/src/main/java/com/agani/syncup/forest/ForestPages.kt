@@ -47,9 +47,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -187,7 +185,6 @@ internal fun TreePage(id: String?, onBack: () -> Unit) {
                     StepSlider(
                         value = v.toFloat(), range = 1f..14f, step = 1f, label = "days", steps = 12,
                         onChange = { v = it.toInt().coerceIn(1, 14) },
-                        colors = SliderDefaults.colors(thumbColor = c.moss, activeTrackColor = c.moss),
                     )
                     Text("Counted from when it was planted. Longer or shorter, it needs about ${minutesText(Tree.needs(Stage.GROWN, v).first)} of calm in all.", fontSize = 12.5.sp, color = c.muted)
                 }
@@ -610,7 +607,6 @@ internal fun WeekPage(onBack: () -> Unit) {
                             ForestStore.changeReminder(on)
                         }
                     },
-                    colors = SwitchDefaults.colors(checkedTrackColor = c.moss, checkedThumbColor = c.onMoss),
                 )
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))

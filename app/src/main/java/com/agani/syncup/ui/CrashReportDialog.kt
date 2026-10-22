@@ -19,9 +19,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.agani.syncup.CrashReporter
+import com.agani.syncup.ui.theme.dialogSurface
 
 /** If the app crashed last run, shows the saved stack trace so it can be screenshotted/shared. */
 @Composable
@@ -32,8 +32,9 @@ fun CrashReportDialog() {
 
     if (show && text != null) {
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.dialogSurface,
             onDismissRequest = { show = false },
-            title = { Text("App crash report", fontWeight = FontWeight.Bold) },
+            title = { Text("App crash report") },
             text = {
                 Box(Modifier.heightIn(max = 360.dp)) {
                     Text(

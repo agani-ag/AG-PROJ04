@@ -1,7 +1,8 @@
 package com.agani.syncup.home
 
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.appCard
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -51,6 +53,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.LibraryPage
+import com.agani.syncup.browser.ui.BadgeTextStyle
 import com.agani.syncup.data.User
 
 /**
@@ -80,12 +83,12 @@ fun YouScreen(
         modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
     ) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(60.dp)) {
-                Text("You", fontSize = 22.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.padding(start = 4.dp))
+        item(key = "top") {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(top = 6.dp, bottom = 4.dp)) {
+                Text("You", fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.padding(start = 4.dp))
             }
         }
-        item {
+        item(key = "account") {
             Group {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -93,26 +96,26 @@ fun YouScreen(
                 ) {
                     Box(
                         contentAlignment = Alignment.Center,
-                        modifier = Modifier.size(52.dp).clip(CircleShape).background(if (user != null) cs.primary else cs.surfaceContainerHigh),
+                        modifier = Modifier.size(56.dp).clip(CircleShape).background(if (user != null) cs.primary else cs.surfaceContainer),
                     ) {
-                        if (user != null) Text(user.name.trim().take(1).uppercase().ifBlank { "?" }, color = cs.onPrimary, fontSize = 20.sp, fontWeight = FontWeight.Medium)
+                        if (user != null) Text(user.name.trim().take(1).uppercase().ifBlank { "?" }, color = cs.onPrimary, fontSize = 22.sp, fontWeight = FontWeight.Medium)
                         else Icon(Icons.Rounded.Person, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(28.dp))
                     }
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         if (user != null) {
-                            Text(user.name, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(user.loginLabel, fontSize = 13.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(user.name, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(user.loginLabel, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
                         } else {
-                            Text("Sign in to SyncUp", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = cs.primary)
-                            Text("Optional — your tabs, to-dos and forest on every phone", fontSize = 13.sp, color = cs.onSurfaceVariant)
+                            Text("Sign in to SyncUp", fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = cs.primary)
+                            Text("Optional — your tabs, to-dos and forest on every phone", fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
                         }
                     }
-                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = cs.onSurfaceVariant)
+                    Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
                 }
             }
         }
-        item {
+        item(key = "mine") {
             Spacer(Modifier.height(12.dp))
             Group {
                 val n = com.agani.syncup.notifications.Inbox.newCount
@@ -133,7 +136,7 @@ fun YouScreen(
                 }
             }
         }
-        item {
+        item(key = "library") {
             Spacer(Modifier.height(12.dp))
             Group {
                 Item(Icons.Rounded.Bookmarks, "Bookmarks") { onLibrary(LibraryPage.BOOKMARKS) }
@@ -144,7 +147,7 @@ fun YouScreen(
                 Item(Icons.Rounded.Download, "Downloads", subtitle = if (running > 0) "$running downloading" else null) { onLibrary(LibraryPage.DOWNLOADS) }
             }
         }
-        item {
+        item(key = "app") {
             Spacer(Modifier.height(12.dp))
             Group {
                 Item(Icons.Rounded.Tune, "Customise Home", subtitle = "Open to Home or Browse · which cards show", onClick = onCustomise)
@@ -152,42 +155,44 @@ fun YouScreen(
                 Item(Icons.Rounded.Settings, "Settings", subtitle = "Sync, app lock, appearance, browser, notifications", onClick = onSettings)
             }
         }
-        item {
-            Text("SyncUp $appVersion", fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(top = 16.dp, start = 4.dp))
+        item(key = "version") {
+            Text("SyncUp $appVersion", fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(top = 14.dp, start = 4.dp))
         }
     }
 }
 
 @Composable
 private fun Group(content: @Composable () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cs.surfaceContainerLowest)
-            .border(1.dp, cs.outlineVariant, RoundedCornerShape(20.dp)),
-    ) { content() }
+    Column(Modifier.fillMaxWidth().appCard(CardShape)) { content() }
 }
 
 @Composable
 private fun Line() {
-    Box(Modifier.fillMaxWidth().padding(start = 54.dp).height(1.dp).background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f)))
+    Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
 }
 
+/** A row: grey icon, title (and a line under it), a red badge, a chevron. */
 @Composable
 private fun Item(icon: ImageVector, title: String, subtitle: String? = null, badge: String? = null, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 13.dp)) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 52.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
         Icon(icon, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(22.dp))
-        Spacer(Modifier.width(16.dp))
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 15.sp, color = cs.onSurface)
-            if (subtitle != null) Text(subtitle, fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, fontSize = 15.sp, lineHeight = 20.sp, color = cs.onSurface)
+            if (subtitle != null) Text(subtitle, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
         }
         if (badge != null) {
-            Text(
-                badge, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = cs.onError,
-                modifier = Modifier.padding(end = 6.dp).clip(RoundedCornerShape(11.dp)).background(cs.error).padding(horizontal = 8.dp, vertical = 2.dp),
-            )
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.padding(start = 8.dp, end = 6.dp).heightIn(min = 20.dp).clip(RoundedCornerShape(50)).background(cs.error).padding(horizontal = 7.dp),
+            ) {
+                Text(badge, style = BadgeTextStyle, fontSize = 11.5.sp, lineHeight = 14.sp, fontWeight = FontWeight.Bold, color = cs.onError)
+            }
         }
-        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = cs.onSurfaceVariant)
+        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
     }
 }

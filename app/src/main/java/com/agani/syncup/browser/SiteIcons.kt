@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.downloads.Downloads
+import com.agani.syncup.ui.theme.isLight
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -257,14 +258,9 @@ object SiteIcons {
     }
 }
 
-private val LETTER_COLORS = listOf(
-    Color(0xFF1B4FD8), Color(0xFF0F766E), Color(0xFFDC2626), Color(0xFF7C3AED),
-    Color(0xFFEA580C), Color(0xFF0891B2), Color(0xFFB45309), Color(0xFF374151),
-)
-
 /**
- * A site's icon for a shortcut tile ([circle] across, icon [iconSize]): the fetched icon, a coloured
- * letter when the site has none, or a faint letter while it loads.
+ * A site's icon for a shortcut tile ([circle] across, icon [iconSize]): the fetched icon, its letter
+ * on a soft tool colour when the site has none, or a faint letter while it loads.
  */
 @Composable
 fun SiteMark(url: String, label: String, circle: Dp = 56.dp, iconSize: Dp = 30.dp) {
@@ -274,11 +270,12 @@ fun SiteMark(url: String, label: String, circle: Dp = 56.dp, iconSize: Dp = 30.d
     val letter = label.trim().take(1).uppercase().ifEmpty { "?" }
     when {
         icon != null -> Image(icon, null, Modifier.size(iconSize).clip(RoundedCornerShape(iconSize * .22f)))
-        host != null && SiteIcons.isMissing(host) -> Box(
-            Modifier.size(circle).clip(CircleShape).background(LETTER_COLORS[(host.hashCode() and 0x7fffffff) % LETTER_COLORS.size]),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(letter, color = Color.White, fontSize = (circle.value * .36f).sp, fontWeight = FontWeight.Medium)
+        host != null && SiteIcons.isMissing(host) -> {
+            val light = MaterialTheme.colorScheme.isLight
+            val tint = Tint.of(host)
+            Box(Modifier.size(circle).clip(CircleShape).background(tint.tile(light)), contentAlignment = Alignment.Center) {
+                Text(letter, color = tint.ink(light), fontSize = (circle.value * .38f).sp, fontWeight = FontWeight.SemiBold)
+            }
         }
         else -> Text(letter, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .45f), fontSize = (circle.value * .32f).sp, fontWeight = FontWeight.Medium)
     }

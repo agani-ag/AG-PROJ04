@@ -56,12 +56,16 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.agani.syncup.browser.ui.BarIcon
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.PillTabs
+import com.agani.syncup.ui.theme.appCard
 
 // ============================================================================ parts of the phone
 /** A part of the phone a tool needs — a sensor, the GPS, the camera… */
@@ -318,7 +322,7 @@ fun AccessCard(title: String, text: String, access: Access, modifier: Modifier =
     val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
     Column(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cs.surfaceContainerLow).padding(20.dp),
+        modifier.fillMaxWidth().appCard(CardShape).padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(title, fontSize = 17.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, textAlign = TextAlign.Center)
@@ -349,7 +353,7 @@ object Sky {
     val light = Color(0xFF0369A1)
     val dark = Color(0xFF7DD3FC)
     val containerLight = Color(0xFFE0F2FE)
-    val containerDark = Color(0xFF0C4A6E)
+    val containerDark = Color(0xFF0E2333)
 }
 
 /** A tool's page: back arrow + title, then [content]. [dark] for the night-style tools. */
@@ -363,9 +367,9 @@ fun ToolPage(
     val cs = MaterialTheme.colorScheme
     Box(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
         Column(Modifier.fillMaxSize()) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 4.dp)) {
                 BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
-                Text(title, fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
+                Text(title, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, modifier = Modifier.weight(1f).padding(start = 4.dp))
                 actions()
             }
             content()
@@ -373,13 +377,13 @@ fun ToolPage(
     }
 }
 
-/** A grey note with an info icon (how to hold the phone, what the number means). */
+/** A soft grey note with an info icon (how to hold the phone, what the number means). */
 @Composable
 fun Note(text: String, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.Top,
-        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cs.surfaceContainerLow).padding(horizontal = 12.dp, vertical = 10.dp),
+        modifier = modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainer).padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
         Icon(Icons.Rounded.Info, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(10.dp))
@@ -387,40 +391,24 @@ fun Note(text: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** Three small numbers side by side ("48 Lowest · 66 Average · 81 Highest"). */
+/** Small numbers side by side, each in its own card: the label, then the value ("Lowest · 48"). */
 @Composable
 fun Stats(vararg items: Pair<String, String>, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = modifier.fillMaxWidth()) {
         items.forEach { (value, label) ->
-            Column(
-                Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(cs.surfaceContainerLow).padding(vertical = 12.dp, horizontal = 6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(value, fontSize = 18.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1)
-                Text(label, fontSize = 12.sp, color = cs.onSurfaceVariant, maxLines = 1)
+            Column(Modifier.weight(1f).appCard(RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 10.dp)) {
+                Text(label, fontSize = 12.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    value, fontSize = 17.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 1.dp),
+                )
             }
         }
     }
 }
 
-/** A row of choice chips ("Ruler | Angle | Tilt"). */
+/** A pill switch between a few choices ("Ruler | Angle | Tilt"). */
 @Composable
-fun Choice(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
-    val cs = MaterialTheme.colorScheme
-    Row(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(cs.surfaceContainerHigh).padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        options.forEachIndexed { i, label ->
-            val on = i == selected
-            Box(
-                Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).background(if (on) cs.primary else Color.Transparent)
-                    .clickable { onSelect(i) }.padding(vertical = 9.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(label, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = if (on) cs.onPrimary else cs.onSurface, maxLines = 1)
-            }
-        }
-    }
-}
+fun Choice(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) =
+    PillTabs(options, selected, onSelect, modifier)

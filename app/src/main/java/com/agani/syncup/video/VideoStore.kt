@@ -18,6 +18,9 @@ object VideoStore {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
 
+    /** The frame already in memory for [uri], or null — safe on the main thread. */
+    fun cached(uri: Uri): Bitmap? = thumbs.get(uri.toString())
+
     /** A small frame of the video at [uri] (content://, file:// or http(s)://), or null. Call off the main thread. */
     fun thumbnail(context: Context, uri: Uri): Bitmap? {
         val key = uri.toString()

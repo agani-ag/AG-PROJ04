@@ -9,11 +9,13 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +28,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -37,12 +40,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MusicOff
@@ -57,6 +59,7 @@ import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -64,7 +67,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -96,19 +98,21 @@ import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.agani.syncup.browser.ui.BarIcon
 import com.agani.syncup.browser.ui.EmptyState
 import com.agani.syncup.browser.ui.PillButton
-import com.agani.syncup.browser.ui.SyncPill
 import com.agani.syncup.data.RadioChannel
+import com.agani.syncup.data.RadioChannelsResponse
 import com.agani.syncup.party.Party
 import com.agani.syncup.party.PartyRole
 import com.agani.syncup.party.rememberPartyStarter
-import com.agani.syncup.ui.theme.isLight
-import com.agani.syncup.data.RadioChannelsResponse
+import com.agani.syncup.ui.theme.PillTabs
+import com.agani.syncup.ui.theme.appCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+
+/** Party's soft pink (the Party button, the "in a party" bar, Play at a party). */
+private val PartyTint = ToolTint.PINK
 
 /**
  * Music: every song on this phone, with shuffle / repeat. Radio (SyncUp's live stations) is its own
@@ -127,19 +131,16 @@ fun MusicScreen(onBack: () -> Unit, onOpenParty: () -> Unit = {}) {
     })
 
     Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
-            BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
-            Text("Music", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
-        }
+        ToolTopBar("Music", onBack)
         Box(Modifier.weight(1f)) {
             SongsTab(player, onOpenPlayer = { nowPlaying = true }, onParty = { songs -> startParty(songs, 0L) }, onOpenParty = onOpenParty)
         }
         AnimatedVisibility(
             visible = player.item != null,
-            enter = slideInVertically { it } + fadeIn(),
-            exit = slideOutVertically { it } + fadeOut(),
+            enter = slideInVertically(tween(220)) { it } + fadeIn(tween(220)),
+            exit = slideOutVertically(tween(180)) { it } + fadeOut(tween(180)),
         ) {
-            MiniPlayer(onOpen = { nowPlaying = true }, modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 12.dp))
+            MiniPlayer(onOpen = { nowPlaying = true }, modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp))
         }
     }
 
@@ -172,16 +173,13 @@ fun RadioScreen(
     val onParty = partyTab || !liveStations
 
     Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
-            BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
-            Text("Radio", fontSize = 22.sp, lineHeight = 28.sp, color = cs.onSurface, modifier = Modifier.weight(1f).padding(start = 4.dp))
-        }
+        ToolTopBar("Radio", onBack)
         if (liveStations) {
-            com.agani.syncup.party.Segmented(
+            PillTabs(
                 listOf("Party", "Live stations"),
                 selected = if (onParty) 0 else 1,
                 onSelect = { onTab(it == 0) },
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp),
             )
         }
         Box(Modifier.weight(1f)) {
@@ -189,17 +187,11 @@ fun RadioScreen(
                 com.agani.syncup.party.PartyTab()
             } else {
                 Column {
-                    Row(
-                        verticalAlignment = Alignment.Top,
-                        modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 10.dp),
-                    ) {
-                        Icon(Icons.Rounded.Info, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(15.dp).padding(top = 2.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "Private broadcasts via this organization's own AudioSync only — not public radio stations.",
-                            fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant,
-                        )
-                    }
+                    NoteBox(
+                        Icons.Rounded.Info,
+                        "Private broadcasts via this organization's own AudioSync only — not public radio stations.",
+                        Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
+                    )
                     if (signedIn) {
                         RadioTab(player, loadStations, onOpenPlayer = { nowPlaying = true })
                     } else {
@@ -214,10 +206,10 @@ fun RadioScreen(
         }
         AnimatedVisibility(
             visible = player.item != null,
-            enter = slideInVertically { it } + fadeIn(),
-            exit = slideOutVertically { it } + fadeOut(),
+            enter = slideInVertically(tween(220)) { it } + fadeIn(tween(220)),
+            exit = slideOutVertically(tween(180)) { it } + fadeOut(tween(180)),
         ) {
-            MiniPlayer(onOpen = { nowPlaying = true }, modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 12.dp))
+            MiniPlayer(onOpen = { nowPlaying = true }, modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp))
         }
     }
 
@@ -282,31 +274,38 @@ private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit, onParty: (L
             }
             // While this phone hosts a party, Music adds to it instead of playing on its own.
             val hosting = Party.role == PartyRole.HOST
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 8.dp)) {
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp)) {
                 if (Party.active) {
                     item(key = "party") {
+                        // In a party: a soft pink bar back to it.
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 6.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                                .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF4C1D95), Color(0xFF7C3AED))))
-                                .clickable(onClick = onOpenParty).padding(start = 12.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                            modifier = Modifier.padding(bottom = 12.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(PartyTint.tile)
+                                .clickable(onClick = onOpenParty).padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                         ) {
-                            Icon(Icons.Rounded.Groups, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Rounded.Groups, null, tint = PartyTint.icon, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(10.dp))
                             Text(
                                 (if (hosting) "You're hosting " else "You're in ") + Party.roomName + " · ${Party.people.size} ${if (Party.people.size == 1) "person" else "people"}",
-                                color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                                color = cs.onSurface, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                             )
-                            Text("Open", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = .2f)).padding(horizontal = 12.dp, vertical = 5.dp))
+                            Text(
+                                "Open", color = PartyTint.onSolid, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(start = 8.dp).clip(RoundedCornerShape(50)).background(PartyTint.icon).padding(horizontal = 14.dp, vertical = 6.dp),
+                            )
                         }
                     }
                 }
                 item(key = "search") {
-                    SyncPill(
-                        modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 4.dp),
-                        height = 48.dp, focused = query.isNotEmpty(),
+                    val pill = RoundedCornerShape(50)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(50.dp).appCard(pill)
+                            .then(if (query.isNotEmpty()) Modifier.border(2.dp, cs.primary, pill) else Modifier)
+                            .padding(start = 16.dp, end = 4.dp),
                     ) {
-                        Icon(Icons.Rounded.Search, null, tint = cs.onSurfaceVariant)
+                        Icon(Icons.Rounded.Search, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
                         BasicTextField(
                             value = query,
                             onValueChange = { query = it },
@@ -324,46 +323,34 @@ private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit, onParty: (L
                         if (query.isNotEmpty()) PillButton(Icons.Rounded.Close, "Clear", size = 40.dp) { query = "" }
                     }
                 }
-                item(key = "actions") {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 8.dp),
-                    ) {
-                        Text(
-                            "${list.size} song${if (list.size == 1) "" else "s"}",
-                            fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.weight(1f),
-                        )
-                        if (list.isNotEmpty() && hosting) {
-                            FilledTonalButton(onClick = { Party.addSongs(list.filterNot { Party.isQueued(it.uri) }) }, contentPadding = PaddingValues(horizontal = 16.dp)) {
-                                Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Add all to party")
-                            }
-                        } else if (list.isNotEmpty() && !Party.active) {
-                            // Play the listed songs at a party: everyone nearby hears them in sync.
-                            OutlinedButton(
-                                onClick = { onParty(list) }, contentPadding = PaddingValues(horizontal = 12.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF7C3AED)),
-                            ) {
-                                Icon(Icons.Rounded.Groups, null, tint = Color(0xFF7C3AED), modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Party", color = Color(0xFF7C3AED))
-                            }
-                            Spacer(Modifier.width(8.dp))
-                            FilledTonalButton(onClick = { player.playSongs(list, 0, shuffled = true) }, contentPadding = PaddingValues(horizontal = 16.dp)) {
-                                Icon(Icons.Rounded.Shuffle, null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Shuffle")
-                            }
-                            Spacer(Modifier.width(8.dp))
-                            Button(onClick = { player.playSongs(list, 0) }, contentPadding = PaddingValues(horizontal = 16.dp)) {
-                                Icon(Icons.Rounded.PlayArrow, null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Play")
+                if (list.isNotEmpty() && (hosting || !Party.active)) {
+                    item(key = "actions") {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                            val small = PaddingValues(horizontal = 10.dp)
+                            if (hosting) {
+                                Button(
+                                    onClick = { Party.addSongs(list.filterNot { Party.isQueued(it.uri) }) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = PartyTint.tile, contentColor = PartyTint.icon),
+                                    contentPadding = small, modifier = Modifier.weight(1f).height(40.dp),
+                                ) { ButtonLabel(Icons.Rounded.Add, "Add all to party") }
+                            } else {
+                                Button(onClick = { player.playSongs(list, 0) }, contentPadding = small, modifier = Modifier.weight(1f).height(40.dp)) {
+                                    ButtonLabel(Icons.Rounded.PlayArrow, "Play")
+                                }
+                                FilledTonalButton(onClick = { player.playSongs(list, 0, shuffled = true) }, contentPadding = small, modifier = Modifier.weight(1f).height(40.dp)) {
+                                    ButtonLabel(Icons.Rounded.Shuffle, "Shuffle")
+                                }
+                                // Play the listed songs at a party: everyone nearby hears them in sync.
+                                Button(
+                                    onClick = { onParty(list) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = PartyTint.tile, contentColor = PartyTint.icon),
+                                    contentPadding = small, modifier = Modifier.weight(1f).height(40.dp),
+                                ) { ButtonLabel(Icons.Rounded.Groups, "Party") }
                             }
                         }
                     }
                 }
+                item(key = "count") { SectionHead("${list.size} song${if (list.size == 1) "" else "s"}") }
                 if (list.isEmpty()) {
                     item(key = "none") {
                         Text(
@@ -373,12 +360,13 @@ private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit, onParty: (L
                     }
                 }
                 itemsIndexed(list, key = { _, s -> s.id }) { index, song ->
+                    val slice = Modifier.cardSlice(first = index == 0, last = index == list.lastIndex)
                     if (hosting) {
                         val queued = Party.isQueued(song.uri)
-                        SongRow(song, current = false, playing = false, partyAdded = queued) { if (!queued) Party.addSongs(listOf(song)) }
+                        SongRow(song, slice, current = false, playing = false, partyAdded = queued) { if (!queued) Party.addSongs(listOf(song)) }
                     } else {
                         val current = song.id == player.songId
-                        SongRow(song, current, playing = current && player.isPlaying) {
+                        SongRow(song, slice, current, playing = current && player.isPlaying) {
                             if (current) onOpenPlayer() else player.playSongs(list, index)
                         }
                     }
@@ -388,26 +376,36 @@ private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit, onParty: (L
     }
 }
 
+/** A pill button's icon + label, sized for the three-across row. */
 @Composable
-private fun SongRow(song: Song, current: Boolean, playing: Boolean, partyAdded: Boolean? = null, onClick: () -> Unit) {
+private fun ButtonLabel(icon: ImageVector, text: String) {
+    Icon(icon, null, modifier = Modifier.size(18.dp))
+    Spacer(Modifier.width(6.dp))
+    Text(text, fontSize = 13.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+}
+
+/** A song: one slice of the list's card ([slice]); the playing one on soft blue. */
+@Composable
+private fun SongRow(song: Song, slice: Modifier, current: Boolean, playing: Boolean, partyAdded: Boolean? = null, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
+        modifier = slice
             .fillMaxWidth()
-            .then(if (current) Modifier.padding(horizontal = 8.dp).clip(RoundedCornerShape(16.dp)).background(cs.primaryContainer.copy(alpha = .55f)) else Modifier)
+            .then(if (current) Modifier.background(cs.primaryContainer) else Modifier)
             .clickable(onClick = onClick)
-            .padding(start = if (current) 12.dp else 20.dp, end = if (current) 12.dp else 20.dp, top = 8.dp, bottom = 8.dp),
+            .heightIn(min = 66.dp)
+            .padding(horizontal = 14.dp, vertical = 9.dp),
     ) {
-        ArtworkTile(song.artUri, radio = false, modifier = Modifier.size(48.dp), radius = 12.dp)
-        Spacer(Modifier.width(16.dp))
+        ArtworkTile(song.artUri, radio = false, modifier = Modifier.size(48.dp), radius = 14.dp)
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 song.title, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium,
                 color = if (current) cs.primary else cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             Text(
-                "${song.artist} · ${formatTime(song.durationMs)}", fontSize = 12.sp, lineHeight = 16.sp,
+                "${song.artist} · ${formatTime(song.durationMs)}", fontSize = 12.5.sp, lineHeight = 17.sp,
                 color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
@@ -419,12 +417,12 @@ private fun SongRow(song: Song, current: Boolean, playing: Boolean, partyAdded: 
         if (partyAdded != null) {
             Spacer(Modifier.width(8.dp))
             Box(
-                Modifier.size(34.dp).clip(CircleShape).background(if (partyAdded) Color(0xFF7C3AED) else Color(0xFFEDE9FE)),
+                Modifier.size(34.dp).clip(CircleShape).background(if (partyAdded) PartyTint.icon else PartyTint.tile),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     if (partyAdded) Icons.Rounded.CheckCircle else Icons.Rounded.Add, if (partyAdded) "In the party" else "Add to party",
-                    tint = if (partyAdded) Color.White else Color(0xFF6D28D9), modifier = Modifier.size(20.dp),
+                    tint = if (partyAdded) PartyTint.onSolid else PartyTint.icon, modifier = Modifier.size(20.dp),
                 )
             }
         }
@@ -457,24 +455,19 @@ private fun RadioTab(player: PlayerHandle, loadStations: suspend () -> Result<Ra
             if (listError != null) "Couldn't load stations" else "No stations on air",
             listError?.let { "Check your connection. Trying again shortly." } ?: "Live stations show up here when they go on air",
         )
-        else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 8.dp)) {
-            item(key = "head") {
-                Text(
-                    "Live stations", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.onSurface,
-                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 8.dp),
-                )
-            }
+        else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
+            item(key = "head") { SectionHead("Live stations", count = stations.size.toString()) }
             if (player.isRadio && player.error != null) {
                 item(key = "error") {
                     Text(
                         player.error.orEmpty(), fontSize = 13.sp, color = cs.error,
-                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+                        modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 8.dp),
                     )
                 }
             }
             itemsIndexed(stations, key = { _, s -> s.id }) { index, station ->
                 val active = station.id == player.stationId
-                StationRow(station, active, playing = active && player.isPlaying) {
+                StationRow(station, Modifier.cardSlice(first = index == 0, last = index == stations.lastIndex), active, playing = active && player.isPlaying) {
                     if (active) onOpenPlayer() else player.playRadio(stations, index)
                 }
             }
@@ -482,27 +475,29 @@ private fun RadioTab(player: PlayerHandle, loadStations: suspend () -> Result<Ra
     }
 }
 
-private val STATION_COLORS = listOf(Color(0xFFE11D48), Color(0xFFF59E0B), Color(0xFF7C3AED), Color(0xFF0891B2), Color(0xFF16A34A), Color(0xFF2563EB))
+/** Stations' letter tiles, each in a soft colour picked from its name. */
+private val STATION_TINTS = listOf(ToolTint.ORANGE, ToolTint.ROSE, ToolTint.VIOLET, ToolTint.CYAN, ToolTint.GREEN, ToolTint.BLUE, ToolTint.AMBER)
 
 @Composable
-private fun StationRow(station: RadioChannel, active: Boolean, playing: Boolean, onClick: () -> Unit) {
+private fun StationRow(station: RadioChannel, slice: Modifier, active: Boolean, playing: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val tint = STATION_COLORS[(station.name.hashCode() and 0x7fffffff) % STATION_COLORS.size]
+    val tint = STATION_TINTS[(station.name.hashCode() and 0x7fffffff) % STATION_TINTS.size]
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
+        modifier = slice
             .fillMaxWidth()
-            .then(if (active) Modifier.padding(horizontal = 8.dp).clip(RoundedCornerShape(16.dp)).background(cs.primaryContainer.copy(alpha = .55f)) else Modifier)
+            .then(if (active) Modifier.background(cs.primaryContainer) else Modifier)
             .clickable(onClick = onClick)
-            .padding(start = if (active) 12.dp else 20.dp, end = if (active) 12.dp else 20.dp, top = 8.dp, bottom = 8.dp),
+            .heightIn(min = 66.dp)
+            .padding(start = 14.dp, end = 16.dp, top = 9.dp, bottom = 9.dp),
     ) {
-        Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(tint), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(tint.tile), contentAlignment = Alignment.Center) {
             Text(
                 station.name.split(' ').filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1) }.uppercase(),
-                fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White,
+                fontSize = 14.sp, fontWeight = FontWeight.Bold, color = tint.icon,
             )
         }
-        Spacer(Modifier.width(16.dp))
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 station.name, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium,
@@ -513,7 +508,7 @@ private fun StationRow(station: RadioChannel, active: Boolean, playing: Boolean,
                     append(station.nowPlaying.ifBlank { "Live radio" })
                     if (station.listeners > 0) append(" · ${station.listeners} listening")
                 },
-                fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
         Spacer(Modifier.width(8.dp))
@@ -525,7 +520,10 @@ private fun StationRow(station: RadioChannel, active: Boolean, playing: Boolean,
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NowPlayingSheet(player: PlayerHandle, onDismiss: () -> Unit, onPlayAtParty: (() -> Unit)? = null) {
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+    ) {
         NowPlaying(player, onPlayAtParty)
     }
 }
@@ -556,7 +554,7 @@ private fun NowPlaying(player: PlayerHandle, onPlayAtParty: (() -> Unit)? = null
                 }
             }
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(20.dp))
         Text(
             player.title.ifBlank { if (radio) "Radio" else "Music" }, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium,
             color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
@@ -566,7 +564,7 @@ private fun NowPlaying(player: PlayerHandle, onPlayAtParty: (() -> Unit)? = null
             player.subtitle, fontSize = 14.sp, lineHeight = 20.sp, color = cs.onSurfaceVariant,
             maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(14.dp))
         if (radio) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(64.dp)) {
                 Icon(Icons.Rounded.GraphicEq, null, tint = cs.primary, modifier = Modifier.size(18.dp))
@@ -576,8 +574,12 @@ private fun NowPlaying(player: PlayerHandle, onPlayAtParty: (() -> Unit)? = null
         } else {
             SeekBar(player)
         }
-        Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceEvenly, modifier = Modifier.fillMaxWidth()) {
+        Spacer(Modifier.height(6.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = if (radio) Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally) else Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             if (!radio) {
                 ModeButton(Icons.Rounded.Shuffle, if (player.shuffle) "Shuffle on" else "Shuffle off", player.shuffle) { player.updateShuffle(!player.shuffle) }
             }
@@ -585,7 +587,7 @@ private fun NowPlaying(player: PlayerHandle, onPlayAtParty: (() -> Unit)? = null
                 Icon(Icons.Rounded.SkipPrevious, if (radio) "Previous station" else "Previous song", modifier = Modifier.size(36.dp))
             }
             Box(
-                Modifier.size(72.dp).clip(RoundedCornerShape(24.dp)).background(cs.primary).clickable { player.toggle() },
+                Modifier.size(74.dp).clip(RoundedCornerShape(26.dp)).background(cs.primary).clickable { player.toggle() },
                 contentAlignment = Alignment.Center,
             ) {
                 if (player.buffering) {
@@ -629,16 +631,16 @@ private fun NowPlaying(player: PlayerHandle, onPlayAtParty: (() -> Unit)? = null
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 18.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                    .background(Color(0xFFEDE9FE).copy(alpha = if (cs.isLight) 1f else .2f)).clickable(onClick = onPlayAtParty).padding(14.dp),
+                modifier = Modifier.padding(top = 18.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp))
+                    .background(PartyTint.tile).clickable(onClick = onPlayAtParty).padding(14.dp),
             ) {
-                Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF6D28D9)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Groups, null, tint = Color.White)
+                Box(Modifier.size(42.dp).clip(RoundedCornerShape(14.dp)).background(PartyTint.icon), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Groups, null, tint = PartyTint.onSolid)
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Play at a party", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = if (cs.isLight) Color(0xFF2E1065) else Color(0xFFDDD6FE))
-                    Text("Everyone nearby hears this, from ${formatTime(at)}", fontSize = 12.5.sp, color = cs.onSurfaceVariant)
+                    Text("Play at a party", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
+                    Text("Everyone nearby hears this, from ${formatTime(at)}", fontSize = 12.5.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
                 }
             }
         }
@@ -652,8 +654,8 @@ private fun ModeButton(icon: ImageVector, description: String, on: Boolean, onCl
     IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(icon, description, tint = if (on) cs.primary else cs.onSurfaceVariant)
-            Spacer(Modifier.height(3.dp))
-            Box(Modifier.size(4.dp).clip(CircleShape).background(if (on) cs.primary else Color.Transparent))
+            Spacer(Modifier.height(4.dp))
+            Box(Modifier.size(5.dp).clip(CircleShape).background(if (on) cs.primary else Color.Transparent))
         }
     }
 }
@@ -684,7 +686,7 @@ private fun SeekBar(player: PlayerHandle) {
                 dragging = null
             },
             enabled = duration > 0,
-            colors = SliderDefaults.colors(inactiveTrackColor = cs.surfaceContainerHighest),
+            colors = SliderDefaults.colors(inactiveTrackColor = cs.outlineVariant),
             modifier = Modifier.height(32.dp),
         )
         Row(Modifier.fillMaxWidth()) {

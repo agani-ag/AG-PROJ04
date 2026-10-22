@@ -8,10 +8,10 @@ import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.media.AudioManager
 import android.net.Uri
-import android.provider.Settings
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.Rational
 import android.view.WindowManager
 import android.widget.Toast
@@ -28,6 +28,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -44,6 +45,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -52,7 +54,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -62,24 +64,24 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AspectRatio
+import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.BrightnessMedium
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ClosedCaption
+import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.HighlightOff
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material.icons.rounded.Subtitles
-import androidx.compose.material.icons.rounded.Bluetooth
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Forward10
-import androidx.compose.material.icons.rounded.HighlightOff
-import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PanTool
+import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Replay10
+import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -87,18 +89,15 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -131,10 +130,10 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
-import androidx.media3.common.TrackSelectionOverride
-import androidx.media3.common.Tracks
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -146,12 +145,19 @@ import androidx.media3.ui.PlayerView
 import com.agani.syncup.BuildConfig
 import com.agani.syncup.browser.ui.StepSlider
 import com.agani.syncup.downloads.Downloads
+import com.agani.syncup.music.SectionHead
+import com.agani.syncup.music.ToolTile
+import com.agani.syncup.music.ToolTint
+import com.agani.syncup.music.cardSlice
+import com.agani.syncup.video.SeekLine
 import com.agani.syncup.video.SoundEffects
 import com.agani.syncup.video.SoundPanel
+import com.agani.syncup.video.VideoSeekBar
 import com.agani.syncup.video.VideoSound
-import kotlinx.coroutines.delay
+import com.agani.syncup.video.playerScheme
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 
 private val Rose = Color(0xFFE11D48)
 private val RoseDark = Color(0xFFBE123C)
@@ -190,7 +196,7 @@ class WatchPartyActivity : ComponentActivity() {
         effects = fx
         WatchParty.playerOpen = true
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme(primary = Rose, secondaryContainer = Color(0xFF3F1D2B))) {
+            MaterialTheme(colorScheme = playerScheme(Rose)) {
                 LaunchedEffect(VideoSound.boost, VideoSound.style) { fx.apply(VideoSound.boost, VideoSound.style) }
                 WatchScreen(exo, inPip, visible = { lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) }, onBack = { finish() }, onPip = { enterPip() })
             }
@@ -722,12 +728,12 @@ private fun WatchScreen(exo: ExoPlayer, inPip: Boolean, visible: () -> Boolean, 
             }
         }
     } else {
-        // Upright: the video, then the party panel.
-        Column(Modifier.fillMaxSize().background(Color(0xFF0B0F17)).windowInsetsPadding(WindowInsets.safeDrawing)) {
+        // Upright: the video, then the party panel (dark, like the player).
+        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).windowInsetsPadding(WindowInsets.safeDrawing)) {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
                 Video(Modifier.fillMaxSize())
                 androidx.compose.animation.AnimatedVisibility(visible = showControls, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
-                    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .3f))) {
+                    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .28f))) {
                         RoundIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", 24, Modifier.align(Alignment.TopStart).padding(4.dp), onClick = onBack)
                         Box(Modifier.align(Alignment.TopEnd).padding(4.dp)) { MoreMenu() }
                         if (host && WatchParty.stage != WpStage.PREPARING) {
@@ -740,8 +746,8 @@ private fun WatchScreen(exo: ExoPlayer, inPip: Boolean, visible: () -> Boolean, 
                                 Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "Pause" else "Play", tint = Color.White, modifier = Modifier.size(34.dp))
                             }
                         }
-                        Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 10.dp, end = 2.dp)) {
-                            Box(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 12.dp, end = 4.dp, bottom = 4.dp)) {
+                            Box(Modifier.weight(1f).padding(bottom = 4.dp)) {
                                 SeekRow(host, shownPos, duration, onSeek = { seeking = it; lastTouch = System.currentTimeMillis() }, onSeekDone = {
                                     seeking?.let { WatchParty.seekTo((it * duration).toLong()) }
                                     seeking = null
@@ -752,45 +758,45 @@ private fun WatchScreen(exo: ExoPlayer, inPip: Boolean, visible: () -> Boolean, 
                     }
                 }
             }
-            LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.weight(1f)) {
-                item {
-                    Text(WatchParty.current?.title ?: "Nothing playing", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    SyncLine(Modifier.padding(top = 4.dp))
+            val next = WatchParty.upNext
+            LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 24.dp), modifier = Modifier.weight(1f)) {
+                item(key = "title") {
+                    Text(WatchParty.current?.title ?: "Nothing playing", color = MaterialTheme.colorScheme.onSurface, fontSize = 17.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    SyncLine(Modifier.padding(top = 4.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                item { com.agani.syncup.group.GroupBar() }
-                item {
+                item(key = "group") { com.agani.syncup.group.GroupBar(Modifier.padding(top = 12.dp)) }
+                item(key = "chips") {
                     // Wraps onto a second line on a narrow phone.
-                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Chip(Icons.AutoMirrored.Rounded.VolumeUp, if (VideoSound.boost > 100) "Sound · ${VideoSound.boost}%" else "Sound") { soundOpen = true }
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 12.dp),
+                    ) {
+                        PanelChip(Icons.AutoMirrored.Rounded.VolumeUp, if (VideoSound.boost > 100) "Sound · ${VideoSound.boost}%" else "Sound") { soundOpen = true }
                         if (!host) {
-                            Chip(Icons.Rounded.PanTool, "Ask to pause") { WatchParty.askToPause() }
-                            Chip(Icons.Rounded.Bluetooth, "Sync adjust") { adjustOpen = true }
+                            PanelChip(Icons.Rounded.PanTool, "Ask to pause") { WatchParty.askToPause() }
+                            PanelChip(Icons.Rounded.Bluetooth, "Sync adjust") { adjustOpen = true }
                         }
-                        Chip(Icons.Rounded.Subtitles, "Subtitles") { dialog = "subs" }
-                        Chip(Icons.Rounded.Fullscreen, "Full screen") { enterFull() }
+                        PanelChip(Icons.Rounded.Subtitles, "Subtitles") { dialog = "subs" }
+                        PanelChip(Icons.Rounded.Fullscreen, "Full screen") { enterFull() }
                     }
                 }
-                item { ReactionBar() }
-                item {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Up next", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                        if (host) Chip(Icons.Rounded.Add, "Add videos") { addOpen = true }
-                    }
+                item(key = "react") { ReactionBar(Modifier.padding(top = 12.dp), onVideo = false) }
+                item(key = "next-head") {
+                    SectionHead("Up next", action = if (host) ({ PanelChip(Icons.Rounded.Add, "Add videos") { addOpen = true } }) else null)
                 }
-                val next = WatchParty.upNext
-                if (next.isEmpty()) item { Text(if (host) "Nothing queued. Add more videos from this phone." else "Nothing queued yet.", color = Color(0xFF94A3B8), fontSize = 13.sp) }
-                items(next, key = { it.id }) { v ->
-                    QueueRow(v, onPlay = if (host) ({ WatchParty.playNow(v.id) }) else null, onRemove = if (host) ({ WatchParty.removeFromQueue(v.id) }) else null)
+                if (next.isEmpty()) item(key = "next-none") { Text(if (host) "Nothing queued. Add more videos from this phone." else "Nothing queued yet.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp)) }
+                itemsIndexed(next, key = { _, v -> v.id }) { i, v ->
+                    QueueRow(v, first = i == 0, last = i == next.lastIndex, onPlay = if (host) ({ WatchParty.playNow(v.id) }) else null, onRemove = if (host) ({ WatchParty.removeFromQueue(v.id) }) else null)
                 }
-                item {
+                item(key = "hint") {
                     Text(
                         "Everyone sets their own sound — volume, boost and style on their own phone.",
-                        color = Color(0xFF94A3B8), fontSize = 12.5.sp, lineHeight = 17.sp, modifier = Modifier.padding(top = 4.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 16.sp, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 12.dp),
                     )
                 }
-                item {
-                    if (host) OutlinedButton(onClick = { confirmEnd = true }, modifier = Modifier.fillMaxWidth().height(46.dp)) { Text("End the group", color = Color(0xFFFDA4AF)) }
-                    else OutlinedButton(onClick = { WatchParty.leave() }, modifier = Modifier.fillMaxWidth().height(46.dp)) { Text("Leave", color = Color.White) }
+                item(key = "end") {
+                    if (host) OutlinedButton(onClick = { confirmEnd = true }, modifier = Modifier.padding(top = 20.dp).fillMaxWidth().height(46.dp)) { Text("End the group", color = Color(0xFFFDA4AF)) }
+                    else OutlinedButton(onClick = { WatchParty.leave() }, modifier = Modifier.padding(top = 20.dp).fillMaxWidth().height(46.dp)) { Text("Leave", color = MaterialTheme.colorScheme.onSurface) }
                 }
             }
         }
@@ -831,13 +837,14 @@ private fun WatchScreen(exo: ExoPlayer, inPip: Boolean, visible: () -> Boolean, 
             Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 24.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Up next", fontSize = 20.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                    Button(onClick = { upNextOpen = false; addOpen = true }, colors = ButtonDefaults.buttonColors(containerColor = Rose)) { Text("Add videos", color = Color.White) }
+                    Button(onClick = { upNextOpen = false; addOpen = true }, colors = ButtonDefaults.buttonColors(containerColor = Rose, contentColor = Color.White)) { Text("Add videos") }
                 }
                 val next = WatchParty.upNext
                 if (next.isEmpty()) Text("Nothing queued. When this video ends, the party pauses.", fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
                 else Text("Tap a video to play it now.", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp, bottom = 4.dp))
-                next.forEach { v ->
-                    QueueRow(v, onPlay = { upNextOpen = false; WatchParty.playNow(v.id) }) { WatchParty.removeFromQueue(v.id) }
+                Spacer(Modifier.height(6.dp))
+                next.forEachIndexed { i, v ->
+                    QueueRow(v, first = i == 0, last = i == next.lastIndex, onPlay = { upNextOpen = false; WatchParty.playNow(v.id) }) { WatchParty.removeFromQueue(v.id) }
                 }
             }
         }
@@ -951,7 +958,7 @@ private fun TopBar(onBack: () -> Unit, onGroup: () -> Unit, modifier: Modifier, 
 }
 
 @Composable
-private fun SyncLine(modifier: Modifier = Modifier) {
+private fun SyncLine(modifier: Modifier = Modifier, color: Color = Color.White.copy(alpha = .85f)) {
     val err = WatchParty.syncErrorMs
     val others = (WatchParty.people.size - 1).coerceAtLeast(0)
     val (dot, text) = when {
@@ -966,8 +973,8 @@ private fun SyncLine(modifier: Modifier = Modifier) {
     }
     Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
-        Spacer(Modifier.width(6.dp))
-        Text(text, color = Color.White.copy(alpha = .85f), fontSize = 12.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.width(7.dp))
+        Text(text, color = color, fontSize = 12.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -994,18 +1001,11 @@ private fun PeopleLine() {
 
 @Composable
 private fun SeekRow(host: Boolean, pos: Long, duration: Long, onSeek: (Float) -> Unit, onSeekDone: () -> Unit) {
+    val fraction = if (duration > 0) pos.toFloat() / duration else 0f
     Column {
-        if (host) {
-            Slider(
-                value = if (duration > 0) (pos.toFloat() / duration).coerceIn(0f, 1f) else 0f,
-                onValueChange = onSeek, onValueChangeFinished = onSeekDone,
-                colors = SliderDefaults.colors(thumbColor = Rose, activeTrackColor = Rose, inactiveTrackColor = Color.White.copy(alpha = .3f)),
-            )
-        } else {
-            Box(Modifier.padding(vertical = 14.dp).fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = .3f))) {
-                Box(Modifier.fillMaxWidth(if (duration > 0) (pos.toFloat() / duration).coerceIn(0f, 1f) else 0f).height(4.dp).background(Rose))
-            }
-        }
+        // The host moves everyone; a guest just sees where the video is.
+        if (host) VideoSeekBar(fraction, onSeek = onSeek, onSeekDone = onSeekDone)
+        else SeekLine(fraction, Modifier.padding(vertical = 14.dp))
         Row(Modifier.fillMaxWidth()) {
             Text(fmt(pos), color = Color.White, fontSize = 12.sp, modifier = Modifier.weight(1f))
             Text(if (duration > 0) fmt(duration) else "", color = Color.White, fontSize = 12.sp)
@@ -1045,11 +1045,21 @@ private fun ReadyRow(name: String, pct: Int) {
     }
 }
 
+/** The reactions: one pill — a card in the panel, see-through over the video. */
 @Composable
-private fun ReactionBar() {
-    Row(Modifier.clip(RoundedCornerShape(17.dp)).background(Color.White.copy(alpha = .14f)).padding(horizontal = 4.dp)) {
+private fun ReactionBar(modifier: Modifier = Modifier, onVideo: Boolean = true) {
+    val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(22.dp)
+    Row(
+        modifier.clip(shape)
+            .then(if (onVideo) Modifier.background(Color.White.copy(alpha = .14f)) else Modifier.background(cs.surfaceContainerLowest).border(1.dp, cs.outlineVariant, shape))
+            .padding(horizontal = if (onVideo) 4.dp else 6.dp, vertical = if (onVideo) 0.dp else 2.dp),
+    ) {
         WatchParty.EMOJI.forEach { e ->
-            Box(Modifier.size(36.dp).clip(CircleShape).clickable { WatchParty.react(e) }, contentAlignment = Alignment.Center) { Text(e, fontSize = 18.sp) }
+            Box(
+                Modifier.size(width = if (onVideo) 36.dp else 40.dp, height = if (onVideo) 36.dp else 38.dp).clip(CircleShape).clickable { WatchParty.react(e) },
+                contentAlignment = Alignment.Center,
+            ) { Text(e, fontSize = if (onVideo) 18.sp else 19.sp) }
         }
     }
 }
@@ -1074,24 +1084,41 @@ private fun Reactions(modifier: Modifier) {
     }
 }
 
+/** A video in Up next — one slice of the queue's card; tap plays it now (host). */
 @Composable
-private fun QueueRow(v: WatchVideo, onPlay: (() -> Unit)? = null, onRemove: (() -> Unit)?) {
+private fun QueueRow(v: WatchVideo, first: Boolean, last: Boolean, onPlay: (() -> Unit)? = null, onRemove: (() -> Unit)?) {
+    val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).then(if (onPlay != null) Modifier.clickable(onClick = onPlay) else Modifier).padding(vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth().cardSlice(first, last).then(if (onPlay != null) Modifier.clickable(onClick = onPlay) else Modifier)
+            .heightIn(min = 64.dp).padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
     ) {
-        Box(Modifier.size(width = 64.dp, height = 38.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF334155)), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.PlayArrow, null, tint = Color.White, modifier = Modifier.size(18.dp))
-        }
+        ToolTile(Icons.Rounded.PlayArrow, ToolTint.ROSE, size = 46.dp, iconSize = 22.dp)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(v.title, color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(v.title, color = cs.onSurface, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 listOfNotNull(v.durationMs.takeIf { it > 0 }?.let { fmt(it) }, if (v.isLink) "video link" else "from ${v.addedBy}'s phone").joinToString(" · "),
-                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp,
+                color = cs.onSurfaceVariant, fontSize = 12.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp),
             )
         }
-        if (onRemove != null) RoundIcon(Icons.Rounded.Close, "Remove", 20, tint = MaterialTheme.colorScheme.onSurfaceVariant, onClick = onRemove)
+        if (onRemove != null) RoundIcon(Icons.Rounded.Close, "Remove", 20, tint = cs.onSurfaceVariant, onClick = onRemove)
+    }
+}
+
+/** A chip in the panel under the video: an outlined dark pill with an icon. */
+@Composable
+private fun PanelChip(icon: ImageVector, label: String, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.height(36.dp).clip(shape).background(cs.surfaceContainerLowest).border(1.dp, cs.outlineVariant, shape)
+            .clickable(onClick = onClick).padding(horizontal = 12.dp),
+    ) {
+        Icon(icon, null, tint = cs.onSurface, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(label, color = cs.onSurface, fontSize = 13.sp, maxLines = 1)
     }
 }
 

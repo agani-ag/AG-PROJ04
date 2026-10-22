@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Tab
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -186,9 +187,10 @@ internal fun TabSwitcher(
                     )
                 }
 
+                HorizontalDivider(thickness = 1.dp, color = cs.outlineVariant)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().height(72.dp).background(cs.surfaceContainer).padding(horizontal = 12.dp),
+                    modifier = Modifier.fillMaxWidth().height(72.dp).background(cs.bar).padding(horizontal = 12.dp),
                 ) {
                     val closable = !lockedWork && tabs.cardsIn(shown).any { !it.isHome }
                     // One SyncUp link: one tab is all there can be, so nothing new to open on that side.
@@ -205,7 +207,7 @@ internal fun TabSwitcher(
                     }
                     if (direct == null && !lockedWork) {
                         Box(
-                            Modifier.size(56.dp).clip(RoundedCornerShape(20.dp)).background(cs.primary).clickable {
+                            Modifier.size(56.dp).clip(CircleShape).background(cs.primary).clickable {
                                 tabs.newTab(shown)
                                 onClose()
                             },
@@ -385,7 +387,7 @@ private fun LinkPagesSheet(
     val head = pages.first()
     val name = head.workName ?: "SyncUp link"
     val onScreen = tabs.activeTab(Section.WORK)?.id
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = cs.sheet) {
         Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 12.dp)) {
                 val link = head.workLinkId?.let { KnownLinks.byId[it] }
@@ -476,23 +478,23 @@ private fun TabCard(
     onPages: () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(22.dp)
     val color = sketchColor(t)
     val stacked = pages > 1
     // Every card keeps the same 10 dp above it so rows line up; a link with more pages shows two
     // pages stacked behind its card there.
     Box(Modifier.height(214.dp)) {
     if (stacked) {
-        val top = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+        val top = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)
         Box(Modifier.align(Alignment.TopCenter).padding(horizontal = 16.dp).fillMaxWidth().height(24.dp).clip(top).background(cs.surfaceContainerHigh))
         Box(Modifier.align(Alignment.TopCenter).padding(start = 8.dp, end = 8.dp, top = 5.dp).fillMaxWidth().height(24.dp).clip(top).background(cs.surfaceContainerHighest))
     }
+    // A white card; the tab on screen has a ring in its section's colour.
     Column(
         Modifier
             .padding(top = 10.dp)
             .height(204.dp)
-            .clip(shape)
-            .background(cs.surfaceContainerLow)
+            .browserCard(shape)
             .then(if (current) Modifier.border(2.5.dp, cs.primary, shape) else Modifier)
             .clickable(onClick = onSelect),
     ) {
@@ -526,12 +528,14 @@ private fun TabCard(
                 Icon(Icons.Rounded.Close, if (stacked) "Close ${t.label} and its pages" else "Close tab", modifier = Modifier.size(18.dp), tint = cs.onSurfaceVariant)
             }
         }
+        val page = RoundedCornerShape(14.dp)
         Box(
             Modifier
                 .fillMaxSize()
                 .padding(start = 8.dp, end = 8.dp, bottom = 8.dp, top = if (current) 8.dp else 0.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(if (t.isHome) cs.surfaceContainerLowest else Color.White),
+                .clip(page)
+                .background(if (t.isHome) cs.surface else Color.White)
+                .border(1.dp, cs.outlineVariant, page),
         ) {
             val thumb = t.thumbnail
             when {
@@ -604,12 +608,12 @@ private fun NewTabCard(label: String, onClick: () -> Unit) {
     Column(
         Modifier
             .height(204.dp)
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(22.dp))
             .drawBehind {
                 drawRoundRect(
                     color = outline,
                     style = Stroke(width = 2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 10f))),
-                    cornerRadius = CornerRadius(20.dp.toPx()),
+                    cornerRadius = CornerRadius(22.dp.toPx()),
                 )
             }
             .clickable(onClick = onClick),
@@ -656,7 +660,7 @@ private fun SectionSwitch(
         ) {
             sections.forEach { s ->
                 val sel = s == shown
-                val width by animateDpAsState(if (sel) wide else compact, tween(260), label = "segment")
+                val width by animateDpAsState(if (sel) wide else compact, tween(220), label = "segment")
                 SectionSegment(s, sel, locked(s), count(s), width) { onPick(s) }
             }
         }
@@ -688,8 +692,8 @@ private fun SectionSegment(section: Section, selected: Boolean, locked: Boolean,
             Icon(sectionIcon(section), null, tint = fg, modifier = Modifier.size(20.dp))
             AnimatedVisibility(
                 visible = selected,
-                enter = fadeIn(tween(180, delayMillis = 90)) + expandHorizontally(tween(260), expandFrom = Alignment.Start),
-                exit = fadeOut(tween(90)) + shrinkHorizontally(tween(260), shrinkTowards = Alignment.Start),
+                enter = fadeIn(tween(150, delayMillis = 70)) + expandHorizontally(tween(220), expandFrom = Alignment.Start),
+                exit = fadeOut(tween(90)) + shrinkHorizontally(tween(220), shrinkTowards = Alignment.Start),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Spacer(Modifier.width(8.dp))
@@ -738,8 +742,7 @@ private fun OtherDevicesCard(devices: List<OtherDevice>, onOpen: (String) -> Uni
         Modifier
             .fillMaxWidth()
             .padding(top = 8.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(cs.surfaceContainerLow)
+            .browserCard()
             .padding(vertical = 8.dp),
     ) {
         Text(

@@ -439,8 +439,11 @@ object BrowserSync {
             "setting/search_engine" -> d.str("value")?.let { BrowserSettings.applySyncedSearchEngine(it) }
             "setting/block_popups" -> d.bool("value")?.let { BrowserSettings.applySyncedBlockPopups(it) }
             "setting/theme" -> d.str("value")?.let { v ->
-                runCatching { ThemeMode.valueOf(v) }.getOrNull()?.let { mode ->
-                    AppPrefs(app).setThemeMode(mode)
+                runCatching { ThemeMode.valueOf(v) }.getOrNull()?.let { synced ->
+                    // An older phone may still send System or Black: only Light / Dark here.
+                    val prefs = AppPrefs(app)
+                    val mode = prefs.normalize(synced)
+                    prefs.setThemeMode(mode)
                     onRemoteTheme?.invoke(mode)
                 }
             }

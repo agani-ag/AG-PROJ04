@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,7 +35,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -46,7 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -56,13 +56,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.agani.syncup.ui.theme.isLight
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /**
  * Compact "now playing" bar: shown on the Normal home page and at the foot of Music while a song
- * or station is loaded. Tap opens the player; play / pause, next song, ✕ stops.
+ * or station is loaded. Tap opens the player; play / pause, next song, ✕ stops. A floating white
+ * card (a soft shadow in Light, a thin line in Dark).
  */
 @Composable
 fun MiniPlayer(onOpen: () -> Unit, modifier: Modifier = Modifier) {
@@ -81,16 +83,20 @@ fun MiniPlayer(onOpen: () -> Unit, modifier: Modifier = Modifier) {
         }
     }
 
-    Surface(
-        color = cs.surfaceContainerHighest,
-        shape = RoundedCornerShape(20.dp),
-        shadowElevation = 6.dp,
-        modifier = modifier.fillMaxWidth().height(64.dp).clickable(onClick = onOpen),
+    val shape = RoundedCornerShape(22.dp)
+    Box(
+        modifier.fillMaxWidth().height(66.dp)
+            .then(
+                if (cs.isLight) Modifier.shadow(10.dp, shape, ambientColor = Color(0x290F172A), spotColor = Color(0x290F172A))
+                else Modifier.border(1.dp, cs.outlineVariant, shape),
+            )
+            .clip(shape).background(cs.surfaceContainerLowest)
+            .clickable(onClick = onOpen),
     ) {
         Box {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxSize().padding(start = 10.dp, end = 4.dp)) {
-                ArtworkTile(player.artUri, radio, Modifier.size(44.dp), radius = 12.dp)
-                Spacer(Modifier.width(12.dp))
+                ArtworkTile(player.artUri, radio, Modifier.size(44.dp), radius = 13.dp)
+                Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -125,7 +131,7 @@ fun MiniPlayer(onOpen: () -> Unit, modifier: Modifier = Modifier) {
                 }
             }
             if (!radio) {
-                Box(Modifier.align(Alignment.BottomStart).padding(horizontal = 20.dp).fillMaxWidth().height(2.dp).clip(CircleShape).background(cs.outlineVariant.copy(alpha = .5f))) {
+                Box(Modifier.align(Alignment.BottomStart).padding(horizontal = 22.dp).fillMaxWidth().height(2.dp).clip(CircleShape).background(cs.outlineVariant)) {
                     Box(Modifier.fillMaxWidth(progress).fillMaxHeight().background(cs.primary))
                 }
             }
@@ -133,14 +139,15 @@ fun MiniPlayer(onOpen: () -> Unit, modifier: Modifier = Modifier) {
     }
 }
 
-private val ART_COLORS = listOf(
-    Color(0xFF7C3AED), Color(0xFFDB2777), Color(0xFF2563EB), Color(0xFF0891B2),
-    Color(0xFF16A34A), Color(0xFFEA580C), Color(0xFFDC2626), Color(0xFF4F46E5),
+/** Songs without cover art get a soft tile, its colour picked from the song. */
+private val ART_TINTS = listOf(
+    ToolTint.VIOLET, ToolTint.AMBER, ToolTint.TEAL, ToolTint.SKY,
+    ToolTint.ROSE, ToolTint.GREEN, ToolTint.INDIGO, ToolTint.PINK,
 )
 
 /**
- * Cover art for a song (from MediaStore), or a coloured tile with a note / radio glyph when there's
- * none. Loads off the main thread and reuses [Artwork]'s cache.
+ * Cover art for a song (from MediaStore), or a soft coloured tile with a note / radio glyph when
+ * there's none. Loads off the main thread and reuses [Artwork]'s cache.
  */
 @Composable
 internal fun ArtworkTile(uri: Uri?, radio: Boolean, modifier: Modifier, radius: Dp, large: Boolean = false) {
@@ -150,25 +157,23 @@ internal fun ArtworkTile(uri: Uri?, radio: Boolean, modifier: Modifier, radius: 
         if (uri != null && value == null && Artwork.isLocal(uri)) value = withContext(Dispatchers.IO) { Artwork.load(context, uri, px) }
     }
     val image = remember(bitmap) { bitmap?.asImageBitmap() }
-    val base = if (radio) Color(0xFF2563EB) else ART_COLORS[((uri?.hashCode() ?: 0) and 0x7fffffff) % ART_COLORS.size]
+    val tint = if (radio) ToolTint.ORANGE else ART_TINTS[((uri?.hashCode() ?: 0) and 0x7fffffff) % ART_TINTS.size]
     Box(
         modifier
             .clip(RoundedCornerShape(radius))
-            .background(Brush.linearGradient(listOf(base, base.copy(alpha = .72f).compositeOverBlack()))),
+            .background(tint.tile),
         contentAlignment = Alignment.Center,
     ) {
         if (image != null) {
             Image(image, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         } else {
             Icon(
-                if (radio) Icons.Rounded.Radio else Icons.Rounded.MusicNote, null, tint = Color.White.copy(alpha = .92f),
-                modifier = Modifier.fillMaxSize(if (large) .32f else .5f),
+                if (radio) Icons.Rounded.Radio else Icons.Rounded.MusicNote, null, tint = tint.icon,
+                modifier = Modifier.fillMaxSize(if (large) .36f else .46f),
             )
         }
     }
 }
-
-private fun Color.compositeOverBlack() = Color(red * alpha, green * alpha, blue * alpha)
 
 /** Three small animated bars — the "playing" indicator. */
 @Composable

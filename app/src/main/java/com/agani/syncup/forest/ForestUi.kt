@@ -50,7 +50,10 @@ import androidx.core.view.WindowCompat
 import com.agani.syncup.ui.theme.isLight
 
 
-/** Paper, moss and sunlight — inside Forest only. Dark theme: the same, by lamplight. */
+/**
+ * Forest's colours: the app's own page, cards and text, with Forest's soft lime as its tool colour
+ * ([moss] for rings, picks and accents; [soft] behind them). Main buttons use the app's blue.
+ */
 internal class ForestColors(
     val paper: Color,
     val paper2: Color,
@@ -68,15 +71,16 @@ internal class ForestColors(
 )
 
 private val LightForest = ForestColors(
-    paper = Color(0xFFF6F2E7), paper2 = Color(0xFFEEE7D6), card = Color(0xFFFFFCF4), ink = Color(0xFF22301F),
-    ink2 = Color(0xFF4B5A45), muted = Color(0xFF7A846F), line = Color(0xFFE4DCC7), moss = Color(0xFF2F5D3A),
-    onMoss = Color(0xFFF6F2E7), soft = Color(0xFFEAF2E1), softLine = Color(0xFFCBDDB8), gold = Color(0xFFD9A441), light = true,
+    paper = Color(0xFFF6F8FB), paper2 = Color(0xFFEEF2F7), card = Color(0xFFFFFFFF), ink = Color(0xFF0F172A),
+    ink2 = Color(0xFF334155), muted = Color(0xFF5B6472), line = Color(0xFFE6EAF0), moss = Color(0xFF4D7C0F),
+    onMoss = Color(0xFFFFFFFF), soft = Color(0xFFECFCCB), softLine = Color(0xFFD9F99D), gold = Color(0xFFD9A441), light = true,
 )
 
+// Dark is pure black, like the rest of the app.
 private val DarkForest = ForestColors(
-    paper = Color(0xFF141A13), paper2 = Color(0xFF1C2419), card = Color(0xFF1E261C), ink = Color(0xFFE6EEDF),
-    ink2 = Color(0xFFC3D1BB), muted = Color(0xFF93A08A), line = Color(0xFF323F2E), moss = Color(0xFF9CCB8A),
-    onMoss = Color(0xFF10200F), soft = Color(0xFF24331F), softLine = Color(0xFF3A5233), gold = Color(0xFFE2B65A), light = false,
+    paper = Color(0xFF000000), paper2 = Color(0xFF161A21), card = Color(0xFF0F1115), ink = Color(0xFFE8ECF2),
+    ink2 = Color(0xFFCBD5E1), muted = Color(0xFF98A2B3), line = Color(0xFF1E232C), moss = Color(0xFFBEF264),
+    onMoss = Color(0xFF1C2A0D), soft = Color(0xFF1C2A0D), softLine = Color(0xFF365314), gold = Color(0xFFE2B65A), light = false,
 )
 
 @Composable
@@ -128,7 +132,7 @@ internal fun BarIcons(light: Boolean) {
 internal fun ForestTopBar(title: String, onBack: () -> Unit, color: Color = forestColors().ink, actions: @Composable RowScope.() -> Unit = {}) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 4.dp)) {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = color) }
-        Text(title, fontSize = 22.sp, color = color, maxLines = 1, modifier = Modifier.weight(1f).padding(start = 4.dp))
+        Text(title, fontSize = 20.sp, fontWeight = FontWeight.Medium, color = color, maxLines = 1, modifier = Modifier.weight(1f).padding(start = 4.dp))
         actions()
     }
 }
@@ -147,11 +151,11 @@ internal fun TitleText(text: String, size: TextUnit, color: Color = forestColors
     )
 }
 
-/** A small label above a group ("PLANT A SEED"). */
+/** A small label above a group ("Plant a seed"). */
 @Composable
 internal fun Label(text: String, modifier: Modifier = Modifier) {
     val c = forestColors()
-    Text(text.uppercase(), fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = c.muted, letterSpacing = .3.sp, modifier = modifier.padding(start = 2.dp, top = 16.dp, bottom = 8.dp))
+    Text(text, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = c.muted, modifier = modifier.padding(start = 2.dp, top = 14.dp, bottom = 8.dp))
 }
 
 @Composable
@@ -160,30 +164,30 @@ internal fun FChip(text: String, on: Boolean, modifier: Modifier = Modifier, ico
     val bg = when {
         dark && on -> Color(0x38D8ECC8)
         dark -> Color(0x14FFFFFF)
-        on -> c.moss
+        on -> c.soft
         else -> c.card
     }
     val border = when {
         dark && on -> Color(0x66D8ECC8)
         dark -> Color(0x24FFFFFF)
-        on -> c.moss
+        on -> Color.Transparent
         else -> c.line
     }
     val fg = when {
         dark && on -> Color.White
         dark -> Color(0xFFDDEBD6)
-        on -> c.onMoss
-        enabled -> c.ink2
+        on -> c.moss
+        enabled -> c.ink
         else -> c.muted.copy(alpha = .6f)
     }
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(bg).border(1.dp, border, RoundedCornerShape(18.dp))
+        modifier = modifier.height(34.dp).clip(RoundedCornerShape(17.dp)).background(bg).border(1.dp, border, RoundedCornerShape(17.dp))
             .clickable(enabled = enabled, onClick = onClick).padding(horizontal = 14.dp),
     ) {
         if (icon != null) Icon(icon, null, tint = fg, modifier = Modifier.size(16.dp))
-        Text(text, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = fg, maxLines = 1)
+        Text(text, fontSize = 13.5.sp, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal, color = fg, maxLines = 1)
     }
 }
 
@@ -206,27 +210,36 @@ internal fun PillText(bold: String, rest: String) {
     Text(rest, fontSize = 12.5.sp, color = c.ink2)
 }
 
+/** A main action: a pill in the app's blue (calm time's own screens pass their [container] / [content]). */
 @Composable
-internal fun MossButton(text: String, modifier: Modifier = Modifier, icon: ImageVector? = null, container: Color = forestColors().moss, content: Color = forestColors().onMoss, onClick: () -> Unit) {
+internal fun MossButton(
+    text: String,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    container: Color = MaterialTheme.colorScheme.primary,
+    content: Color = MaterialTheme.colorScheme.onPrimary,
+    onClick: () -> Unit,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
-        modifier = modifier.height(50.dp).clip(RoundedCornerShape(25.dp)).background(container).clickable(onClick = onClick).padding(horizontal = 18.dp),
+        modifier = modifier.height(48.dp).clip(RoundedCornerShape(24.dp)).background(container).clickable(onClick = onClick).padding(horizontal = 18.dp),
     ) {
         if (icon != null) {
             Icon(icon, null, tint = content, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(10.dp))
         }
-        Text(text, fontSize = 15.5.sp, fontWeight = FontWeight.Medium, color = content, maxLines = 1)
+        Text(text, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = content, maxLines = 1)
     }
 }
 
+/** The quieter button beside a [MossButton]: an outline pill. */
 @Composable
-internal fun LineButton(text: String, modifier: Modifier = Modifier, color: Color = forestColors().moss, border: Color = Color(0xFFCFC5AC), onClick: () -> Unit) {
+internal fun LineButton(text: String, modifier: Modifier = Modifier, color: Color = forestColors().ink, border: Color = MaterialTheme.colorScheme.outline, onClick: () -> Unit) {
     Box(
         contentAlignment = Alignment.Center,
-        modifier = modifier.height(50.dp).clip(RoundedCornerShape(25.dp)).border(BorderStroke(1.5.dp, border), RoundedCornerShape(25.dp)).clickable(onClick = onClick),
-    ) { Text(text, fontSize = 15.5.sp, fontWeight = FontWeight.Medium, color = color, maxLines = 1) }
+        modifier = modifier.height(48.dp).clip(RoundedCornerShape(24.dp)).border(BorderStroke(1.dp, border), RoundedCornerShape(24.dp)).clickable(onClick = onClick),
+    ) { Text(text, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = color, maxLines = 1) }
 }
 
 @Composable

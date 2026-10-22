@@ -82,12 +82,15 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.agani.syncup.browser.ui.StepSlider
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.appCard
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.max
@@ -141,7 +144,7 @@ fun MetalTool(onBack: () -> Unit) {
                     drawArc(ring, 135f, 270f * (extra / 150f).coerceIn(0f, 1f), false, Offset(s / 2, s / 2), Size(size.width - s, size.height - s), style = Stroke(s, cap = StrokeCap.Round))
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("${now.roundToInt()}", fontSize = 52.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = cs.onSurface)
+                    Text("${now.roundToInt()}", fontSize = 52.sp, fontWeight = FontWeight.Medium, style = TextStyle(fontFeatureSettings = "tnum"), color = cs.onSurface)
                     Text("µT", fontSize = 16.sp, color = cs.onSurfaceVariant)
                 }
             }
@@ -304,7 +307,7 @@ fun FlashlightTool(onBack: () -> Unit, onMagnifier: () -> Unit) {
             Spacer(Modifier.height(16.dp))
             Row(
                 verticalAlignment = Alignment.Top,
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cs.surfaceContainerLow).clickable(onClick = onMagnifier)
+                modifier = Modifier.fillMaxWidth().appCard(RoundedCornerShape(16.dp)).clickable(onClick = onMagnifier)
                     .padding(horizontal = 12.dp, vertical = 10.dp),
             ) {
                 Icon(Icons.Rounded.ZoomIn, null, tint = cs.primary, modifier = Modifier.size(18.dp))
@@ -405,7 +408,7 @@ fun WifiTool(onBack: () -> Unit) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             if (!enabled) {
                 Column(
-                    Modifier.padding(vertical = 16.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cs.surfaceContainerLow).padding(20.dp),
+                    Modifier.padding(vertical = 16.dp).fillMaxWidth().appCard(CardShape).padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text("Wi-Fi is off", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
@@ -429,7 +432,7 @@ fun WifiTool(onBack: () -> Unit) {
                     }
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(if (connected) "$rssi" else "—", fontSize = 44.sp, fontWeight = FontWeight.Medium, fontFamily = FontFamily.Monospace, color = cs.onSurface)
+                    Text(if (connected) "$rssi" else "—", fontSize = 44.sp, fontWeight = FontWeight.Medium, style = TextStyle(fontFeatureSettings = "tnum"), color = cs.onSurface)
                     Text(if (connected) "dBm · $words" else "Not connected", fontSize = 13.sp, color = if (connected) color else cs.onSurfaceVariant)
                 }
             }
@@ -487,7 +490,7 @@ fun WifiTool(onBack: () -> Unit) {
         )
     }
     if (others) {
-        ModalBottomSheet(onDismissRequest = { others = false }) { OtherNetworks(wm) }
+        ModalBottomSheet(containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLowest, onDismissRequest = { others = false }) { OtherNetworks(wm) }
     }
 }
 
@@ -686,7 +689,7 @@ fun EarbudsTool(onBack: () -> Unit) {
                 access, Modifier.padding(16.dp),
             )
             !btOn -> Column(
-                Modifier.padding(16.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cs.surfaceContainerLow).padding(20.dp),
+                Modifier.padding(16.dp).fillMaxWidth().appCard(CardShape).padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text("Bluetooth is off", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
@@ -696,7 +699,7 @@ fun EarbudsTool(onBack: () -> Unit) {
                 }) { Text("Turn on Bluetooth") }
             }
             Build.VERSION.SDK_INT <= 30 && !locationOn(context) -> Column(
-                Modifier.padding(16.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(cs.surfaceContainerLow).padding(20.dp),
+                Modifier.padding(16.dp).fillMaxWidth().appCard(CardShape).padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text("Turn on Location", fontSize = 17.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)

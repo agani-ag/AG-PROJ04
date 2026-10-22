@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Box
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.core.tween
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
@@ -74,8 +75,8 @@ fun ConnectivityBanner(modifier: Modifier = Modifier) {
     val online by rememberIsOnline()
     AnimatedVisibility(
         visible = !online,
-        enter = slideInVertically { it } + fadeIn(),
-        exit = slideOutVertically { it } + fadeOut(),
+        enter = slideInVertically(tween(220)) { it } + fadeIn(tween(200)),
+        exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(150)),
         modifier = modifier,
     ) {
         Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 80.dp), contentAlignment = Alignment.Center) {

@@ -7,7 +7,6 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,8 +14,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -26,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -49,8 +47,8 @@ import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.WifiTethering
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -61,6 +59,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -77,14 +76,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -97,24 +94,37 @@ import com.agani.syncup.group.GroupLink
 import com.agani.syncup.group.GroupMode
 import com.agani.syncup.group.GroupPhase
 import com.agani.syncup.group.GroupRoom
-import com.agani.syncup.group.GroupRoomCard
+import com.agani.syncup.group.GroupRoomsCard
 import com.agani.syncup.music.LocalPlayer
 import com.agani.syncup.music.LocalSongs
+import com.agani.syncup.music.NoteBox
+import com.agani.syncup.music.SectionHead
 import com.agani.syncup.music.Song
+import com.agani.syncup.music.ToolTile
+import com.agani.syncup.music.ToolTint
+import com.agani.syncup.music.cardSlice
+import com.agani.syncup.music.tintButton
 import com.agani.syncup.quickshare.QsPhase
 import com.agani.syncup.quickshare.QuickShare
 import com.agani.syncup.quickshare.Radios
 import com.agani.syncup.quickshare.RadiosDialog
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.PillTabs
+import com.agani.syncup.ui.theme.appCard
+import com.agani.syncup.ui.theme.dialogSurface
 import com.agani.syncup.ui.theme.isLight
-import kotlinx.coroutines.Dispatchers
 import com.google.android.gms.nearby.connection.BandwidthInfo
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
-private val Violet = Color(0xFF6D28D9)
-private val VioletLight = Color(0xFFEDE9FE)
+/** Party's colour: pink tiles and buttons; the now-playing card is flat Party pink with white on it. */
+private val PartyTint = ToolTint.PINK
+
+@Composable
+private fun partyPink(): Color = if (MaterialTheme.colorScheme.isLight) Color(0xFFBE185D) else Color(0xFF9D174D)
 
 /**
  * Tools → Radio → Party: start a party or join one nearby; then the host's DJ screen or the
@@ -180,7 +190,7 @@ fun PartyTab() {
 
     when {
         Party.role == PartyRole.HOST -> HostScreen(onAddSongs = { picking = true })
-        GroupLink.phase == GroupPhase.JOINING -> GroupJoiningView(Violet, VioletLight)
+        GroupLink.phase == GroupPhase.JOINING -> GroupJoiningView(ToolTint.PINK)
         Party.role == PartyRole.GUEST -> GuestScreen(onAddSong = { picking = true })
         // In a group doing something else: back to music from here (the queue carries on, else pick songs).
         GroupLink.inGroup -> GroupElsewhere(GroupMode.MUSIC, onSwitchHere = {
@@ -211,13 +221,14 @@ fun PartyTab() {
     if (naming) {
         var name by remember { mutableStateOf("${QuickShare.myName}'s Party") }
         AlertDialog(
+            containerColor = MaterialTheme.colorScheme.dialogSurface,
             onDismissRequest = { naming = false },
             title = { Text("Start a party") },
             text = {
                 Column {
                     Text("Phones nearby see this name.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(value = name, onValueChange = { name = it.take(30) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = name, onValueChange = { name = it.take(30) }, singleLine = true, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth())
                 }
             },
             confirmButton = {
@@ -256,7 +267,7 @@ fun PartyTab() {
 
     // Host: a guest wants to add a song ("Ask me").
     Party.addRequests.firstOrNull()?.let { r ->
-        ModalBottomSheet(onDismissRequest = { Party.declineAdd(r) }) {
+        ModalBottomSheet(onDismissRequest = { Party.declineAdd(r) }, containerColor = MaterialTheme.colorScheme.surfaceContainerLowest) {
             Column(Modifier.padding(start = 20.dp, end = 20.dp, bottom = 24.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Letter(r.guest)
@@ -268,7 +279,7 @@ fun PartyTab() {
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 18.dp)) {
                     OutlinedButton(onClick = { Party.declineAdd(r) }, modifier = Modifier.weight(1f).height(46.dp)) { Text("No") }
-                    Button(onClick = { Party.acceptAdd(r) }, colors = violetButton(), modifier = Modifier.weight(1f).height(46.dp)) { Text("Add to queue") }
+                    Button(onClick = { Party.acceptAdd(r) }, colors = tintButton(PartyTint), modifier = Modifier.weight(1f).height(46.dp)) { Text("Add to queue") }
                 }
             }
         }
@@ -285,43 +296,31 @@ private fun PartyHome(
     onJoin: (GroupRoom) -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    val light = cs.isLight
-    LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                ActionCard(
-                    Icons.Rounded.MusicNote, "Start a party", "Play your songs on everyone's phone",
-                    if (light) Violet else Color(0xFFC4B5FD), if (light) VioletLight else Color(0xFF2E1065), Modifier.weight(1f), onStart,
-                )
-                ActionCard(
-                    Icons.AutoMirrored.Rounded.Login, "Join a party", "Listen with friends nearby",
-                    cs.primary, cs.primaryContainer, Modifier.weight(1f), onLook,
-                )
+    LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 24.dp)) {
+        item(key = "actions") {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                ActionCard(Icons.Rounded.MusicNote, "Start a party", "Play your songs on everyone's phone", PartyTint, Modifier.weight(1f), onStart)
+                ActionCard(Icons.AutoMirrored.Rounded.Login, "Join a party", "Listen with friends nearby", ToolTint.BLUE, Modifier.weight(1f), onLook)
             }
         }
         if (permissionNote) {
-            item {
+            item(key = "permission") {
                 Text(
                     "Party needs the Nearby devices permission to find other phones. Turn it on in Settings → Apps → SyncUp → Permissions.",
                     fontSize = 13.sp, lineHeight = 18.sp, color = cs.onErrorContainer,
-                    modifier = Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(cs.errorContainer).padding(14.dp),
+                    modifier = Modifier.padding(top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(cs.errorContainer).padding(14.dp),
                 )
             }
         }
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, top = 22.dp, bottom = 8.dp)) {
-                Text("Groups nearby", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
-                if (GroupLink.rooms.isNotEmpty()) Text("  · ${GroupLink.rooms.size}", fontSize = 14.sp, color = cs.onSurfaceVariant)
-            }
-        }
+        item(key = "roomsHead") { SectionHead("Groups nearby", count = GroupLink.rooms.size.takeIf { it > 0 }?.toString()) }
         if (GroupLink.rooms.isEmpty()) {
-            item {
+            item(key = "roomsNone") {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(cs.surfaceContainerLow).padding(16.dp),
+                    modifier = Modifier.fillMaxWidth().appCard(CardShape).padding(16.dp),
                 ) {
                     if (canBrowse) {
-                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = PartyTint.icon, trackColor = cs.outlineVariant)
                         Spacer(Modifier.width(14.dp))
                         Text("Looking for groups… Ask your friend to start a party in Radio → Party.", fontSize = 13.5.sp, lineHeight = 19.sp, color = cs.onSurfaceVariant)
                     } else {
@@ -329,21 +328,16 @@ private fun PartyHome(
                     }
                 }
             }
+        } else {
+            item(key = "rooms") { GroupRoomsCard(GroupLink.rooms) { onJoin(it) } }
         }
-        items(GroupLink.rooms, key = { it.endpointId }) { room -> GroupRoomCard(room) { onJoin(room) } }
-        item {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 6.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cs.surfaceContainerLow).padding(12.dp),
-            ) {
-                Icon(Icons.Rounded.WifiTethering, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    "Every phone plays the same moment — a room of phones sounds like one speaker. No internet needed. " +
-                        "Up to 8 phones in a group — the host can switch everyone to a video, Walkie talkie or sharing files.",
-                    fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant,
-                )
-            }
+        item(key = "about") {
+            NoteBox(
+                Icons.Rounded.WifiTethering,
+                "Every phone plays the same moment — a room of phones sounds like one speaker. No internet needed. " +
+                    "Up to 8 phones in a group — the host can switch everyone to a video, Walkie talkie or sharing files.",
+                Modifier.padding(top = 14.dp),
+            )
         }
     }
 }
@@ -353,42 +347,43 @@ private fun PartyHome(
 private fun HostScreen(onAddSongs: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     var confirmEnd by remember { mutableStateOf(false) }
-    LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
-        item { GroupBar(Modifier.padding(top = 4.dp, bottom = 10.dp)) }
-        if (Party.localPaused) item { PlayHereRow() }
-        item { NowPlayingCard(host = true) }
-        item { PeopleRow() }
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, top = 2.dp)) {
-                Icon(Icons.Rounded.VolumeUp, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(16.dp))
+    LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp)) {
+        item(key = "group") { GroupBar(Modifier.padding(bottom = 12.dp)) }
+        if (Party.localPaused) item(key = "playHere") { PlayHereRow() }
+        item(key = "now") { NowPlayingCard(host = true) }
+        item(key = "people") { PeopleRow() }
+        item(key = "volume") {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, top = 8.dp)) {
+                Icon(Icons.Rounded.VolumeUp, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Everyone sets their own volume.", fontSize = 12.5.sp, color = cs.onSurfaceVariant)
             }
         }
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, top = 18.dp, bottom = 4.dp)) {
-                Text("Up next", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                FilledTonalButton(onClick = onAddSongs, contentPadding = PaddingValues(horizontal = 14.dp)) {
+        item(key = "nextHead") {
+            SectionHead("Up next", action = {
+                FilledTonalButton(onClick = onAddSongs, contentPadding = PaddingValues(horizontal = 16.dp), modifier = Modifier.height(36.dp)) {
                     Icon(Icons.Rounded.Add, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Add songs")
+                    Text("Add songs", fontSize = 13.5.sp)
                 }
-            }
+            })
         }
         val next = Party.upNext
         if (next.isEmpty()) {
-            item { Text("Nothing queued. Add songs from this phone.", fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, top = 6.dp)) }
+            item(key = "nextNone") { Text("Nothing queued. Add songs from this phone.", fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp)) }
         }
-        items(next, key = { it.id }) { t -> QueueRow(t, next.indexOf(t) + 1, onRemove = { Party.removeFromQueue(t.id) }) }
-        item {
-            Text("Guests can add songs", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 4.dp, top = 22.dp, bottom = 8.dp))
-            Segmented(
+        itemsIndexed(next, key = { _, t -> t.id }) { i, t ->
+            QueueRow(t, i + 1, Modifier.cardSlice(first = i == 0, last = i == next.lastIndex), onRemove = { Party.removeFromQueue(t.id) })
+        }
+        item(key = "guestAdds") {
+            SubLabel("Guests can add songs")
+            PillTabs(
                 listOf("Off", "Ask me", "On"),
                 selected = Party.guestAdds.ordinal,
                 onSelect = { Party.changeGuestAdds(GuestAdds.entries[it]) },
             )
         }
-        item {
+        item(key = "end") {
             OutlinedButton(
                 onClick = { confirmEnd = true },
                 modifier = Modifier.padding(top = 26.dp).fillMaxWidth().height(48.dp),
@@ -397,6 +392,7 @@ private fun HostScreen(onAddSongs: () -> Unit) {
     }
     if (confirmEnd) {
         AlertDialog(
+            containerColor = cs.dialogSurface,
             onDismissRequest = { confirmEnd = false },
             title = { Text("End the group?") },
             text = { Text("The music stops on every phone, and everyone leaves the group.") },
@@ -416,25 +412,27 @@ private fun HostScreen(onAddSongs: () -> Unit) {
 private fun GuestScreen(onAddSong: () -> Unit) {
     val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
-    LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
-        item { GroupBar(Modifier.padding(top = 4.dp, bottom = 10.dp)) }
+    LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp)) {
+        item(key = "group") { GroupBar(Modifier.padding(bottom = 12.dp)) }
         if (Party.phase == PartyPhase.RECONNECTING) {
-            item {
+            item(key = "reconnecting") {
                 Banner(Icons.Rounded.Sync, "Reconnecting to ${Party.hostName}…", "The music keeps playing from what this phone already has.")
             }
         }
-        if (Party.localPaused) item { PlayHereRow() }
-        item { NowPlayingCard(host = false) }
-        item { PeopleRow() }
-        item { VolumeRow(context) }
-        item { SyncAdjustRow(context) }
+        if (Party.localPaused) item(key = "playHere") { PlayHereRow() }
+        item(key = "now") { NowPlayingCard(host = false) }
+        item(key = "people") { PeopleRow() }
+        item(key = "volume") { VolumeRow(context) }
+        item(key = "sync") { SyncAdjustRow(context) }
         val next = Party.upNext
-        item { Text("Up next", fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 4.dp, top = 18.dp, bottom = 4.dp)) }
+        item(key = "nextHead") { SectionHead("Up next") }
         if (next.isEmpty()) {
-            item { Text("Nothing queued yet.", fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, top = 6.dp)) }
+            item(key = "nextNone") { Text("Nothing queued yet.", fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp)) }
         }
-        items(next, key = { it.id }) { t -> QueueRow(t, next.indexOf(t) + 1, onRemove = null) }
-        item {
+        itemsIndexed(next, key = { _, t -> t.id }) { i, t ->
+            QueueRow(t, i + 1, Modifier.cardSlice(first = i == 0, last = i == next.lastIndex), onRemove = null)
+        }
+        item(key = "buttons") {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 24.dp)) {
                 if (Party.canAdd) {
                     FilledTonalButton(onClick = onAddSong, modifier = Modifier.weight(1f).height(48.dp)) {
@@ -456,14 +454,27 @@ private fun GuestScreen(onAddSong: () -> Unit) {
 /** This phone's sound stopped (another app took over); the party went on. */
 @Composable
 private fun PlayHereRow() {
-    val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(bottom = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(cs.surfaceContainerHigh)
-            .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+        modifier = Modifier.padding(bottom = 12.dp).fillMaxWidth().appCard(CardShape)
+            .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
     ) {
-        Text("The party's sound stopped on this phone.", fontSize = 13.sp, modifier = Modifier.weight(1f))
-        TextButton(onClick = { Party.resumeHere() }) { Text("Play here") }
+        Text("The party's sound stopped on this phone.", fontSize = 13.5.sp, lineHeight = 18.sp, modifier = Modifier.weight(1f))
+        TextButton(onClick = { Party.resumeHere() }) { Text("Play here", color = PartyTint.icon) }
+    }
+}
+
+/** A small label over a control ("My volume", "Guests can add songs"), with an optional icon and grey detail. */
+@Composable
+private fun SubLabel(text: String, icon: ImageVector? = null, detail: String? = null) {
+    val cs = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 18.dp, bottom = 6.dp)) {
+        if (icon != null) {
+            Icon(icon, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+        }
+        Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
+        if (detail != null) Text(detail, fontSize = 13.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -480,12 +491,8 @@ private fun VolumeRow(context: Context) {
             volume = am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()
         }
     }
-    Column(Modifier.padding(top = 16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp)) {
-            Icon(Icons.Rounded.VolumeUp, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("My volume", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-        }
+    Column {
+        SubLabel("My volume", Icons.Rounded.VolumeUp)
         StepSlider(
             value = volume, range = 0f..max.toFloat(), step = 1f, steps = (max - 1).coerceAtLeast(0),
             label = "volume",
@@ -493,6 +500,7 @@ private fun VolumeRow(context: Context) {
                 volume = it
                 am.setStreamVolume(AudioManager.STREAM_MUSIC, it.toInt(), 0)
             },
+            colors = SliderDefaults.colors(inactiveTrackColor = cs.outlineVariant),
         )
     }
 }
@@ -507,26 +515,22 @@ private fun SyncAdjustRow(context: Context) {
         }
     }
     var adjust by remember { mutableFloatStateOf(Party.syncAdjustMs.toFloat()) }
-    Column(Modifier.padding(top = 6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp)) {
-            Icon(Icons.Rounded.Bluetooth, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Sync adjust", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-            Text(
-                (if (bluetooth) " · Bluetooth speaker" else "") + " · ${if (adjust > 0) "+" else ""}${adjust.toInt()} ms",
-                fontSize = 13.sp, color = cs.onSurfaceVariant,
-            )
-        }
+    Column {
+        SubLabel(
+            "Sync adjust", Icons.Rounded.Bluetooth,
+            (if (bluetooth) " · Bluetooth speaker" else "") + " · ${if (adjust > 0) "+" else ""}${adjust.toInt()} ms",
+        )
         StepSlider(
             value = adjust, range = -400f..400f, step = 10f,
             label = "sync adjust",
             // Whole 10 ms while sliding; saved when the finger lifts (or on each tap of − / +).
             onChange = { adjust = (it / 10f).roundToInt() * 10f },
             onChangeFinished = { Party.setSyncAdjust(adjust.toInt()) },
+            colors = SliderDefaults.colors(inactiveTrackColor = cs.outlineVariant),
         )
         Text(
             "Bluetooth speakers and earbuds play a little late. If this phone sounds behind the others, tap + ; ahead, tap −.",
-            fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp),
+            fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 6.dp),
         )
     }
 }
@@ -543,19 +547,18 @@ private fun NowPlayingCard(host: Boolean) {
         }
     }
     var dragging by remember { mutableStateOf<Float?>(null) }
+    val pink = partyPink()
     Column(
-        Modifier.padding(top = 4.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp))
-            .background(Brush.linearGradient(listOf(Color(0xFF4C1D95), Color(0xFF7C3AED), Color(0xFFA78BFA))))
-            .padding(18.dp),
+        Modifier.fillMaxWidth().clip(CardShape).background(pink).padding(18.dp),
     ) {
         Text(
             Party.roomName + if (host) " · you're the host" else "",
-            color = Color.White.copy(alpha = .8f), fontSize = 12.5.sp, fontWeight = FontWeight.Medium,
+            color = Color.White.copy(alpha = .85f), fontSize = 12.5.sp, fontWeight = FontWeight.Medium,
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 12.dp),
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(60.dp).clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = .18f)), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.MusicNote, null, tint = Color.White, modifier = Modifier.size(30.dp))
+            Box(Modifier.size(58.dp).clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = .18f)), contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.MusicNote, null, tint = Color.White, modifier = Modifier.size(28.dp))
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
@@ -567,7 +570,8 @@ private fun NowPlayingCard(host: Boolean) {
                 }
                 Text(
                     listOfNotNull(track?.artist?.takeIf { it.isNotBlank() }, who).joinToString(" · "),
-                    color = Color.White.copy(alpha = .85f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = Color.White.copy(alpha = .88f), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
         }
@@ -581,11 +585,11 @@ private fun NowPlayingCard(host: Boolean) {
                         dragging?.let { Party.seekTo(it.toLong()) }
                         dragging = null
                     },
-                    colors = androidx.compose.material3.SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = .3f)),
+                    colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = .3f)),
                     modifier = Modifier.padding(top = 6.dp),
                 )
             } else {
-                Box(Modifier.padding(top = 16.dp, bottom = 6.dp).fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = .3f))) {
+                Box(Modifier.padding(top = 18.dp, bottom = 8.dp).fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)).background(Color.White.copy(alpha = .3f))) {
                     Box(Modifier.fillMaxWidth((position.toFloat() / track.durationMs.coerceAtLeast(1)).coerceIn(0f, 1f)).height(5.dp).clip(RoundedCornerShape(3.dp)).background(Color.White))
                 }
             }
@@ -595,15 +599,19 @@ private fun NowPlayingCard(host: Boolean) {
             }
         }
         if (host) {
-            Row(horizontalArrangement = Arrangement.spacedBy(22.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                IconButton(onClick = { Party.previous() }, enabled = track != null) { Icon(Icons.Rounded.SkipPrevious, "Previous", tint = Color.White, modifier = Modifier.size(30.dp)) }
+            Row(horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                IconButton(onClick = { Party.previous() }, enabled = track != null) {
+                    Icon(Icons.Rounded.SkipPrevious, "Previous", tint = Color.White.copy(alpha = if (track != null) 1f else .5f), modifier = Modifier.size(30.dp))
+                }
                 Box(
-                    Modifier.size(60.dp).clip(CircleShape).background(Color.White).clickable(enabled = track != null) { Party.togglePause() },
+                    Modifier.size(58.dp).clip(CircleShape).background(Color.White).clickable(enabled = track != null) { Party.togglePause() },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(if (Party.paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause, if (Party.paused) "Play" else "Pause", tint = Violet, modifier = Modifier.size(34.dp))
+                    Icon(if (Party.paused) Icons.Rounded.PlayArrow else Icons.Rounded.Pause, if (Party.paused) "Play" else "Pause", tint = pink, modifier = Modifier.size(32.dp))
                 }
-                IconButton(onClick = { Party.next() }, enabled = Party.upNext.isNotEmpty()) { Icon(Icons.Rounded.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(30.dp)) }
+                IconButton(onClick = { Party.next() }, enabled = Party.upNext.isNotEmpty()) {
+                    Icon(Icons.Rounded.SkipNext, "Next", tint = Color.White.copy(alpha = if (Party.upNext.isNotEmpty()) 1f else .5f), modifier = Modifier.size(30.dp))
+                }
             }
         }
         SyncLine(host)
@@ -636,9 +644,9 @@ private fun SyncLine(host: Boolean) {
         abs(err) <= 15 -> Color(0xFF86EFAC) to "In sync with $others other phone${if (others == 1) "" else "s"}"
         else -> Color(0xFFFCD34D) to "Lining up… (${err.toInt()} ms)"
     }
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 10.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
-        Spacer(Modifier.width(6.dp))
+        Spacer(Modifier.width(7.dp))
         Text(text, color = Color.White.copy(alpha = .92f), fontSize = 12.5.sp)
     }
     if (waiting && slow) {
@@ -650,118 +658,84 @@ private fun SyncLine(host: Boolean) {
     }
 }
 
+/** Who's at the party: overlapping round letters, then their names. */
 @Composable
 private fun PeopleRow() {
     val cs = MaterialTheme.colorScheme
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, top = 14.dp)) {
-        Party.people.take(5).forEachIndexed { i, name ->
+    val shown = Party.people.take(5)
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 14.dp)) {
+        shown.forEachIndexed { i, name ->
             Box(
-                Modifier.offset(x = (-10 * i).dp).size(32.dp).clip(CircleShape).background(cs.surface).padding(2.dp).clip(CircleShape).background(cs.surfaceContainerHigh),
+                Modifier.offset(x = (-9 * i).dp).size(32.dp).clip(CircleShape).background(cs.surface).padding(2.dp).clip(CircleShape).background(cs.primaryContainer),
                 contentAlignment = Alignment.Center,
-            ) { Text(name.take(1).uppercase(), fontSize = 13.sp, fontWeight = FontWeight.Medium) }
+            ) { Text(name.take(1).uppercase(), fontSize = 13.sp, fontWeight = FontWeight.Medium, color = cs.onPrimaryContainer) }
         }
         Text(
             Party.people.joinToString(", "),
             fontSize = 13.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.offset(x = (-10 * (Party.people.take(5).size - 1)).dp + 8.dp),
+            modifier = Modifier.offset(x = (-9 * (shown.size - 1).coerceAtLeast(0)).dp + 8.dp),
         )
     }
 }
 
+/** A song in Up next: its place, title, who added it, and ✕ for the host. One slice of the queue's card. */
 @Composable
-private fun QueueRow(track: PartyTrack, n: Int, onRemove: (() -> Unit)?) {
+private fun QueueRow(track: PartyTrack, n: Int, modifier: Modifier, onRemove: (() -> Unit)?) {
     val cs = MaterialTheme.colorScheme
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(start = 4.dp)) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.fillMaxWidth().heightIn(min = 58.dp).padding(start = 16.dp, end = if (onRemove != null) 4.dp else 16.dp, top = 8.dp, bottom = 8.dp),
+    ) {
         Text("$n", fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.width(22.dp))
         Column(Modifier.weight(1f)) {
-            Text(track.title, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(track.title, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 listOfNotNull(track.artist.takeIf { it.isNotBlank() }, "added by ${track.addedBy}").joinToString(" · "),
-                fontSize = 12.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
         if (onRemove != null) IconButton(onClick = onRemove) { Icon(Icons.Rounded.Close, "Remove", tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
     }
 }
 
+/** Start / Join: a square white card with the tool's tile on top and the words at the bottom. */
 @Composable
-private fun ActionCard(icon: ImageVector, title: String, subtitle: String, tint: Color, container: Color, modifier: Modifier, onClick: () -> Unit) {
+private fun ActionCard(icon: ImageVector, title: String, subtitle: String, tint: ToolTint, modifier: Modifier, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Column(
-        modifier.aspectRatio(1f).clip(RoundedCornerShape(22.dp)).background(cs.surfaceContainerLowest)
-            .border(1.dp, cs.outlineVariant, RoundedCornerShape(22.dp)).clickable(onClick = onClick).padding(16.dp),
+        modifier.heightIn(min = 150.dp).appCard(CardShape).clickable(onClick = onClick).padding(14.dp),
     ) {
-        Box(Modifier.size(48.dp).clip(RoundedCornerShape(15.dp)).background(container), contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = tint, modifier = Modifier.size(26.dp))
-        }
-        Spacer(Modifier.weight(1f))
-        Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-        Text(subtitle, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+        ToolTile(icon, tint)
+        Spacer(Modifier.weight(1f).heightIn(min = 16.dp))
+        Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        Text(subtitle, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
     }
 }
 
-/** A pill row of choices (Radio's Party / Live stations; the host's guest-adds setting). */
-@Composable
-internal fun Segmented(
-    options: List<String>,
-    selected: Int,
-    onSelect: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-    selectedBg: Color = VioletLight,
-    selectedFg: Color = Color(0xFF2E1065),
-) {
-    val cs = MaterialTheme.colorScheme
-    Row(
-        modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(22.dp)).background(cs.surfaceContainer).padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        options.forEachIndexed { i, label ->
-            val on = i == selected
-            Box(
-                Modifier.weight(1f).fillMaxSize().clip(RoundedCornerShape(18.dp))
-                    .background(if (on) selectedBg.copy(alpha = if (cs.isLight) 1f else .25f) else Color.Transparent)
-                    .clickable { onSelect(i) },
-                contentAlignment = Alignment.Center,
-            ) { Text(label, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = if (on) (if (cs.isLight) selectedFg else selectedBg) else cs.onSurfaceVariant) }
-        }
-    }
-}
-
+/** Soft amber note (reconnecting). */
 @Composable
 private fun Banner(icon: ImageVector, title: String, text: String) {
+    val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(bottom = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(Color(0xFFFEF3C7)).padding(12.dp),
+        modifier = Modifier.padding(bottom = 12.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(ToolTint.AMBER.tile).padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
-        Icon(icon, null, tint = Color(0xFF78350F), modifier = Modifier.size(18.dp))
+        Icon(icon, null, tint = ToolTint.AMBER.icon, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(10.dp))
         Column {
-            Text(title, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFF78350F))
-            Text(text, fontSize = 12.5.sp, color = Color(0xFF78350F))
+            Text(title, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
+            Text(text, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant)
         }
     }
 }
 
 @Composable
 private fun Letter(name: String) {
-    val cs = MaterialTheme.colorScheme
     Box(
-        Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(VioletLight.copy(alpha = if (cs.isLight) 1f else .2f)),
+        Modifier.size(44.dp).clip(RoundedCornerShape(15.dp)).background(PartyTint.tile),
         contentAlignment = Alignment.Center,
-    ) { Text(name.take(1).uppercase(), color = Violet, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+    ) { Text(name.take(1).uppercase(), color = PartyTint.icon, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
 }
-
-@Composable
-private fun CodeBox(code: String, modifier: Modifier = Modifier) {
-    Text(
-        code.toCharArray().joinToString(" "),
-        fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = 4.sp,
-        modifier = modifier.clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(horizontal = 22.dp, vertical = 10.dp),
-    )
-}
-
-@Composable
-private fun violetButton() = ButtonDefaults.buttonColors(containerColor = Violet, contentColor = Color.White)
 
 private fun formatMs(ms: Long): String {
     val s = (ms / 1000).coerceAtLeast(0)
@@ -784,15 +758,15 @@ internal fun SongPicker(multiple: Boolean, onDismiss: () -> Unit, onPicked: (Lis
         if (granted) songs = withContext(Dispatchers.IO) { runCatching { LocalSongs.load(context) }.getOrDefault(emptyList()) }
         else ask.launch(LocalSongs.permission)
     }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = cs.surfaceContainerLowest) {
         Column(Modifier.fillMaxWidth().heightIn(min = 300.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 20.dp, end = 12.dp, bottom = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 20.dp, end = 16.dp, bottom = 10.dp)) {
                 Column(Modifier.weight(1f)) {
                     Text(if (multiple) "Add songs to the party" else "Add a song", fontSize = 18.sp, fontWeight = FontWeight.Medium)
                     Text("From this phone", fontSize = 13.sp, color = cs.onSurfaceVariant)
                 }
                 if (multiple) {
-                    Button(onClick = { onPicked(chosen.toList()) }, enabled = chosen.isNotEmpty(), colors = violetButton()) {
+                    Button(onClick = { onPicked(chosen.toList()) }, enabled = chosen.isNotEmpty(), colors = tintButton(PartyTint), modifier = Modifier.height(40.dp)) {
                         Text(if (chosen.isEmpty()) "Add" else "Add ${chosen.size}")
                     }
                 }
@@ -810,10 +784,10 @@ internal fun SongPicker(multiple: Boolean, onDismiss: () -> Unit, onPicked: (Lis
                 else -> {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().height(46.dp).clip(RoundedCornerShape(23.dp)).background(cs.surfaceContainerHigh).padding(horizontal = 14.dp),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).fillMaxWidth().height(48.dp).clip(RoundedCornerShape(50)).background(cs.surfaceContainer).padding(horizontal = 16.dp),
                     ) {
-                        Icon(Icons.Rounded.Search, null, tint = cs.onSurfaceVariant)
-                        Spacer(Modifier.width(10.dp))
+                        Icon(Icons.Rounded.Search, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(12.dp))
                         BasicTextField(
                             value = query, onValueChange = { query = it }, singleLine = true,
                             textStyle = TextStyle(fontSize = 15.sp, color = cs.onSurface), cursorBrush = SolidColor(cs.primary),
@@ -837,8 +811,14 @@ internal fun SongPicker(multiple: Boolean, onDismiss: () -> Unit, onPicked: (Lis
                                     if (!multiple) onPicked(listOf(song)) else if (on) chosen.remove(song) else chosen.add(song)
                                 }.padding(horizontal = 20.dp, vertical = 8.dp),
                             ) {
-                                if (multiple) Checkbox(checked = on, onCheckedChange = { if (it) chosen.add(song) else chosen.remove(song) })
-                                else Icon(Icons.Rounded.MusicNote, null, tint = cs.onSurfaceVariant, modifier = Modifier.padding(end = 12.dp))
+                                if (multiple) {
+                                    Checkbox(
+                                        checked = on, onCheckedChange = { if (it) chosen.add(song) else chosen.remove(song) },
+                                        colors = CheckboxDefaults.colors(checkedColor = PartyTint.icon, checkmarkColor = PartyTint.onSolid),
+                                    )
+                                } else {
+                                    Icon(Icons.Rounded.MusicNote, null, tint = cs.onSurfaceVariant, modifier = Modifier.padding(end = 12.dp))
+                                }
                                 Column(Modifier.weight(1f)) {
                                     Text(song.title, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(
@@ -846,7 +826,7 @@ internal fun SongPicker(multiple: Boolean, onDismiss: () -> Unit, onPicked: (Lis
                                         fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     )
                                 }
-                                if (on) Icon(Icons.Rounded.CheckCircle, null, tint = Violet, modifier = Modifier.size(20.dp))
+                                if (on) Icon(Icons.Rounded.CheckCircle, null, tint = PartyTint.icon, modifier = Modifier.size(20.dp))
                             }
                         }
                     }

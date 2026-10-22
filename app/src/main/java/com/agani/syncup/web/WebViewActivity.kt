@@ -783,7 +783,7 @@ class WebViewActivity : ComponentActivity() {
             (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
     }
 
-    private fun isAmoled(): Boolean = AppPrefs(this).themeMode() == ThemeMode.BLACK
+    private fun isAmoled(): Boolean = AppPrefs(this).themeMode() == ThemeMode.DARK // Dark is pure black
 
     /** Modern, theme-aware "open where?" chooser for target=_blank / window.open() links. */
     private fun promptOpenLocation(uri: Uri) {

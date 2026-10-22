@@ -2,7 +2,7 @@
     <color name="ic_launcher_background">#000000</color>
     <!-- System (Android 12+) splash background — light value; dark value in values-night. -->
     <color name="splash_background">#F6F8FB</color>
-    <color name="splash_background_dark">#0B0F17</color>
+    <color name="splash_background_dark">#000000</color>
     <!-- Follows the phone's dark mode (values-night) — for the System theme. -->
     <color name="splash_background_system">#F6F8FB</color>
     <!-- Accent tint for the small notification icon (FCM + local). Brand blue. -->

@@ -6,12 +6,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /** Blocking screen shown when the installed version is below `min_supported_version`. */
 @Composable
@@ -32,37 +33,36 @@ fun ForceUpdateScreen() {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(32.dp),
+                .padding(horizontal = 24.dp, vertical = 32.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Icon(
-                Icons.Rounded.SystemUpdate,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(72.dp),
-            )
+            NoticeIcon(Icons.Rounded.SystemUpdate)
             Text(
                 "Update required",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
+                fontSize = 24.sp,
+                lineHeight = 30.sp,
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.padding(top = 20.dp),
             )
             Text(
                 "A newer version of SyncUp is required to continue. Please update from the Play Store.",
-                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 14.5.sp,
+                lineHeight = 21.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 10.dp),
+                modifier = Modifier.padding(top = 6.dp),
             )
             Button(
                 onClick = { openPlayStore(context) },
                 modifier = Modifier
+                    .padding(top = 28.dp)
                     .fillMaxWidth()
-                    .padding(top = 28.dp),
+                    .widthIn(max = 420.dp)
+                    .height(48.dp),
             ) {
-                Text("Update", fontWeight = FontWeight.SemiBold)
+                Text("Update", fontSize = 15.sp, fontWeight = FontWeight.Medium)
             }
         }
     }

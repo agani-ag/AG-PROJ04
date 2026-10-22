@@ -6,7 +6,6 @@ import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,11 +20,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
@@ -42,11 +38,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -82,25 +75,22 @@ fun SiteSettingsScreen(onBack: () -> Unit) {
         is SitePage.Site -> entries.firstOrNull { it.origin == p.origin }?.label ?: SitePermissions.displayHost(p.origin)
     }
     Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
-            BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") { if (page == SitePage.Overview) onBack() else page = SitePage.Overview }
-            Text(title, fontSize = 22.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 4.dp))
-        }
+        PageTopBar(title, onBack = { if (page == SitePage.Overview) onBack() else page = SitePage.Overview })
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             when (val p = page) {
                 SitePage.Overview -> {
                     Group {
-                        SitePerm.entries.forEach { perm ->
+                        SitePerm.entries.forEachIndexed { i, perm ->
                             val mine = entries.filter { it.perm == perm }
-                            Line(perm.icon, perm.title, summary(mine)) { page = SitePage.Permission(perm) }
+                            Line(perm.icon, perm.tint, perm.title, summary(mine), first = i == 0) { page = SitePage.Permission(perm) }
                         }
                         Line(
-                            Icons.AutoMirrored.Rounded.OpenInNew, "Pop-ups",
+                            Icons.AutoMirrored.Rounded.OpenInNew, Tint.ORANGE, "Pop-ups",
                             if (!BrowserSettings.blockPopups) "Allowed everywhere"
                             else "Blocked" + if (BrowserSettings.popupSites.isNotEmpty()) " · allowed on ${count(BrowserSettings.popupSites.size)}" else "",
                         ) { page = SitePage.Popups }
                         Line(
-                            Icons.Rounded.Shield, "Ads",
+                            Icons.Rounded.Shield, Tint.RED, "Ads",
                             if (!BrowserSettings.blockAds) "Not blocked"
                             else "Blocked" + if (AdBlocker.allowedSites.isNotEmpty()) " · allowed on ${count(AdBlocker.allowedSites.size)}" else "",
                         ) { page = SitePage.Ads }
@@ -108,13 +98,13 @@ fun SiteSettingsScreen(onBack: () -> Unit) {
                     val sites = entries.groupBy { it.origin }
                     if (sites.isNotEmpty()) {
                         Group(header = "Sites") {
-                            sites.forEach { (origin, list) ->
-                                SiteLine(list.first().label, siteSummary(list)) { page = SitePage.Site(origin) }
+                            sites.entries.forEachIndexed { i, (origin, list) ->
+                                SiteLine(list.first().label, siteSummary(list), first = i == 0) { page = SitePage.Site(origin) }
                             }
                         }
                     }
                     Group {
-                        Line(Icons.Rounded.PhoneAndroid, "SyncUp's own permissions", "What Android lets SyncUp use at all") {
+                        Line(Icons.Rounded.PhoneAndroid, Tint.SLATE, "SyncUp's own permissions", "What Android lets SyncUp use at all", first = true) {
                             runCatching {
                                 context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
                             }
@@ -128,8 +118,8 @@ fun SiteSettingsScreen(onBack: () -> Unit) {
                         Note("No site has asked for your ${p.perm.label} yet. When one does, you choose Allow or Block and it shows here.")
                     } else {
                         Group {
-                            mine.forEach { e ->
-                                ToggleLine(e.label, if (e.allowed) "Allowed" else "Blocked", e.allowed,
+                            mine.forEachIndexed { i, e ->
+                                ToggleLine(e.label, if (e.allowed) "Allowed" else "Blocked", e.allowed, first = i == 0,
                                     onToggle = { SitePermissions.set(e.origin, e.perm, it, inIncognito = false) },
                                     onRemove = { SitePermissions.remove(e.origin, e.perm) })
                             }
@@ -139,11 +129,13 @@ fun SiteSettingsScreen(onBack: () -> Unit) {
                 }
                 is SitePage.Site -> {
                     val mine = entries.filter { it.origin == p.origin }
-                    Group {
-                        mine.forEach { e ->
-                            ToggleLine(e.perm.title, if (e.allowed) "Allowed" else "Blocked", e.allowed,
-                                onToggle = { SitePermissions.set(e.origin, e.perm, it, inIncognito = false) },
-                                onRemove = { SitePermissions.remove(e.origin, e.perm) })
+                    if (mine.isNotEmpty()) {
+                        Group {
+                            mine.forEachIndexed { i, e ->
+                                ToggleLine(e.perm.title, if (e.allowed) "Allowed" else "Blocked", e.allowed, first = i == 0,
+                                    onToggle = { SitePermissions.set(e.origin, e.perm, it, inIncognito = false) },
+                                    onRemove = { SitePermissions.remove(e.origin, e.perm) })
+                            }
                         }
                     }
                     if (mine.isEmpty()) Note("Nothing saved for this site.")
@@ -155,8 +147,8 @@ fun SiteSettingsScreen(onBack: () -> Unit) {
                     )
                     if (BrowserSettings.popupSites.isNotEmpty()) {
                         Group {
-                            BrowserSettings.popupSites.toList().forEach { site ->
-                                RemoveLine(site, "Can open pop-ups") { BrowserSettings.removePopupSite(site) }
+                            BrowserSettings.popupSites.toList().forEachIndexed { i, site ->
+                                RemoveLine(site, "Can open pop-ups", first = i == 0) { BrowserSettings.removePopupSite(site) }
                             }
                         }
                     }
@@ -168,8 +160,8 @@ fun SiteSettingsScreen(onBack: () -> Unit) {
                     )
                     if (AdBlocker.allowedSites.isNotEmpty()) {
                         Group {
-                            AdBlocker.allowedSites.toList().forEach { site ->
-                                RemoveLine(site, "Ads allowed") { AdBlocker.setAllowed(site, false) }
+                            AdBlocker.allowedSites.toList().forEachIndexed { i, site ->
+                                RemoveLine(site, "Ads allowed", first = i == 0) { AdBlocker.setAllowed(site, false) }
                             }
                         }
                     }
@@ -179,6 +171,15 @@ fun SiteSettingsScreen(onBack: () -> Unit) {
         }
     }
 }
+
+/** Each permission's own soft colour (the same one on the overview and in its tile). */
+private val SitePerm.tint: Tint
+    get() = when (this) {
+        SitePerm.CAMERA -> Tint.SKY
+        SitePerm.MIC -> Tint.VIOLET
+        SitePerm.LOCATION -> Tint.GREEN
+        SitePerm.NOTIFICATIONS -> Tint.BLUE
+    }
 
 private fun count(n: Int) = if (n == 1) "1 site" else "$n sites"
 
@@ -204,11 +205,11 @@ private fun siteSummary(list: List<SitePermissions.Entry>): String {
     ).joinToString(" · ")
 }
 
+/** One white card of rows, with its heading above it. */
 @Composable
 private fun Group(header: String? = null, content: @Composable () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth().padding(bottom = 12.dp).clip(RoundedCornerShape(24.dp)).background(cs.surfaceContainerLow).padding(vertical = 4.dp)) {
-        if (header != null) Text(header, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = cs.primary, modifier = Modifier.padding(start = 18.dp, top = 12.dp, bottom = 4.dp))
+    if (header != null) CardHeading(header, top = 8.dp) // the card above already leaves 12 dp
+    Column(Modifier.fillMaxWidth().padding(bottom = 12.dp).browserCard()) {
         content()
     }
 }
@@ -219,55 +220,49 @@ private fun Note(text: String) {
 }
 
 @Composable
-private fun Line(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+private fun Line(icon: ImageVector, tint: Tint, title: String, subtitle: String, first: Boolean = false, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
+    if (!first) CardDivider()
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 60.dp).padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
-        Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(cs.surfaceContainerHigh), contentAlignment = Alignment.Center) {
-            Icon(icon, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(22.dp))
-        }
+        TintTile(icon, tint)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 16.sp, color = cs.onSurface)
-            Text(subtitle, fontSize = 13.sp, color = cs.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(title, fontSize = 15.sp, lineHeight = 20.sp, color = cs.onSurface)
+            Text(subtitle, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
         }
-        Icon(Icons.Rounded.ChevronRight, null, tint = cs.onSurfaceVariant)
-    }
-}
-
-private val SITE_COLORS = listOf(Color(0xFF0F766E), Color(0xFFEA580C), Color(0xFF7C3AED), Color(0xFF1B4FD8), Color(0xFFDC2626), Color(0xFF0891B2))
-
-@Composable
-private fun SiteLine(label: String, subtitle: String, onClick: () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 60.dp).padding(horizontal = 16.dp, vertical = 8.dp),
-    ) {
-        Box(
-            Modifier.size(36.dp).clip(CircleShape).background(SITE_COLORS[(label.hashCode() and 0x7fffffff) % SITE_COLORS.size]),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(label.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Medium)
-        }
-        Spacer(Modifier.width(14.dp))
-        Column(Modifier.weight(1f)) {
-            Text(label, fontSize = 16.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, fontSize = 13.sp, color = cs.onSurfaceVariant, maxLines = 2)
-        }
-        Icon(Icons.Rounded.ChevronRight, null, tint = cs.onSurfaceVariant)
+        Icon(Icons.Rounded.ChevronRight, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
     }
 }
 
 @Composable
-private fun ToggleLine(title: String, subtitle: String, on: Boolean, onToggle: (Boolean) -> Unit, onRemove: () -> Unit) {
+private fun SiteLine(label: String, subtitle: String, first: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(start = 18.dp, end = 4.dp)) {
+    if (!first) CardDivider()
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 60.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        LetterMark(label, label, size = 30.dp, round = true)
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 16.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, fontSize = 13.sp, color = if (on) cs.primary else cs.onSurfaceVariant)
+            Text(label, fontSize = 15.sp, lineHeight = 20.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(subtitle, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, maxLines = 2, modifier = Modifier.padding(top = 2.dp))
+        }
+        Icon(Icons.Rounded.ChevronRight, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
+    }
+}
+
+@Composable
+private fun ToggleLine(title: String, subtitle: String, on: Boolean, first: Boolean, onToggle: (Boolean) -> Unit, onRemove: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    if (!first) CardDivider()
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(start = 16.dp, end = 4.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 15.sp, lineHeight = 20.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(subtitle, fontSize = 12.5.sp, lineHeight = 17.sp, color = if (on) cs.primary else cs.onSurfaceVariant)
         }
         Switch(checked = on, onCheckedChange = onToggle)
         BarIcon(Icons.Rounded.Close, "Remove", tint = cs.onSurfaceVariant, onClick = onRemove)
@@ -275,12 +270,13 @@ private fun ToggleLine(title: String, subtitle: String, on: Boolean, onToggle: (
 }
 
 @Composable
-private fun RemoveLine(title: String, subtitle: String, onRemove: () -> Unit) {
+private fun RemoveLine(title: String, subtitle: String, first: Boolean, onRemove: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(start = 18.dp, end = 4.dp)) {
+    if (!first) CardDivider()
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(start = 16.dp, end = 4.dp)) {
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 16.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, fontSize = 13.sp, color = cs.onSurfaceVariant)
+            Text(title, fontSize = 15.sp, lineHeight = 20.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(subtitle, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant)
         }
         BarIcon(Icons.Rounded.Close, "Remove", tint = cs.onSurfaceVariant, onClick = onRemove)
     }

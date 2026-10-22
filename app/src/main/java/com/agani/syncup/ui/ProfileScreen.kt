@@ -5,6 +5,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.biometric.BiometricManager
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,8 +50,6 @@ import androidx.compose.material3.Checkbox
 import android.provider.Settings
 import com.agani.syncup.browser.BrowserSettings
 import com.agani.syncup.browser.SearchEngine
-import androidx.compose.material.icons.rounded.ChatBubbleOutline
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Email
 import androidx.compose.material.icons.rounded.Fingerprint
@@ -65,19 +64,13 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -139,6 +132,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.text.input.ImeAction
 import kotlinx.coroutines.delay
 import com.agani.syncup.ui.theme.dialogSurface
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.appCard
+import com.agani.syncup.browser.ui.BarIcon
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.ui.graphics.Color
 import com.agani.syncup.web.WebViewActivity
 import kotlinx.coroutines.launch
 
@@ -210,39 +208,21 @@ fun ProfileScreen(
     // Which collapsed group is open (one at a time); kept across rotation.
     var open by rememberSaveable { mutableStateOf<String?>(null) }
 
+    // Chat isn't here any more: You has a Chat row (chatEnabled / chatUnread / onOpenChat are kept for callers).
     Scaffold(
         containerColor = MaterialTheme.colorScheme.surface,
         topBar = {
-            TopAppBar(
-                title = { Text("Settings", style = MaterialTheme.typography.titleLarge) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                // The only entry point to Chat left in the app — signed-in users only.
-                actions = {
-                    if (user != null && chatEnabled) {
-                        Box {
-                            IconButton(onClick = onOpenChat) {
-                                Icon(Icons.Rounded.ChatBubbleOutline, contentDescription = if (chatUnread > 0) "Chat with admin · $chatUnread new" else "Chat with admin")
-                            }
-                            if (chatUnread > 0) {
-                                Box(
-                                    Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp).size(10.dp)
-                                        .clip(CircleShape).background(MaterialTheme.colorScheme.surface).padding(2.dp)
-                                        .clip(CircleShape).background(MaterialTheme.colorScheme.error),
-                                )
-                            }
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
-                ),
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
+                    .windowInsetsPadding(TopAppBarDefaults.windowInsets).heightIn(min = 60.dp).padding(horizontal = 4.dp, vertical = 4.dp),
+            ) {
+                BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
+                Text(
+                    "Settings", fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(start = 4.dp),
+                )
+            }
         },
     ) { padding ->
         Column(
@@ -250,15 +230,15 @@ fun ProfileScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
             if (user != null) {
                 SettingsGroup {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
                     ) {
                         Box(
                             modifier = Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
@@ -266,11 +246,11 @@ fun ProfileScreen(
                         ) {
                             Text(user.name.take(1).uppercase(), fontSize = 22.sp, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Medium)
                         }
-                        Spacer(Modifier.width(16.dp))
+                        Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(user.name, fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-                            Text(user.loginLabel, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                            Text("Signed in · SyncUp", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                            Text(user.name, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                            Text(user.loginLabel, fontSize = 12.5.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                            Text("Signed in · SyncUp", fontSize = 12.5.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
@@ -278,25 +258,27 @@ fun ProfileScreen(
                 // Login is optional — the browser works fully without it; signing in adds SyncUp features.
                 SettingsGroup {
                     Column(Modifier.fillMaxWidth().padding(18.dp)) {
-                        Text("SyncUp account", fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                        Text("SyncUp account", fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.height(4.dp))
                         Text(
                             "Optional. Sign in to sync your bookmarks, history and tabs across your devices.",
-                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 13.sp, lineHeight = 18.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.height(14.dp))
-                        Button(onClick = onSignIn) { Text("Sign in") }
+                        Button(onClick = onSignIn, modifier = Modifier.height(44.dp)) { Text("Sign in", fontWeight = FontWeight.Medium) }
                     }
                 }
             }
             Spacer(Modifier.height(12.dp))
 
-            // Collapsed groups: each shows a one-line summary; opening one closes the one before.
+            // The groups sit together on one card. Each shows a one-line summary; opening one closes
+            // the one before.
             val notificationsAllowed = remember { NotificationManagerCompat.from(context).areNotificationsEnabled() }
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.fillMaxWidth().appCard(CardShape)) {
                 if (user != null) {
                     SettingsSection(
+                        first = true,
                         icon = Icons.Rounded.ManageAccounts,
                         title = "Account",
                         summary = buildString {
@@ -312,24 +294,20 @@ fun ProfileScreen(
                             subtitle = user.email.ifBlank { "Add an email · sign in with it" },
                             onClick = { editIdentifier = "email" },
                         )
-                        RowDivider()
                         SettingRow(
                             icon = Icons.Rounded.PhoneAndroid,
                             title = "Mobile number",
                             subtitle = user.phone?.takeIf { it.isNotBlank() }?.let { com.agani.syncup.data.formatPhone(it) } ?: "Add a mobile number · sign in with it",
                             onClick = { editIdentifier = "phone" },
                         )
-                        RowDivider()
                         SettingRow(
                             icon = Icons.Rounded.AlternateEmail,
                             title = "Username",
                             subtitle = user.username?.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "Set a username · sign in with it",
                             onClick = { showUsername = true },
                         )
-                        RowDivider()
                         SettingRow(icon = Icons.Rounded.Lock, title = "Change password", onClick = { showChangePassword = true })
                         if (showPartners) {
-                            RowDivider()
                             SettingRow(
                                 icon = Icons.Rounded.Handshake,
                                 title = "Partners",
@@ -337,7 +315,6 @@ fun ProfileScreen(
                                 onClick = onOpenPartners,
                             )
                         }
-                        RowDivider()
                         SettingRow(
                             icon = Icons.Rounded.DeleteOutline,
                             title = "Delete account",
@@ -364,7 +341,6 @@ fun ProfileScreen(
                         )
                         if (BrowserSync.enabled) {
                             SyncType.entries.forEach { t ->
-                                RowDivider()
                                 SwitchRow(
                                     icon = when (t) {
                                         SyncType.BOOKMARKS -> Icons.Rounded.StarBorder
@@ -398,10 +374,8 @@ fun ProfileScreen(
                                     onCheckedChange = { BrowserSync.setOn(t, it) },
                                 )
                             }
-                            RowDivider()
                             SettingRow(icon = Icons.Rounded.CloudSync, title = "Sync now", subtitle = null, onClick = { BrowserSync.syncNow() })
                         }
-                        RowDivider()
                         SettingRow(
                             icon = Icons.Rounded.CloudOff,
                             title = "Delete synced data",
@@ -420,6 +394,7 @@ fun ProfileScreen(
                 }
 
                 SettingsSection(
+                    first = user == null,
                     icon = Icons.Rounded.Language,
                     title = "Browser",
                     summary = "${BrowserSettings.searchEngine.label} · pop-ups ${if (BrowserSettings.blockPopups) "blocked" else "allowed"} · " +
@@ -428,7 +403,6 @@ fun ProfileScreen(
                     onToggle = { open = if (open == "browser") null else "browser" },
                 ) {
                     SettingRow(icon = Icons.Rounded.Search, title = "Search engine", subtitle = BrowserSettings.searchEngine.label, onClick = { showEngine = true })
-                    RowDivider()
                     SwitchRow(
                         icon = Icons.Rounded.Block,
                         title = "Block pop-ups",
@@ -439,7 +413,6 @@ fun ProfileScreen(
                     )
                     val allowedSites = BrowserSettings.popupSites.size
                     if (BrowserSettings.blockPopups && allowedSites > 0) {
-                        RowDivider()
                         SettingRow(
                             icon = Icons.AutoMirrored.Rounded.OpenInNew,
                             title = "Sites allowed to open pop-ups",
@@ -447,7 +420,6 @@ fun ProfileScreen(
                             onClick = { confirmClearPopupSites = true },
                         )
                     }
-                    RowDivider()
                     SwitchRow(
                         icon = Icons.Rounded.Shield,
                         title = "Block ads",
@@ -461,7 +433,6 @@ fun ProfileScreen(
                         onCheckedChange = { BrowserSettings.updateBlockAds(it) },
                     )
                     if (BrowserSettings.blockAds) {
-                        RowDivider()
                         val updated = com.agani.syncup.browser.AdBlocker.lastUpdated
                         SettingRow(
                             icon = Icons.Rounded.CloudSync,
@@ -474,7 +445,6 @@ fun ProfileScreen(
                             onClick = { com.agani.syncup.browser.AdBlocker.updateNow() },
                         )
                     }
-                    RowDivider()
                     SwitchRow(
                         icon = Icons.Rounded.Download,
                         title = "Media & file detector",
@@ -483,14 +453,12 @@ fun ProfileScreen(
                         enabled = true,
                         onCheckedChange = { BrowserSettings.updateMediaDetector(it) },
                     )
-                    RowDivider()
                     SettingRow(
                         icon = Icons.Rounded.FormatSize,
                         title = "Text size",
                         subtitle = "${BrowserSettings.textZoom}%",
                         onClick = { showTextSize = true },
                     )
-                    RowDivider()
                     SwitchRow(
                         icon = Icons.Rounded.DarkMode,
                         title = "Dark mode for websites",
@@ -499,7 +467,6 @@ fun ProfileScreen(
                         enabled = true,
                         onCheckedChange = { BrowserSettings.updateDarkenWebsites(it) },
                     )
-                    RowDivider()
                     SwitchRow(
                         icon = Icons.Rounded.VerticalAlignBottom,
                         title = "Address bar at bottom",
@@ -533,7 +500,6 @@ fun ProfileScreen(
                         onTapChange = { showSetPin = true },
                         onToggle = { on -> if (on) showSetPin = true else showRemovePin = true },
                     )
-                    RowDivider()
                     SwitchRow(
                         icon = Icons.Rounded.Fingerprint,
                         title = "Biometric unlock",
@@ -550,7 +516,6 @@ fun ProfileScreen(
                         },
                     )
                     if (hasPin) {
-                        RowDivider()
                         SettingRow(
                             icon = Icons.Rounded.Timer,
                             title = "Auto-lock",
@@ -558,14 +523,12 @@ fun ProfileScreen(
                             onClick = { showLockGrace = true },
                         )
                     }
-                    RowDivider()
                     SettingRow(
                         icon = Icons.Rounded.DeleteSweep,
                         title = "Clear browsing data",
                         subtitle = "History, cookies, cache",
                         onClick = { showClearData = true },
                     )
-                    RowDivider()
                     SettingRow(
                         icon = Icons.Rounded.Tune,
                         title = "Site settings",
@@ -577,31 +540,18 @@ fun ProfileScreen(
                 SettingsSection(
                     icon = Icons.Rounded.Palette,
                     title = "Appearance",
-                    summary = when (themeMode) {
-                        ThemeMode.SYSTEM -> "Theme follows the system"
-                        ThemeMode.LIGHT -> "Light theme"
-                        ThemeMode.DARK -> "Dark theme"
-                        ThemeMode.BLACK -> "Black theme"
-                    },
+                    summary = if (themeMode == ThemeMode.LIGHT) "Light theme" else "Dark theme",
                     expanded = open == "appearance",
                     onToggle = { open = if (open == "appearance") null else "appearance" },
                 ) {
-                    Box(Modifier.padding(14.dp)) {
-                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                            val options = listOf(
-                                ThemeMode.SYSTEM to "System",
-                                ThemeMode.LIGHT to "Light",
-                                ThemeMode.DARK to "Dark",
-                                ThemeMode.BLACK to "Black",
-                            )
-                            options.forEachIndexed { index, (mode, label) ->
-                                SegmentedButton(
-                                    selected = themeMode == mode,
-                                    onClick = { onThemeChange(mode) },
-                                    shape = SegmentedButtonDefaults.itemShape(index, options.size),
-                                ) { Text(label) }
-                            }
+                    // v7: Light or Dark — and Dark is pure black.
+                    Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 14.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            ThemeChoice(ThemeMode.LIGHT, "Light", themeMode != ThemeMode.DARK, Modifier.weight(1f)) { onThemeChange(ThemeMode.LIGHT) }
+                            ThemeChoice(ThemeMode.DARK, "Dark", themeMode == ThemeMode.DARK, Modifier.weight(1f)) { onThemeChange(ThemeMode.DARK) }
                         }
+                        Text("Dark is pure black.", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 4.dp, top = 8.dp))
                     }
                 }
 
@@ -634,7 +584,6 @@ fun ProfileScreen(
                             DeviceRegistrar.setUpdatesEnabled(context, it)
                         },
                     )
-                    RowDivider()
                     SettingRow(
                         icon = Icons.Rounded.NotificationsActive,
                         title = "Notification settings",
@@ -667,7 +616,6 @@ fun ProfileScreen(
                         onClick = { showHelp = true },
                     )
                     if (privacyPolicyUrl.isNotBlank()) {
-                        RowDivider()
                         SettingRow(
                             icon = Icons.Rounded.Policy,
                             title = "Privacy policy",
@@ -684,16 +632,15 @@ fun ProfileScreen(
                             },
                         )
                     }
-                    RowDivider()
                     SettingRow(icon = Icons.Rounded.Info, title = "App version", subtitle = appVersion, onClick = null)
                 }
             }
 
             if (user != null) {
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(24.dp))
             OutlinedButton(
                 onClick = onLogout,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp).height(48.dp),
+                modifier = Modifier.fillMaxWidth().height(48.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
             ) {
                 Icon(Icons.AutoMirrored.Rounded.Logout, contentDescription = null, modifier = Modifier.size(20.dp))
@@ -1180,35 +1127,32 @@ private fun ChangePasswordDialog(
 
 @Composable
 private fun SettingsGroup(content: @Composable () -> Unit) {
-    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
-        Column { content() }
-    }
+    Column(Modifier.fillMaxWidth().appCard(CardShape)) { content() }
 }
 
+/** A row's plain grey icon (red for a row that deletes something). */
 @Composable
-private fun IconTile(icon: ImageVector, danger: Boolean = false) {
+private fun RowIcon(icon: ImageVector, danger: Boolean = false) {
     val cs = MaterialTheme.colorScheme
-    Box(
-        modifier = Modifier
-            .size(40.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (danger) cs.errorContainer else cs.surfaceContainerHigh),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, contentDescription = null, tint = if (danger) cs.error else cs.onSurfaceVariant, modifier = Modifier.size(22.dp))
-    }
+    Icon(icon, contentDescription = null, tint = if (danger) cs.error else cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
 }
 
 @Composable
 private fun RowText(title: String, subtitle: String?, modifier: Modifier, danger: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     Column(modifier = modifier) {
-        Text(title, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium, letterSpacing = .1.sp, color = if (danger) cs.error else cs.onSurface)
+        Text(title, fontSize = 14.5.sp, lineHeight = 20.sp, color = if (danger) cs.error else cs.onSurface)
         if (subtitle != null) {
-            Text(subtitle, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = .3.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+            Text(
+                subtitle, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant,
+                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 1.dp),
+            )
         }
     }
 }
+
+/** The padding every row inside an open group shares. */
+private fun Modifier.groupRow(): Modifier = heightIn(min = 52.dp).padding(start = 18.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
 
 @Composable
 private fun SettingRow(icon: ImageVector, title: String, subtitle: String? = null, danger: Boolean = false, onClick: (() -> Unit)?) {
@@ -1217,15 +1161,11 @@ private fun SettingRow(icon: ImageVector, title: String, subtitle: String? = nul
         modifier = Modifier
             .fillMaxWidth()
             .let { if (onClick != null) it.clickable(onClick = onClick) else it }
-            .heightIn(min = 64.dp)
-            .padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+            .groupRow(),
     ) {
-        IconTile(icon, danger)
-        Spacer(Modifier.width(16.dp))
+        RowIcon(icon, danger)
+        Spacer(Modifier.width(14.dp))
         RowText(title, subtitle, Modifier.weight(1f), danger)
-        if (onClick != null && !danger) {
-            Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
     }
 }
 
@@ -1236,12 +1176,12 @@ private fun PinLockRow(hasPin: Boolean, onTapChange: () -> Unit, onToggle: (Bool
         modifier = Modifier
             .fillMaxWidth()
             .let { if (hasPin) it.clickable(onClick = onTapChange) else it }
-            .heightIn(min = 64.dp)
-            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
+            .groupRow(),
     ) {
-        IconTile(Icons.Rounded.Lock)
-        Spacer(Modifier.width(16.dp))
+        RowIcon(Icons.Rounded.Lock)
+        Spacer(Modifier.width(14.dp))
         RowText("App lock (PIN)", if (hasPin) "On · tap to change PIN" else "Off · protect with a 4-digit PIN", Modifier.weight(1f))
+        Spacer(Modifier.width(8.dp))
         Switch(checked = hasPin, onCheckedChange = onToggle)
     }
 }
@@ -1260,25 +1200,14 @@ private fun SwitchRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = enabled) { onCheckedChange(!checked) }
-            .heightIn(min = 64.dp)
-            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
+            .groupRow(),
     ) {
-        IconTile(icon)
-        Spacer(Modifier.width(16.dp))
+        RowIcon(icon)
+        Spacer(Modifier.width(14.dp))
         RowText(title, subtitle, Modifier.weight(1f))
+        Spacer(Modifier.width(8.dp))
         Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
-}
-
-@Composable
-private fun RowDivider() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 72.dp)
-            .height(1.dp)
-            .background(MaterialTheme.colorScheme.outlineVariant),
-    )
 }
 
 /** One line under the Sync switch: off / syncing / problem / last synced. */
@@ -1455,8 +1384,9 @@ private fun UsernameDialog(
 
 
 /**
- * A collapsed settings group: icon, title and a one-line summary of the current state. Tapping it
- * opens the group's rows below (and the screen closes whichever group was open before).
+ * A collapsed settings group (one of the rows on the groups card): tile, title and a one-line
+ * summary of the current state. Tapping it opens the group's rows below, on the page's grey
+ * (and the screen closes whichever group was open before). [first] = no line above it.
  */
 @Composable
 private fun SettingsSection(
@@ -1465,48 +1395,80 @@ private fun SettingsSection(
     summary: String,
     expanded: Boolean,
     onToggle: () -> Unit,
+    first: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    val chevron by animateFloatAsState(if (expanded) 180f else 0f, tween(220), label = "chevron")
-    val tile by animateColorAsState(if (expanded) cs.primaryContainer else cs.surfaceContainerHigh, tween(220), label = "tile")
-    Surface(shape = RoundedCornerShape(20.dp), color = cs.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
-        Column {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClickLabel = if (expanded) "Collapse" else "Expand", onClick = onToggle)
-                    .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
-                    .heightIn(min = 72.dp)
-                    .padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+    val chevron by animateFloatAsState(if (expanded) 180f else 0f, tween(200), label = "chevron")
+    val tile by animateColorAsState(if (expanded) cs.primaryContainer else cs.surfaceContainer, tween(200), label = "tile")
+    Column {
+        if (!first) Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClickLabel = if (expanded) "Collapse" else "Expand", onClick = onToggle)
+                .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
+                .heightIn(min = 60.dp)
+                .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
+        ) {
+            Box(
+                Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).background(tile),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(
-                    Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(tile),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(icon, null, tint = if (expanded) cs.onPrimaryContainer else cs.onSurfaceVariant, modifier = Modifier.size(22.dp))
-                }
-                Spacer(Modifier.width(16.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(title, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
-                    Text(
-                        summary, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
-                Icon(Icons.Rounded.ExpandMore, null, tint = cs.onSurfaceVariant, modifier = Modifier.rotate(chevron))
+                Icon(icon, null, tint = if (expanded) cs.onPrimaryContainer else cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
             }
-            androidx.compose.animation.AnimatedVisibility(
-                visible = expanded,
-                enter = expandVertically(tween(240)) + fadeIn(tween(200)),
-                exit = shrinkVertically(tween(200)) + fadeOut(tween(120)),
-            ) {
-                Column {
-                    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(1.dp).background(cs.outlineVariant))
-                    content()
-                }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
+                Text(
+                    summary, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 1.dp),
+                )
             }
+            Spacer(Modifier.width(8.dp))
+            Icon(Icons.Rounded.ExpandMore, null, tint = cs.onSurfaceVariant, modifier = Modifier.rotate(chevron))
+        }
+        androidx.compose.animation.AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(tween(220)) + fadeIn(tween(180)),
+            exit = shrinkVertically(tween(200)) + fadeOut(tween(150)),
+        ) {
+            Column(Modifier.fillMaxWidth().background(cs.surface)) {
+                Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant))
+                content()
+            }
+        }
+    }
+}
+
+
+/** One Appearance choice: a small picture of the theme, then its radio and name. */
+@Composable
+private fun ThemeChoice(mode: ThemeMode, label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val dark = mode == ThemeMode.DARK
+    val page = if (dark) Color.Black else Color(0xFFF6F8FB)
+    val bar = if (dark) Color(0xFF8AB4FF) else Color(0xFF2563EB)
+    val card = if (dark) Color(0xFF1A1E25) else Color.White
+    val line = if (dark) Color(0xFF1E232C) else Color(0xFFE6EAF0)
+    val shape = RoundedCornerShape(18.dp)
+    val bit = RoundedCornerShape(5.dp)
+    Column(
+        modifier.clip(shape).background(cs.surfaceContainerLowest).border(2.dp, if (selected) cs.primary else cs.outlineVariant, shape)
+            .clickable(onClick = onClick).padding(8.dp),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().height(58.dp).clip(RoundedCornerShape(11.dp)).background(page).border(1.dp, line, RoundedCornerShape(11.dp)).padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Box(Modifier.fillMaxWidth(.45f).height(9.dp).clip(bit).background(bar))
+            Box(Modifier.fillMaxWidth().height(9.dp).clip(bit).background(card).then(if (dark) Modifier else Modifier.border(1.dp, line, bit)))
+            Box(Modifier.fillMaxWidth(.7f).height(9.dp).clip(bit).background(card).then(if (dark) Modifier else Modifier.border(1.dp, line, bit)))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 0.dp, top = 4.dp)) {
+            RadioButton(selected = selected, onClick = onClick, modifier = Modifier.size(36.dp))
+            Text(label, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
         }
     }
 }

@@ -1,5 +1,7 @@
 package com.agani.syncup.wellbeing
 
+import com.agani.syncup.ui.theme.CardShape
+import com.agani.syncup.ui.theme.appCard
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -34,7 +36,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -62,7 +63,7 @@ import com.agani.syncup.browser.ui.BarIcon
 import java.text.DateFormat
 import java.util.Calendar
 
-/** A tool's two colours: its accent and the soft container behind its icons. */
+/** A tool's two colours: its accent and the soft container behind its icons (Dark: tiles that sit on black). */
 internal class WTint(val accent: Color, val container: Color)
 
 @Composable
@@ -71,12 +72,12 @@ internal fun wTint(light: Long, dark: Long, lightC: Long, darkC: Long): WTint {
     return WTint(Color(if (l) light else dark), Color(if (l) lightC else darkC))
 }
 
-@Composable internal fun waterTint() = wTint(0xFF0E7490, 0xFF67E8F9, 0xFFCFFAFE, 0xFF164E63)
-@Composable internal fun stepsTint() = wTint(0xFFB45309, 0xFFFCD34D, 0xFFFEF3C7, 0xFF451A03)
-@Composable internal fun breaksTint() = wTint(0xFF0F766E, 0xFF5EEAD4, 0xFFCCFBF1, 0xFF134E4A)
-@Composable internal fun sleepTint() = wTint(0xFF4338CA, 0xFFA5B4FC, 0xFFE0E7FF, 0xFF312E81)
-@Composable internal fun habitsTint() = wTint(0xFFBE185D, 0xFFF9A8D4, 0xFFFCE7F3, 0xFF500724)
-@Composable internal fun moodTint() = wTint(0xFF4D7C0F, 0xFFBEF264, 0xFFECFCCB, 0xFF1A2E05)
+@Composable internal fun waterTint() = wTint(0xFF0E7490, 0xFF67E8F9, 0xFFCFFAFE, 0xFF0C2930)
+@Composable internal fun stepsTint() = wTint(0xFFB45309, 0xFFFCD34D, 0xFFFEF3C7, 0xFF30240C)
+@Composable internal fun breaksTint() = wTint(0xFF0F766E, 0xFF5EEAD4, 0xFFCCFBF1, 0xFF0D2A27)
+@Composable internal fun sleepTint() = wTint(0xFF4338CA, 0xFFA5B4FC, 0xFFE0E7FF, 0xFF1C1F3D)
+@Composable internal fun habitsTint() = wTint(0xFFBE185D, 0xFFF9A8D4, 0xFFFCE7F3, 0xFF331526)
+@Composable internal fun moodTint() = wTint(0xFF4D7C0F, 0xFFBEF264, 0xFFECFCCB, 0xFF1C2A0D)
 
 /** A Wellbeing page: back arrow, title, [actions], then [content] (scrolling unless [scroll] is false). */
 @Composable
@@ -92,9 +93,12 @@ internal fun WellPage(
 ) {
     Box(Modifier.fillMaxSize().background(background).windowInsetsPadding(WindowInsets.safeDrawing)) {
         Column(Modifier.fillMaxSize()) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 4.dp)) {
                 BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = contentColor, onClick = onBack)
-                Text(title, fontSize = 22.sp, lineHeight = 28.sp, color = contentColor, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = 4.dp))
+                Text(
+                    title, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium, color = contentColor, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(start = 4.dp),
+                )
                 actions()
             }
             Column(
@@ -163,11 +167,10 @@ internal fun Stats(vararg items: Pair<String, String>, modifier: Modifier = Modi
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         items.forEach { (label, value) ->
             Column(
-                Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).background(cs.surfaceContainerLowest)
-                    .border(1.dp, cs.outlineVariant, RoundedCornerShape(16.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
+                Modifier.weight(1f).appCard(RoundedCornerShape(20.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
             ) {
                 Text(label, fontSize = 12.sp, color = cs.onSurfaceVariant, maxLines = 1)
-                Text(value, fontSize = 18.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(value, fontSize = 17.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 1.dp))
             }
         }
     }
@@ -176,19 +179,23 @@ internal fun Stats(vararg items: Pair<String, String>, modifier: Modifier = Modi
 /** A rounded card on the page. */
 @Composable
 internal fun WCard(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
-    val cs = MaterialTheme.colorScheme
     Column(
-        modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(RoundedCornerShape(20.dp)).background(cs.surfaceContainerLowest)
-            .border(1.dp, cs.outlineVariant, RoundedCornerShape(20.dp))
+        modifier.fillMaxWidth().padding(horizontal = 16.dp).appCard(CardShape)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         content = content,
     )
 }
 
-/** A small capital label above a group ("TODAY"). */
+/** A section heading above a group of cards ("Today"). */
 @Composable
-internal fun Lab(text: String, color: Color = MaterialTheme.colorScheme.onSurfaceVariant, modifier: Modifier = Modifier) {
-    Text(text.uppercase(), fontSize = 12.5.sp, fontWeight = FontWeight.Medium, letterSpacing = .4.sp, color = color, modifier = modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp))
+internal fun Lab(text: String, color: Color = MaterialTheme.colorScheme.onSurface, modifier: Modifier = Modifier) {
+    Text(text, fontSize = 14.5.sp, fontWeight = FontWeight.Medium, color = color, modifier = modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 10.dp))
+}
+
+/** A small label above a group inside a sheet ("What's behind it?"). */
+@Composable
+internal fun SheetLab(text: String, modifier: Modifier = Modifier) {
+    Text(text, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 8.dp))
 }
 
 /** An icon in its soft tile. */
@@ -199,9 +206,9 @@ internal fun TintIcon(icon: ImageVector, tint: WTint, size: Dp = 36.dp) {
     }
 }
 
-/** A line with a switch. */
+/** A line with a switch (the app's blue, like every switch). */
 @Composable
-internal fun SwitchLine(title: String, sub: String?, checked: Boolean, accent: Color, onChange: (Boolean) -> Unit, icon: (@Composable () -> Unit)? = null) {
+internal fun SwitchLine(title: String, sub: String?, checked: Boolean, onChange: (Boolean) -> Unit, icon: (@Composable () -> Unit)? = null) {
     val cs = MaterialTheme.colorScheme
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(horizontal = 16.dp, vertical = 12.dp)) {
         if (icon != null) {
@@ -212,7 +219,7 @@ internal fun SwitchLine(title: String, sub: String?, checked: Boolean, accent: C
             Text(title, fontSize = 15.sp, color = cs.onSurface)
             if (sub != null) Text(sub, fontSize = 12.5.sp, color = cs.onSurfaceVariant)
         }
-        Switch(checked, onChange, colors = SwitchDefaults.colors(checkedTrackColor = accent))
+        Switch(checked, onChange)
     }
 }
 
@@ -226,21 +233,21 @@ internal fun PlusMinusLine(title: String, value: String, onMinus: () -> Unit, on
             if (sub != null) Text(sub, fontSize = 12.5.sp, color = cs.onSurfaceVariant)
         }
         RoundButton("−", "Less", onMinus)
-        Text(value, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, textAlign = TextAlign.Center, modifier = Modifier.width(78.dp))
+        Text(value, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, textAlign = TextAlign.Center, modifier = Modifier.width(72.dp))
         RoundButton("+", "More", onPlus)
     }
 }
 
 @Composable
-internal fun RoundButton(text: String, desc: String, onClick: () -> Unit, size: Dp = 38.dp) {
+internal fun RoundButton(text: String, desc: String, onClick: () -> Unit, size: Dp = 36.dp) {
     val cs = MaterialTheme.colorScheme
     Box(
-        Modifier.size(size).clip(CircleShape).background(cs.surfaceContainerHigh).clickable(onClickLabel = desc, onClick = onClick),
+        Modifier.size(size).clip(CircleShape).background(cs.surfaceContainer).clickable(onClickLabel = desc, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Text(text, fontSize = 20.sp, color = cs.onSurface) }
 }
 
-/** A row of choices, one picked. */
+/** A row of pill choices, the picked one in the tool's soft colour. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun <T> Choices(options: List<T>, picked: T?, label: (T) -> String, tint: WTint, onPick: (T) -> Unit, modifier: Modifier = Modifier) {
@@ -249,41 +256,48 @@ internal fun <T> Choices(options: List<T>, picked: T?, label: (T) -> String, tin
         options.forEach { o ->
             val on = o == picked
             Box(
-                Modifier.clip(RoundedCornerShape(12.dp))
-                    .background(if (on) tint.container else Color.Transparent)
-                    .border(if (on) 1.5.dp else 1.dp, if (on) tint.accent else cs.outline, RoundedCornerShape(12.dp))
-                    .clickable { onPick(o) }.padding(horizontal = 16.dp, vertical = 10.dp),
+                Modifier.height(36.dp).clip(CircleShape)
+                    .background(if (on) tint.container else cs.surfaceContainerLowest)
+                    .border(1.dp, if (on) Color.Transparent else cs.outlineVariant, CircleShape)
+                    .clickable { onPick(o) }.padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center,
             ) { Text(label(o), fontSize = 14.sp, fontWeight = FontWeight.Medium, color = if (on) tint.accent else cs.onSurface) }
         }
     }
 }
 
-/** Mon … Sun toggles ([mask] bit 0 = Monday). */
+/** Mon … Sun toggles ([mask] bit 0 = Monday); [off] / [offText] colour the days not picked. */
 @Composable
-internal fun DaysPick(mask: Int, tint: WTint, onChange: (Int) -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+internal fun DaysPick(
+    mask: Int,
+    tint: WTint,
+    modifier: Modifier = Modifier.padding(horizontal = 16.dp),
+    off: Color = MaterialTheme.colorScheme.surfaceContainer,
+    offText: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    onChange: (Int) -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = modifier.fillMaxWidth()) {
         listOf("M", "T", "W", "T", "F", "S", "S").forEachIndexed { i, d ->
             val on = mask and (1 shl i) != 0
             Box(
-                Modifier.weight(1f).height(38.dp).clip(RoundedCornerShape(19.dp)).background(if (on) tint.container else cs.surfaceContainer)
+                Modifier.weight(1f).height(36.dp).clip(CircleShape).background(if (on) tint.container else off)
                     .clickable { onChange(mask xor (1 shl i)) },
                 contentAlignment = Alignment.Center,
-            ) { Text(d, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (on) tint.accent else cs.onSurfaceVariant) }
+            ) { Text(d, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (on) tint.accent else offText) }
         }
     }
 }
 
-/** A tappable line showing a time; tapping opens the time picker. */
+/** A tappable line showing a time (in the app's blue); tapping opens the time picker. */
 @Composable
-internal fun TimeLine(title: String, minuteOfDay: Int, tint: WTint, onPick: () -> Unit, sub: String? = null) {
+internal fun TimeLine(title: String, minuteOfDay: Int, onPick: () -> Unit, sub: String? = null) {
     val cs = MaterialTheme.colorScheme
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(onClick = onPick).padding(horizontal = 16.dp, vertical = 12.dp)) {
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = 15.sp, color = cs.onSurface)
             if (sub != null) Text(sub, fontSize = 12.5.sp, color = cs.onSurfaceVariant)
         }
-        Text(timeText(minuteOfDay), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = tint.accent)
+        Text(timeText(minuteOfDay), fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.primary)
     }
 }
 
@@ -301,11 +315,19 @@ internal fun TimeDialog(title: String, minuteOfDay: Int, onDone: (Int) -> Unit, 
     )
 }
 
-/** A big filled button. */
+/** A page's main action: a big pill in the app's blue ([color] / [textColor] only for the night pages). */
 @Composable
-internal fun BigButton(text: String, color: Color, onClick: () -> Unit, modifier: Modifier = Modifier, textColor: Color = Color.White, icon: ImageVector? = null) {
+internal fun BigButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    enabled: Boolean = true,
+    color: Color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
+    textColor: Color = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+) {
     Row(
-        modifier.fillMaxWidth().padding(horizontal = 20.dp).height(52.dp).clip(RoundedCornerShape(26.dp)).background(color).clickable(onClick = onClick),
+        modifier.fillMaxWidth().padding(horizontal = 20.dp).height(50.dp).clip(CircleShape).background(color).clickable(enabled = enabled, onClick = onClick),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
     ) {
         if (icon != null) {

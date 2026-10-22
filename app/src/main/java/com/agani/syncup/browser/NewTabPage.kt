@@ -31,12 +31,13 @@ import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.Cookie
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.NoPhotography
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.foundation.border
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -64,8 +65,8 @@ import androidx.compose.ui.unit.sp
 import com.agani.syncup.R
 import com.agani.syncup.browser.ui.Avatar
 import com.agani.syncup.browser.ui.BarIcon
+import com.agani.syncup.browser.ui.PillButton
 import com.agani.syncup.browser.ui.SectionTheme
-import com.agani.syncup.browser.ui.SyncPill
 import java.util.Calendar
 
 private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_OF_DAY)) {
@@ -78,7 +79,8 @@ private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_
 /**
  * No address bar. Signed out: account icon, SyncUp mark, search, shortcuts. Signed in: greeting +
  * avatar, search, admin announcement (strip), Work card (only when the user has work links),
- * shortcuts; the Music mini player floats above the bottom bar while something is loaded.
+ * shortcuts; the Music mini player floats above the bottom bar while something is loaded. Search is
+ * a white card pill and the shortcuts sit in one white card (v7).
  */
 @Composable
 internal fun NormalHome(
@@ -103,7 +105,7 @@ internal fun NormalHome(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = if (playerShown) 96.dp else 20.dp),
+                .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = if (playerShown) 96.dp else 20.dp),
         ) {
             if (user == null) {
                 Row(Modifier.fillMaxWidth().padding(end = 0.dp), horizontalArrangement = Arrangement.End) {
@@ -125,53 +127,52 @@ internal fun NormalHome(
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(64.dp)) {
                     Column(Modifier.weight(1f)) {
-                        Text(greeting(), fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = .2.sp, color = cs.onSurfaceVariant)
+                        Text(greeting(), fontSize = 13.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant)
                         Text(
-                            user.name.substringBefore(' '), fontSize = 24.sp, lineHeight = 30.sp, color = cs.onSurface,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            user.name.substringBefore(' '), fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Medium,
+                            color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
                     Box(Modifier.offset(x = 4.dp)) { com.agani.syncup.notifications.NotificationBell(onNotifications) }
-                    Box(Modifier.offset(x = 4.dp)) { Avatar(user, unread = account.chatUnread > 0, onClick = onAvatar) }
+                    Box(Modifier.offset(x = 4.dp)) { Avatar(user, unread = account.chatUnread > 0, size = 36.dp, onClick = onAvatar) }
                 }
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
             }
 
-            SyncPill(modifier = Modifier.fillMaxWidth(), height = 56.dp, onClick = onSearch) {
-                Icon(Icons.Rounded.Search, null, tint = cs.onSurfaceVariant)
-                Text("Search or type web address", fontSize = 15.sp, letterSpacing = .15.sp, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f), maxLines = 1)
-                BarIcon(Icons.Rounded.Mic, "Voice search", tint = cs.onSurfaceVariant, onClick = onVoice)
+            SearchCard(modifier = Modifier.fillMaxWidth(), onClick = onSearch) {
+                Text("Search or type web address", fontSize = 15.sp, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                PillButton(Icons.Rounded.Mic, "Voice search", size = 40.dp, onClick = onVoice)
             }
 
             val ann = account.announcement
             if (user != null && ann != null && ann.active && !ann.fullscreen && (ann.title.isNotBlank() || ann.message.isNotBlank())) {
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(14.dp))
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.Top,
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(24.dp))
-                        .background(cs.secondaryContainer)
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .background(cs.primaryContainer)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
                 ) {
                     Icon(Icons.Rounded.Campaign, null, tint = cs.primary, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        if (ann.title.isNotBlank()) Text(ann.title, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium, color = cs.onSecondaryContainer)
-                        if (ann.message.isNotBlank()) Text(ann.message, fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSecondaryContainer.copy(alpha = .85f))
+                        if (ann.title.isNotBlank()) Text(ann.title, fontSize = 14.5.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium, color = cs.onPrimaryContainer)
+                        if (ann.message.isNotBlank()) Text(ann.message, fontSize = 13.5.sp, lineHeight = 19.sp, color = cs.onPrimaryContainer.copy(alpha = .9f))
                     }
                 }
             }
 
             if (hasWork) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(14.dp))
                 SectionTheme(Section.WORK) {
                     val w = MaterialTheme.colorScheme
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(20.dp))
+                            .clip(RoundedCornerShape(24.dp))
                             .background(w.primaryContainer)
                             .clickable(onClick = onOpenWork)
                             .padding(16.dp),
@@ -179,8 +180,8 @@ internal fun NormalHome(
                         if (singleLink != null) {
                             LinkIcon(singleLink, 44.dp)
                         } else {
-                            Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(w.primary), contentAlignment = Alignment.Center) {
-                                Icon(SyncUpMark, null, tint = w.onPrimary)
+                            Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(w.primary), contentAlignment = Alignment.Center) {
+                                Icon(SyncUpMark, null, tint = w.primaryContainer)
                             }
                         }
                         Spacer(Modifier.width(14.dp))
@@ -197,17 +198,22 @@ internal fun NormalHome(
                                     workOpenTabs > 0 -> "Open · $workOpenTabs page${if (workOpenTabs == 1) "" else "s"}"
                                     else -> "Your SyncUp link"
                                 },
-                                fontSize = 12.sp, lineHeight = 16.sp, color = w.onPrimaryContainer.copy(alpha = .85f),
+                                fontSize = 12.5.sp, lineHeight = 17.sp, color = w.primary, modifier = Modifier.padding(top = 2.dp),
                             )
                         }
-                        Button(onClick = onOpenWork, contentPadding = PaddingValues(horizontal = 18.dp), modifier = Modifier.height(36.dp)) { Text("Open") }
+                        Button(
+                            onClick = onOpenWork,
+                            colors = ButtonDefaults.buttonColors(containerColor = w.primary, contentColor = w.primaryContainer),
+                            contentPadding = PaddingValues(horizontal = 18.dp),
+                            modifier = Modifier.height(36.dp),
+                        ) { Text("Open", fontSize = 14.sp, fontWeight = FontWeight.Medium) }
                     }
                 }
             }
 
             // SyncUp's shortcut catalogue, by category.
             LaunchedEffect(Unit) { ShortcutCatalog.refresh() }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(20.dp))
             CatalogShortcuts(onOpen = onOpenUrl)
         }
         if (playerShown) {
@@ -240,10 +246,10 @@ private fun CatalogShortcuts(onOpen: (String) -> Unit) {
             LazyRow(
                 state = chips,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = PaddingValues(horizontal = 20.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp),
                 modifier = Modifier
                     .layout { measurable, constraints ->
-                        val bleed = 20.dp.roundToPx()
+                        val bleed = 16.dp.roundToPx()
                         val placeable = measurable.measure(constraints.copy(maxWidth = constraints.maxWidth + bleed * 2))
                         layout(constraints.maxWidth, placeable.height) { placeable.place(-bleed, 0) }
                     }
@@ -255,7 +261,7 @@ private fun CatalogShortcuts(onOpen: (String) -> Unit) {
         }
         val shown = if (chosen != null) listOf(chosen) else cats
         Column { shown.forEach { cat ->
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 16.dp, bottom = 10.dp)) {
                 Text(cat.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = cs.onSurface)
                 Spacer(Modifier.width(8.dp))
                 Text(
@@ -264,13 +270,16 @@ private fun CatalogShortcuts(onOpen: (String) -> Unit) {
                 )
                 if (chosen == null && cat.items.size > PER_CATEGORY) {
                     Text(
-                        "Show all ›", fontSize = 13.sp, fontWeight = FontWeight.Medium, color = cs.primary,
+                        "Show all ›", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = cs.primary,
                         modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { ShortcutCatalog.chosen = cat.id }.padding(horizontal = 6.dp, vertical = 4.dp),
                     )
                 }
             }
+            // Each category's tiles sit in one white card.
             val items = if (chosen != null) cat.items else cat.items.take(PER_CATEGORY)
-            TileRows(items.map { item -> { CatalogTile(item, onOpen) } })
+            Box(Modifier.fillMaxWidth().browserCard().padding(horizontal = 6.dp, vertical = 18.dp)) {
+                TileRows(items.map { item -> { CatalogTile(item, onOpen) } })
+            }
         } }
     }
 }
@@ -278,12 +287,17 @@ private fun CatalogShortcuts(onOpen: (String) -> Unit) {
 @Composable
 private fun CategoryChip(text: String, selected: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(17.dp)
     Box(
-        Modifier.height(34.dp).clip(RoundedCornerShape(17.dp)).background(if (selected) cs.primaryContainer else cs.surfaceContainerHigh)
-            .clickable(onClick = onClick).padding(horizontal = 16.dp),
+        Modifier.height(34.dp).clip(shape).background(if (selected) cs.primaryContainer else cs.paper)
+            .then(if (selected) Modifier else Modifier.border(1.dp, cs.outlineVariant, shape))
+            .clickable(onClick = onClick).padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (selected) cs.onPrimaryContainer else cs.onSurface, maxLines = 1)
+        Text(
+            text, fontSize = 13.5.sp, fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+            color = if (selected) cs.onPrimaryContainer else cs.onSurface, maxLines = 1,
+        )
     }
 }
 
@@ -296,13 +310,13 @@ private fun RowScope.CatalogTile(item: CatalogShortcut, onOpen: (String) -> Unit
             .weight(1f)
             .clip(RoundedCornerShape(12.dp))
             .clickable { onOpen(item.url) }
-            .padding(vertical = 4.dp),
+            .padding(vertical = 4.dp, horizontal = 2.dp),
     ) {
-        Box(Modifier.size(56.dp).clip(CircleShape).background(cs.surfaceContainerHigh), contentAlignment = Alignment.Center) {
-            SiteMark(item.url, item.title)
+        Box(Modifier.size(52.dp).clip(CircleShape).background(cs.field), contentAlignment = Alignment.Center) {
+            SiteMark(item.url, item.title, circle = 52.dp, iconSize = 28.dp)
         }
         Spacer(Modifier.height(8.dp))
-        Text(item.title, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = .3.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(item.title, fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -330,34 +344,22 @@ internal fun IncognitoHome(onSearch: () -> Unit) {
         ) {
             Spacer(Modifier.height(40.dp))
             Box(Modifier.size(72.dp).clip(CircleShape).background(cs.primaryContainer), contentAlignment = Alignment.Center) {
-                Icon(Icons.Rounded.VisibilityOff, null, tint = cs.onPrimaryContainer, modifier = Modifier.size(36.dp))
+                Icon(Icons.Rounded.VisibilityOff, null, tint = cs.onPrimaryContainer, modifier = Modifier.size(30.dp))
             }
             Spacer(Modifier.height(20.dp))
             Text("You've gone incognito", fontSize = 24.sp, lineHeight = 32.sp, color = cs.onSurface, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(18.dp))
             IncognitoPoint(Icons.Rounded.History, "Pages you view won't be kept in history")
             IncognitoPoint(Icons.Rounded.Cookie, "Cookies and site data are deleted when you close all incognito tabs")
             IncognitoPoint(Icons.Rounded.Download, "Downloads and bookmarks are kept")
             IncognitoPoint(Icons.Rounded.NoPhotography, "Screenshots are blocked")
             Spacer(Modifier.height(16.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(cs.surfaceContainerLow).padding(horizontal = 14.dp, vertical = 12.dp),
-            ) {
-                Icon(Icons.Rounded.Info, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(12.dp))
-                Text("SyncUp links, Chat and Radio aren't available in Incognito", fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant)
-            }
+            InfoNote("SyncUp links, Chat and Radio aren't available in Incognito")
             Spacer(Modifier.height(24.dp))
         }
-        SyncPill(
-            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-            height = 56.dp,
-            onClick = onSearch,
-        ) {
-            Icon(Icons.Rounded.Search, null, tint = cs.onSurfaceVariant)
-            Text("Search privately", fontSize = 15.sp, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f))
-            Spacer(Modifier.width(8.dp))
+        // The search box stays at the bottom, near the thumb.
+        SearchCard(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp), onClick = onSearch) {
+            Text("Search privately", fontSize = 15.sp, color = cs.onSurfaceVariant, modifier = Modifier.weight(1f), maxLines = 1)
         }
     }
 }
