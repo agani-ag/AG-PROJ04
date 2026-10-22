@@ -53,6 +53,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Eco
 import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.LiveTv
@@ -91,7 +92,7 @@ import com.agani.syncup.walkie.walkieStatus
 import com.agani.syncup.watchparty.watchPartyStatus
 
 /** What's open inside Tools. */
-enum class ToolsPage { HOME, VIDEOS, CHANNELS, QUICK_SHARE, WALKIE, GROUP, SENSORS, CALENDAR, FOREST, WATER, STEPS, BREAKS, SLEEP, HABITS, MOOD }
+enum class ToolsPage { HOME, VIDEOS, CHANNELS, QUICK_SHARE, WALKIE, GROUP, SENSORS, CALENDAR, DECIDE, SHOPPING, FOREST, WATER, STEPS, BREAKS, SLEEP, HABITS, MOOD }
 
 /** One line for the ⋮ menu's Tools row: what's going on inside right now (null = nothing). */
 @Composable
@@ -121,7 +122,7 @@ enum class ToolsTab(val title: String) { MEDIA("Media"), NEARBY("Nearby"), EVERY
 
 /**
  * SyncUp's extra features in four tabs — Media (Music, Video player, Channels, Radio), Nearby (SyncUp
- * Share, Walkie Talkie, Group), Everyday (Calendar, Sensors) and Wellbeing (Forest, Water, Steps,
+ * Share, Walkie Talkie, Group), Everyday (Calendar, Sensors, Decide, Shopping) and Wellbeing (Forest, Water, Steps,
  * Habits, Sleep, Breaks, Mood). Swipe or tap a tab; Tools opens on the last one used. Each tile shows
  * what it's doing right now; a dot on a tab means something in it is running. Tiles stay square, two
  * to a row.
@@ -234,6 +235,22 @@ fun ToolsScreen(
                 "Sensors", "Compass, level, light & sound meters…",
                 status = if (com.agani.syncup.sensors.Torch.on) "Flashlight on" else null,
                 onClick = onSensors, tab = ToolsTab.EVERYDAY,
+            ),
+        )
+        add(
+            TileSpec(
+                com.agani.syncup.decide.DecideIcons.Dice, ToolTint.AMBER,
+                "Decide", "Coin, wheel, number, yes / no",
+                status = null,
+                onClick = { onTool(ToolsPage.DECIDE) }, tab = ToolsTab.EVERYDAY,
+            ),
+        )
+        add(
+            TileSpec(
+                Icons.Rounded.ShoppingCart, ToolTint.GREEN,
+                "Shopping", "Lists & split a bill",
+                status = com.agani.syncup.shopping.shoppingStatus(),
+                onClick = { onTool(ToolsPage.SHOPPING) }, tab = ToolsTab.EVERYDAY,
             ),
         )
         // ---- Wellbeing

@@ -1,18 +1,22 @@
 <resources>
     <style name="Theme.AGHub" parent="android:Theme.Material.Light.NoActionBar">
-        <!-- No splash: Android 12+ always shows a launch screen, so it's a blank one (no icon) in the
-             app's background colour — light, like the default theme. Older phones: the same plain colour. -->
+        <!-- The plain launch screen (Android 12+): only SyncUp's icon, still, on the app's light grey.
+             No animation and no minimum time; it goes as soon as the first screen is drawn. -->
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/launch_blank</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
         <item name="android:windowBackground">@color/splash_background</item>
     </style>
 
-    <!-- Android 13+: the splash for someone who picked Dark / Black, or System (MainActivity sets it). -->
+    <!-- MainActivity's theme while it starts: older phones (before Android 12) show the same launch
+         screen through the window background. MainActivity switches to Theme.AGHub at once. -->
+    <style name="Theme.AGHub.Launch" parent="Theme.AGHub">
+        <item name="android:windowBackground">@drawable/launch_screen</item>
+    </style>
+
+    <!-- Android 13+: the launch screen for someone who picked Dark (MainActivity sets it). -->
     <style name="Theme.AGHub.SplashDark" parent="Theme.AGHub">
         <item name="android:windowSplashScreenBackground">@color/splash_background_dark</item>
-    </style>
-    <style name="Theme.AGHub.SplashSystem" parent="Theme.AGHub">
-        <item name="android:windowSplashScreenBackground">@color/splash_background_system</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon_dark</item>
     </style>
 
     <!-- The video player: black, full screen, no flash of the app's light background. -->

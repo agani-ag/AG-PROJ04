@@ -132,6 +132,8 @@ class MainActivity : FragmentActivity() {
     private val pushReadId = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Started on Theme.AGHub.Launch (the launch screen on older phones); the app's own theme from here.
+        setTheme(R.style.Theme_AGHub)
         super.onCreate(savedInstanceState)
         // The websites that get a SyncUp page token, saved from the last sync — before any tab loads.
         com.agani.syncup.browser.PageTokens.init(applicationContext)
@@ -163,6 +165,8 @@ class MainActivity : FragmentActivity() {
         com.agani.syncup.forest.ForestReminder.schedule(this)
         // Tools → Wellbeing: Water, Steps, Breaks, Sleep, Habits, Mood (their reminders re-set on every start).
         com.agani.syncup.wellbeing.Wellbeing.init(this)
+        // Tools → Shopping: its lists (and their sync with the account).
+        com.agani.syncup.shopping.ShoppingStore.init(this)
         com.agani.syncup.browser.SitePermissions.init(this)
         com.agani.syncup.browser.AdBlocker.init(this) // loads the filter lists; refreshes them weekly
         // The home page's shortcut catalogue (backend; refreshed once the server address is known) and the sites' icons.
@@ -191,7 +195,7 @@ class MainActivity : FragmentActivity() {
             }
             // Light or Dark (pure black) — AppPrefs turns any older System / Black choice into one of them.
             val dark = themeMode == ThemeMode.DARK || themeMode == ThemeMode.BLACK
-            // Android 13+: the system's launch screen (blank, no icon) matches the theme (light by default).
+            // Android 13+: the next launch screen (only the icon) matches the theme — light grey or pure black.
             LaunchedEffect(dark) {
                 if (Build.VERSION.SDK_INT >= 33) {
                     runCatching {
@@ -508,7 +512,7 @@ class MainActivity : FragmentActivity() {
             com.agani.syncup.sync.ItemSync.syncAllNow()                                      // Calendar, Forest
         }
 
-        // The app shows its first screen at once (no splash); this sets up the server side behind it.
+        // The app shows its first screen at once (the launch screen adds no wait); this sets up the server side behind it.
         LaunchedEffect(Unit) {
             // The fresh base URL from Remote Config — bounded so startup never hangs.
             withTimeoutOrNull(2500) { withContext(Dispatchers.IO) { AppBootstrap.applyBaseUrl() } }
@@ -1213,6 +1217,11 @@ class MainActivity : FragmentActivity() {
                             openTaskId = calendarTask,
                             onOpenTaskUsed = { calendarTask = null },
                         )
+                        com.agani.syncup.tools.ToolsPage.DECIDE -> com.agani.syncup.decide.DecideScreen(
+                            onBack = { toolsPage = null },
+                            onOpenGroup = { toolsPage = com.agani.syncup.tools.ToolsPage.GROUP },
+                        )
+                        com.agani.syncup.tools.ToolsPage.SHOPPING -> com.agani.syncup.shopping.ShoppingScreen(onBack = { toolsPage = null })
                         com.agani.syncup.tools.ToolsPage.FOREST -> com.agani.syncup.forest.ForestScreen(
                             signedIn = loggedIn,
                             onBack = { toolsPage = null },

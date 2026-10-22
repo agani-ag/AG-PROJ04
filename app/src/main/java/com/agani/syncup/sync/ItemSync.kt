@@ -212,6 +212,12 @@ class SyncPingWorker(context: Context, params: WorkerParameters) : CoroutineWork
             val ok = com.agani.syncup.forest.ForestSync.syncBlocking()
             return if (ok || !com.agani.syncup.forest.ForestSync.active) Result.success() else Result.retry()
         }
+        // "shopping": a shopping list changed on another phone.
+        if (inputData.getString(KEY_WHAT) == "shopping") {
+            com.agani.syncup.shopping.ShoppingStore.init(ctx)
+            val ok = com.agani.syncup.shopping.ShoppingSync.syncBlocking()
+            return if (ok || !com.agani.syncup.shopping.ShoppingSync.active) Result.success() else Result.retry()
+        }
         com.agani.syncup.calendar.CalendarStore.init(ctx)
         val ok = com.agani.syncup.calendar.CalendarSync.syncBlocking()
         com.agani.syncup.calendar.CalendarReminders.reschedule(ctx)
@@ -221,9 +227,9 @@ class SyncPingWorker(context: Context, params: WorkerParameters) : CoroutineWork
     companion object {
         private const val KEY_WHAT = "what"
 
-        /** [what]: "calendar" (the default), "forest" or "wellbeing" — the push's "what". */
+        /** [what]: "calendar" (the default), "forest", "wellbeing" or "shopping" — the push's "what". */
         fun enqueue(context: Context, what: String? = null) {
-            val kind = what?.takeIf { it == "forest" || it == "wellbeing" } ?: "calendar"
+            val kind = what?.takeIf { it == "forest" || it == "wellbeing" || it == "shopping" } ?: "calendar"
             WorkManager.getInstance(context).enqueueUniqueWork(
                 if (kind == "calendar") "sync_ping" else "sync_ping_$kind", ExistingWorkPolicy.REPLACE,
                 OneTimeWorkRequestBuilder<SyncPingWorker>()

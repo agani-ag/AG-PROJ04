@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.SentimentSatisfied
+import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
@@ -354,6 +355,7 @@ fun ProfileScreen(
                                         SyncType.HABITS -> Icons.Rounded.TaskAlt
                                         SyncType.SLEEP -> Icons.Rounded.Bedtime
                                         SyncType.MOOD -> Icons.Rounded.SentimentSatisfied
+                                        SyncType.SHOPPING -> Icons.Rounded.ShoppingCart
                                     },
                                     title = t.label,
                                     subtitle = when (t) {
@@ -368,6 +370,7 @@ fun ProfileScreen(
                                         SyncType.HABITS -> "Your habits, ticks and streaks"
                                         SyncType.SLEEP -> "Your nights, bedtime and sounds"
                                         SyncType.MOOD -> "Your check-ins — private, never shown to the admin"
+                                        SyncType.SHOPPING -> "Your lists and what's on them"
                                     },
                                     checked = BrowserSync.isOn(t),
                                     enabled = true,

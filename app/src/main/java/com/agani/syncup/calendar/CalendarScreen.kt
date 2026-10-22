@@ -47,6 +47,7 @@ import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Done
+import androidx.compose.material.icons.rounded.HourglassBottom
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Repeat
@@ -74,12 +75,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -94,14 +98,21 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.ui.BarIcon
 import com.agani.syncup.ui.theme.isLight
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** Calendar's own accent: indigo (the Tools tile's colour). */
@@ -538,6 +549,20 @@ private fun TodoTab(onOpen: (Task) -> Unit, onTick: (Task) -> Unit, onDelete: (T
         CalendarStore.tasks.filter { !it.done && (filter == null || it.listId == filter) }
             .sortedWith(compareBy({ if (it.day == 0) Int.MAX_VALUE else it.day }, { if (it.allDay) -1 else it.time }, { it.title.lowercase() }))
     }
+    // Count down: the to-dos that have it, soonest first, as of [now] (ticks while this tab shows).
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val countdowns = remember(open, now) {
+        open.mapNotNull { t -> t.countdownAt(now)?.let { t to it } }
+            .sortedWith(compareBy({ it.second.day }, { it.second.time }, { it.first.title.lowercase() }))
+    }
+    val countdownOf = remember(countdowns) { countdowns.associate { it.first.id to it.second } }
+    CountdownTicker(
+        counting = countdowns.isNotEmpty(),
+        everySecond = countdowns.any { it.second.underAnHour },
+        // When the next one drops under an hour (from then on, every second).
+        secondsFrom = countdowns.mapNotNull { (_, c) -> c.msUntilUnderAnHour?.let { now + it } }.minOrNull(),
+        onTick = { now = it },
+    )
     val groups = listOf(
         Triple("Overdue", true, open.filter { it.day in 1 until today }),
         Triple("Today", false, open.filter { it.day == today }),
@@ -551,6 +576,10 @@ private fun TodoTab(onOpen: (Task) -> Unit, onTick: (Task) -> Unit, onDelete: (T
                 FilterChipLike("All ${CalendarStore.tasks.count { !it.done }}", null, filter == null) { filter = null }
                 CalendarStore.lists.forEach { l -> FilterChipLike(l.name, listColor(l), filter == l.id) { filter = if (filter == l.id) null else l.id } }
             }
+        }
+        if (countdowns.isNotEmpty()) {
+            groupHeader("countdowns", "Countdowns · ${countdowns.size}", false)
+            item(key = "countdowns") { CountdownStrip(countdowns, onOpen) }
         }
         if (open.isEmpty()) {
             item(key = "empty") {
@@ -567,9 +596,88 @@ private fun TodoTab(onOpen: (Task) -> Unit, onTick: (Task) -> Unit, onDelete: (T
         groups.forEach { (name, red, list) ->
             if (list.isNotEmpty()) {
                 groupHeader(name, "$name · ${list.size}", red)
-                itemsIndexed(list, key = { _, t -> t.id }) { i, t -> SwipeTaskRow(t, onOpen, onTick, onDelete, first = i == 0, last = i == list.lastIndex) }
+                itemsIndexed(list, key = { _, t -> t.id }) { i, t ->
+                    SwipeTaskRow(t, onOpen, onTick, onDelete, first = i == 0, last = i == list.lastIndex, countdown = countdownOf[t.id])
+                }
             }
         }
+    }
+}
+
+/**
+ * Moves the countdowns on while the To-do tab is on screen (and the app is in front): every second
+ * while one is under an hour, else every 30 s — and right when one drops under an hour ([secondsFrom]).
+ */
+@Composable
+private fun CountdownTicker(counting: Boolean, everySecond: Boolean, secondsFrom: Long?, onTick: (Long) -> Unit) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var shown by remember { mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) }
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, _ -> shown = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    val tick by rememberUpdatedState(onTick)
+    LaunchedEffect(shown, counting, everySecond, secondsFrom) {
+        if (!shown) return@LaunchedEffect
+        tick(System.currentTimeMillis())
+        if (!counting) return@LaunchedEffect
+        while (true) {
+            val t = System.currentTimeMillis()
+            // On the second (or the half minute), so every countdown moves together.
+            var wait = if (everySecond) 1000 - t % 1000 else 30_000 - t % 30_000
+            if (secondsFrom != null) wait = minOf(wait, secondsFrom - t)
+            delay(wait.coerceAtLeast(0) + 5)
+            tick(System.currentTimeMillis())
+        }
+    }
+}
+
+/** Countdowns: a card per to-do counting down, soonest first, scrolling sideways. Tap one to open it. */
+@Composable
+private fun CountdownStrip(items: List<Pair<Task, Countdown>>, onOpen: (Task) -> Unit) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        // Room above and below for the cards' shadow.
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
+    ) {
+        items.forEach { (t, c) -> CountdownCard(t, c, onOpen) }
+    }
+}
+
+/** One countdown: the big value ("3 days", or on the day "5 h 19 min"), the to-do, and its date. Today's are soft indigo. */
+@Composable
+private fun CountdownCard(t: Task, c: Countdown, onOpen: (Task) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val accent = indigo()
+    Column(
+        Modifier.width(128.dp).appCard(RoundedCornerShape(20.dp), if (c.isToday) indigoContainer() else Color.Unspecified)
+            .clickable { onOpen(t) }.padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        // The same height whatever the value, so the cards line up.
+        Box(Modifier.height(36.dp), contentAlignment = Alignment.BottomStart) {
+            if (!c.isToday) {
+                Row {
+                    Text(c.big, fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.SemiBold, color = accent, maxLines = 1, modifier = Modifier.alignByBaseline())
+                    Text(c.unit, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = accent, maxLines = 1, modifier = Modifier.padding(start = 4.dp).alignByBaseline())
+                }
+            } else {
+                // "48 min 12 s": the numbers big, the units smaller, so it fits on one line.
+                Text(
+                    buildAnnotatedString {
+                        c.big.split(' ').forEachIndexed { i, w ->
+                            if (i > 0) append(' ')
+                            if (w.first().isDigit() || w == "Today!") append(w)
+                            else withStyle(SpanStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium)) { append(w) }
+                        }
+                    },
+                    fontSize = 21.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold, color = accent, maxLines = 1, softWrap = false,
+                    modifier = Modifier.padding(bottom = 2.dp),
+                )
+            }
+        }
+        Text(t.title, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+        Text(c.dateText, fontSize = 12.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -642,7 +750,7 @@ internal fun Modifier.cardSegment(first: Boolean, last: Boolean): Modifier {
 @Composable
 internal fun SwipeTaskRow(
     t: Task, onOpen: (Task) -> Unit, onTick: (Task) -> Unit, onDelete: (Task) -> Unit,
-    day: Int = t.day, first: Boolean = true, last: Boolean = true,
+    day: Int = t.day, first: Boolean = true, last: Boolean = true, countdown: Countdown? = null,
 ) {
     val state = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
         when (v) {
@@ -675,17 +783,24 @@ internal fun SwipeTaskRow(
             }
         },
     ) {
-        TaskRow(t, onOpen, onTick, day, first, last)
+        TaskRow(t, onOpen, onTick, day, first, last, countdown)
     }
 }
 
+/** One item in a to-do row's line: an icon (or none), its text, its colour. */
+private class MetaBit(val icon: ImageVector?, val text: String, val color: Color, val bold: Boolean = false)
+
 /**
  * A to-do in a list: its list's colour bar, the tick box, the title, and a line saying when — date
- * and time together, for [day] (one of its days; red when it's past) — then repeat, reminder, steps.
+ * and time together, for [day] (one of its days; red when it's past) — then repeat, how long is left
+ * ([countdown], in Calendar's colour), reminder, steps.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun TaskRow(t: Task, onOpen: (Task) -> Unit, onTick: (Task) -> Unit, day: Int = t.day, first: Boolean = true, last: Boolean = true) {
+internal fun TaskRow(
+    t: Task, onOpen: (Task) -> Unit, onTick: (Task) -> Unit, day: Int = t.day, first: Boolean = true, last: Boolean = true,
+    countdown: Countdown? = null,
+) {
     val cs = MaterialTheme.colorScheme
     val today = Days.today()
     val list = CalendarStore.list(t.listId)
@@ -709,22 +824,24 @@ internal fun TaskRow(t: Task, onOpen: (Task) -> Unit, onTick: (Task) -> Unit, da
                 color = if (t.done) cs.onSurfaceVariant else cs.onSurface, textDecoration = if (t.done) TextDecoration.LineThrough else null,
             )
             val overdue = t.hasDate && day < today && !t.done
-            val bits = buildList<Triple<ImageVector?, String, Boolean>> {
-                if (t.hasDate) add(Triple(if (t.allDay) Icons.Rounded.CalendarMonth else Icons.Rounded.Schedule, t.whenText(day, today), overdue))
-                if (t.repeat.repeats) add(Triple(Icons.Rounded.Repeat, t.repeat.short, false))
-                if (t.hasDate && t.reminders.isNotEmpty()) add(Triple(Icons.Rounded.Notifications, Reminders.short(t, t.reminders.min()), false))
-                if (t.checklist.isNotEmpty()) add(Triple(null, "${t.checklist.count { it.done }} of ${t.checklist.size}", false))
+            val muted = cs.onSurfaceVariant
+            val accent = indigo()
+            val bits = buildList {
+                if (t.hasDate) add(MetaBit(if (t.allDay) Icons.Rounded.CalendarMonth else Icons.Rounded.Schedule, t.whenText(day, today), if (overdue) cs.error else muted, overdue))
+                if (t.repeat.repeats) add(MetaBit(Icons.Rounded.Repeat, t.repeat.short, muted))
+                if (countdown != null && !t.done) add(MetaBit(Icons.Rounded.HourglassBottom, countdown.left, accent, bold = true))
+                if (t.hasDate && t.reminders.isNotEmpty()) add(MetaBit(Icons.Rounded.Notifications, Reminders.short(t, t.reminders.min()), muted))
+                if (t.checklist.isNotEmpty()) add(MetaBit(null, "${t.checklist.count { it.done }} of ${t.checklist.size}", muted))
             }
             if (bits.isNotEmpty()) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.padding(top = 3.dp)) {
-                    bits.forEach { (icon, text, red) ->
-                        val color = if (red) cs.error else cs.onSurfaceVariant
+                    bits.forEach { b ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (icon != null) {
-                                Icon(icon, null, tint = color, modifier = Modifier.size(13.dp))
+                            if (b.icon != null) {
+                                Icon(b.icon, null, tint = b.color, modifier = Modifier.size(13.dp))
                                 Spacer(Modifier.width(3.dp))
                             }
-                            Text(text, fontSize = 12.sp, color = color, fontWeight = if (red) FontWeight.Medium else FontWeight.Normal, maxLines = 1)
+                            Text(b.text, fontSize = 12.sp, color = b.color, fontWeight = if (b.bold) FontWeight.Medium else FontWeight.Normal, maxLines = 1)
                         }
                     }
                 }

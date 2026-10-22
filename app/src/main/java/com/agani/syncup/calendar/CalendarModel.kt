@@ -210,6 +210,7 @@ data class CheckItem(val id: String, val text: String, val done: Boolean = false
  * [reminders]: minutes before the time (all-day ones count from 9:00 on the day, and may be below 0 =
  * later that day) — see [Reminders].
  * For a repeating to-do, [day] is the occurrence that's up next; [start] the first one.
+ * [countdown]: "Count down" is on — its row and Countdowns show how long is left ([countdownAt]).
  *
  * Not synced, this phone only: [dirty] (waiting to go up), [local] (made while signed out, not in
  * an account yet), [phoneOnly] (the person chose to keep it off their account).
@@ -229,6 +230,7 @@ data class Task(
     val done: Boolean = false,
     val doneMs: Long = 0,
     val doneCount: Int = 0,
+    val countdown: Boolean = false,
     val createdMs: Long = System.currentTimeMillis(),
     val updatedMs: Long = System.currentTimeMillis(),
     val deleted: Boolean = false,
@@ -268,12 +270,37 @@ data class Task(
         return out
     }
 
+    /**
+     * Where its countdown stands at [now] — counting to its date, or for a repeating to-do to the
+     * next one still to come (a yearly birthday counts to next year's once this year's has gone).
+     * Null when Count down is off, it's done, it has no date, or (one-off) its time has passed.
+     */
+    fun countdownAt(now: Long = System.currentTimeMillis()): Countdown? {
+        if (!countdown || done || deleted || !hasDate) return null
+        val today = Days.of(now)
+        val first = start.takeIf { it > 0 } ?: day
+        var d = day
+        var count = doneCount
+        var guard = 0
+        while (guard++ < 3000) {
+            if (d > today) return Countdown(d, time, Days.between(today, d), 0)
+            if (d == today) {
+                if (allDay) return Countdown(d, time, 0, -1)
+                val left = Days.at(d, time) - now
+                if (left > 0) return Countdown(d, time, 0, left)
+            }
+            d = repeat.next(d, first, count) ?: return null
+            count++
+        }
+        return null
+    }
+
     fun syncJson(): JSONObject = JSONObject()
         .put("title", title).put("notes", notes).put("list", listId).put("day", day).put("time", time).put("end_time", endTime)
         .put("start", start).put("repeat", repeat.toJson())
         .put("reminders", JSONArray(reminders))
         .put("checklist", JSONArray(checklist.map { JSONObject().put("id", it.id).put("text", it.text).put("done", it.done) }))
-        .put("done", done).put("done_ms", doneMs).put("done_count", doneCount).put("created_ms", createdMs)
+        .put("done", done).put("done_ms", doneMs).put("done_count", doneCount).put("countdown", countdown).put("created_ms", createdMs)
 
     fun storeJson(): JSONObject = syncJson().put("id", id).put("updated_ms", updatedMs).put("deleted", deleted)
         .put("dirty", dirty).put("local", local).put("phone_only", phoneOnly)
@@ -302,6 +329,7 @@ data class Task(
                 done = o.optBoolean("done"),
                 doneMs = o.optLong("done_ms"),
                 doneCount = o.optInt("done_count"),
+                countdown = o.optBoolean("countdown", false),
                 createdMs = o.optLong("created_ms", updatedMs),
                 updatedMs = updatedMs,
                 deleted = deleted,
@@ -310,6 +338,61 @@ data class Task(
 
         fun fromStore(o: JSONObject): Task = fromJson(o.optString("id"), o, o.optLong("updated_ms"), o.optBoolean("deleted"))
             .copy(dirty = o.optBoolean("dirty"), local = o.optBoolean("local"), phoneOnly = o.optBoolean("phone_only"))
+    }
+}
+
+// ============================================================================ count down
+/**
+ * How long is left until a to-do with Count down on ([Task.countdownAt]): [days] before its [day]; on
+ * the day, [msLeft] until its [time] (-1 when it's all day — then it just says "Today!").
+ */
+data class Countdown(val day: Int, val time: Int, val days: Int, val msLeft: Long) {
+    val isToday: Boolean get() = days == 0
+
+    /** Whole seconds left on the day — rounded up, so it ends on "1 s". */
+    private val secs: Long get() = (msLeft + 999) / 1000
+
+    /** Under an hour to go: it counts in seconds (and the screen ticks every second). */
+    val underAnHour: Boolean get() = days == 0 && msLeft >= 0 && secs < 3600
+
+    /** On the day, with an hour or more to go: ms until it's under an hour. Null otherwise. */
+    val msUntilUnderAnHour: Long? get() = if (days == 0 && msLeft >= 0 && !underAnHour) msLeft - 3_599_000 else null
+
+    /** For a to-do's row: "3 days left", "1 day left", "5 h 19 min left", "48 min 12 s left", "Today!". */
+    val left: String
+        get() = when {
+            days > 0 -> "$days $unit left"
+            msLeft < 0 -> "Today!"
+            else -> "${clock()} left"
+        }
+
+    /** The big value on a Countdowns card: "3" (with [unit]) — on the day "5 h 19 min", "48 min 12 s", "Today!". */
+    val big: String
+        get() = when {
+            days > 0 -> "$days"
+            msLeft < 0 -> "Today!"
+            else -> clock()
+        }
+
+    /** "days" / "day" next to the big number; nothing on the day. */
+    val unit: String get() = if (days <= 0) "" else if (days == 1) "day" else "days"
+
+    /** The line under a card's title: "Today, 3:00 PM", "All day" (today, under "Today!"), "Sat 24 Oct". */
+    val dateText: String
+        get() = when {
+            !isToday -> Days.short(day)
+            time < 0 -> "All day"
+            else -> "Today, ${Days.time(time)}"
+        }
+
+    /** "5 h 19 min", "48 min 12 s", "42 s". */
+    private fun clock(): String {
+        val s = secs
+        return when {
+            s >= 3600 -> "${s / 3600} h ${s % 3600 / 60} min"
+            s >= 60 -> "${s / 60} min ${s % 60} s"
+            else -> "$s s"
+        }
     }
 }
 
@@ -432,12 +515,18 @@ data class TaskList(
         fun fromStore(o: JSONObject) = fromJson(o.optString("id"), o, o.optLong("updated_ms"), o.optBoolean("deleted"))
             .copy(dirty = o.optBoolean("dirty"), local = o.optBoolean("local"))
 
-        /** The three lists everyone starts with. Fixed ids, so two phones never make them twice. */
+        /** The two lists everyone starts with. Fixed ids, so two phones never make them twice. */
         val defaults = listOf(
             TaskList("personal", "Personal", 0xFF4F46E5, 0, updatedMs = 1, dirty = false),
             TaskList("work", "Work", 0xFFEA580C, 1, updatedMs = 1, dirty = false),
-            TaskList("shopping", "Shopping", 0xFF16A34A, 2, updatedMs = 1, dirty = false),
         )
+
+        /**
+         * Shopping was a third starting list until it became its own tool (Tools → Shopping). A phone
+         * that has it keeps it as a normal list; this brings it back on a phone that gets to-dos in it
+         * (synced from an older one) but never had the list — see [CalendarStore].
+         */
+        val oldShopping = TaskList("shopping", "Shopping", 0xFF16A34A, 2, updatedMs = 1, dirty = false)
 
         /** Colours to pick from for a new list. */
         val palette = listOf(0xFF4F46E5, 0xFFEA580C, 0xFF16A34A, 0xFFDB2777, 0xFF0891B2, 0xFFCA8A04, 0xFF7C3AED, 0xFF64748B)

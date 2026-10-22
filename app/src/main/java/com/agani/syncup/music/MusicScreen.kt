@@ -536,8 +536,8 @@ private fun NowPlaying(player: PlayerHandle, onPlayAtParty: (() -> Unit)? = null
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
     ) {
-        Box(Modifier.fillMaxWidth(.78f).aspectRatio(1f)) {
-            ArtworkTile(player.artUri, radio, Modifier.fillMaxSize(), radius = 28.dp, large = true)
+        // The cover; a tap shows the song's waves (Waves.kt).
+        CoverOrWaves(player, Modifier.fillMaxWidth(.78f).aspectRatio(1f)) {
             if (radio) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

@@ -145,6 +145,10 @@ private val ART_TINTS = listOf(
     ToolTint.ROSE, ToolTint.GREEN, ToolTint.INDIGO, ToolTint.PINK,
 )
 
+/** A station's colour, or the soft tile colour of a song with no cover (also its waves' colour). */
+internal fun artTint(uri: Uri?, radio: Boolean): ToolTint =
+    if (radio) ToolTint.ORANGE else ART_TINTS[((uri?.hashCode() ?: 0) and 0x7fffffff) % ART_TINTS.size]
+
 /**
  * Cover art for a song (from MediaStore), or a soft coloured tile with a note / radio glyph when
  * there's none. Loads off the main thread and reuses [Artwork]'s cache.
@@ -157,7 +161,7 @@ internal fun ArtworkTile(uri: Uri?, radio: Boolean, modifier: Modifier, radius: 
         if (uri != null && value == null && Artwork.isLocal(uri)) value = withContext(Dispatchers.IO) { Artwork.load(context, uri, px) }
     }
     val image = remember(bitmap) { bitmap?.asImageBitmap() }
-    val tint = if (radio) ToolTint.ORANGE else ART_TINTS[((uri?.hashCode() ?: 0) and 0x7fffffff) % ART_TINTS.size]
+    val tint = artTint(uri, radio)
     Box(
         modifier
             .clip(RoundedCornerShape(radius))

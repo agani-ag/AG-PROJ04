@@ -287,6 +287,10 @@ object CalendarStore {
     }
 
     private fun publish() {
+        // To-dos in Shopping (once a starting list) on a phone that never had it: the list comes back
+        // here so they still show under it. Not uploaded unless the person changes the list.
+        val shop = TaskList.oldShopping.id
+        if (allLists.none { it.id == shop } && all.any { !it.deleted && it.listId == shop }) allLists = allLists + TaskList.oldShopping
         tasks = all.filter { !it.deleted }
         lists = allLists.filter { !it.deleted }.sortedWith(compareBy({ it.order }, { it.name }))
         version++
@@ -328,6 +332,10 @@ object CalendarStore {
                 val ls = json.optJSONArray("lists") ?: JSONArray()
                 val loaded = (0 until ls.length()).mapNotNull { runCatching { TaskList.fromStore(ls.getJSONObject(it)) }.getOrNull() }
                 allLists = TaskList.defaults.filter { d -> loaded.none { it.id == d.id } } + loaded
+                // Shopping is its own tool now (Tools → Shopping): the old starting Shopping list goes,
+                // as long as it was never changed and has no to-dos (it was never uploaded either).
+                val shop = TaskList.oldShopping.id
+                allLists = allLists.filterNot { l -> l.id == shop && l.updatedMs <= 1 && all.none { !it.deleted && it.listId == shop } }
             }
             publish()
         }

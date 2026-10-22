@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.agani.syncup.BuildConfig
+import com.agani.syncup.decide.Together
 import com.agani.syncup.party.Party
 import com.agani.syncup.party.PartyClock
 import com.agani.syncup.quickshare.QsPhase
@@ -136,6 +137,8 @@ object GroupLink {
     internal const val CH_WATCH: Byte = 2
     internal const val CH_WALKIE: Byte = 3
     internal const val CH_SHARE: Byte = 4
+    /** Decide's Coin toss / Wheel for everyone ([Together]): a side channel, not a mode — it works whatever mode is on. */
+    internal const val CH_DECIDE: Byte = 5
 
     private val strategy = Strategy.P2P_STAR
     private lateinit var app: Context
@@ -665,8 +668,12 @@ object GroupLink {
                     val bytes = payload.asBytes() ?: return
                     if (bytes.isEmpty()) return
                     val body = bytes.copyOfRange(1, bytes.size)
-                    if (bytes[0] == CH_GROUP) onGroupMessage(endpointId, body, arrived)
-                    else modeOf(bytes[0])?.let { channels[it] }?.onReceive(endpointId, body, arrived)
+                    when (bytes[0]) {
+                        CH_GROUP -> onGroupMessage(endpointId, body, arrived)
+                        // Decide's side channel: before the modes, so it works while any of them runs.
+                        CH_DECIDE -> Together.onReceive(endpointId, body)
+                        else -> modeOf(bytes[0])?.let { channels[it] }?.onReceive(endpointId, body, arrived)
+                    }
                 }
                 Payload.Type.FILE -> channels[GroupMode.SHARE]?.onFile(endpointId, payload)
                 else -> Unit
@@ -696,6 +703,7 @@ object GroupLink {
                     clock.add(sent, o.optLong("b"), o.optLong("c"), arrived)
                     if (BuildConfig.DEBUG && clock.count % 10 == 0) Log.d(TAG, "clock best rtt=%.1fms".format(clock.rttNs / 1e6))
                     if (modeOn) channels[mode]?.onClock()
+                    Together.onClock()
                 }
                 "group" -> applyGroup(o)
                 "end" -> {
@@ -756,6 +764,7 @@ object GroupLink {
         joinRequests.clear()
         pingSent.clear()
         clock.reset()
+        Together.reset() // Decide's "for everyone" follows the group and its clock
         people.clear()
         modesUsed.clear()
         opts = JSONObject()
@@ -778,6 +787,9 @@ object GroupLink {
     internal fun payload(mode: GroupMode, body: ByteArray): Payload = framed(channelByte(mode), body)
 
     private fun groupPayload(o: JSONObject): Payload = framed(CH_GROUP, o.toString().toByteArray(Charsets.UTF_8))
+
+    /** A message on Decide's side channel ([CH_DECIDE]), ready to send. */
+    internal fun decidePayload(body: ByteArray): Payload = framed(CH_DECIDE, body)
 
     private fun framed(ch: Byte, body: ByteArray): Payload =
         Payload.fromBytes(ByteArray(body.size + 1).also {

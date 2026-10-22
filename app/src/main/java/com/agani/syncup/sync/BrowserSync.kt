@@ -46,6 +46,8 @@ enum class SyncType(val pref: String, val label: String) {
     HABITS("habits", "Habits"),
     SLEEP("sleep", "Sleep"),
     MOOD("mood", "Mood"),
+    // Tools → Everyday → Shopping.
+    SHOPPING("shopping", "Shopping lists"),
 }
 
 /**

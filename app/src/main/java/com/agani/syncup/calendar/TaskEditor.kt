@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.HourglassBottom
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Repeat
@@ -71,6 +72,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.SelectableDates
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
@@ -149,6 +152,7 @@ internal fun TaskEditor(taskId: String?, presetDay: Int, presetTime: Int, onClos
             checklist = t.checklist.filter { it.text.isNotBlank() },
             reminders = if (t.hasDate) t.reminders.filter { Reminders.allowed(t, it) }.distinct().sorted() else emptyList(),
             repeat = if (t.hasDate) t.repeat else Repeat(),
+            countdown = t.hasDate && t.countdown,
             endTime = if (t.allDay) -1 else t.endTime,
         )
         CalendarStore.save(clean)
@@ -226,6 +230,16 @@ internal fun TaskEditor(taskId: String?, presetDay: Int, presetTime: Int, onClos
                         Box(Modifier.size(10.dp).clip(CircleShape).background(listColor(l)))
                         Spacer(Modifier.width(6.dp))
                         Text(l.name, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = indigo(), modifier = Modifier.padding(end = 10.dp))
+                    }
+                    // Count down: only with a date (it counts to it).
+                    EditRow(
+                        Icons.Rounded.HourglassBottom, "Count down", sub = if (t.hasDate) "Days left · on the day, hours & minutes" else "Needs a date",
+                        dim = !t.hasDate, enabled = t.hasDate, onClick = { t = t.copy(countdown = !t.countdown) },
+                    ) {
+                        Switch(
+                            checked = t.hasDate && t.countdown, onCheckedChange = { t = t.copy(countdown = it) }, enabled = t.hasDate,
+                            colors = SwitchDefaults.colors(checkedTrackColor = indigo()), modifier = Modifier.padding(end = 10.dp),
+                        )
                     }
                 }
                 // Reminders
@@ -807,14 +821,14 @@ private fun EditCard(content: @Composable () -> Unit) {
 @Composable
 private fun EditRow(
     icon: ImageVector, title: String, onClick: () -> Unit, sub: String? = null, top: Boolean = true, dim: Boolean = false,
-    trailing: @Composable () -> Unit = {},
+    enabled: Boolean = true, trailing: @Composable () -> Unit = {},
 ) {
     val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).dividerAbove(top, cs.outlineVariant).clickable(onClick = onClick).padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).dividerAbove(top, cs.outlineVariant).clickable(enabled = enabled, onClick = onClick).padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
     ) {
-        Icon(icon, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(22.dp))
+        Icon(icon, null, tint = cs.onSurfaceVariant.copy(alpha = if (enabled) 1f else .5f), modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = 15.sp, color = if (dim) cs.onSurfaceVariant else cs.onSurface)

@@ -44,7 +44,8 @@ class MusicPlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        val player = ExoPlayer.Builder(this)
+        // WavesRenderersFactory: Now playing's waves read the sound on its way out (SoundWaves).
+        val player = ExoPlayer.Builder(this, WavesRenderersFactory(this))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -178,6 +179,7 @@ class MusicPlaybackService : MediaSessionService() {
             release()
         }
         session = null
+        SoundWaves.clear()
         artIo.shutdown()
         super.onDestroy()
     }

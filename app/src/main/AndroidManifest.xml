@@ -103,7 +103,7 @@
             android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.AGHub">
+            android:theme="@style/Theme.AGHub.Launch">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
