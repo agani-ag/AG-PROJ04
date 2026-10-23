@@ -93,7 +93,6 @@ object DeviceRegistrar {
                 // user signed in or out while this was on its way (the answer would be for the other).
                 if (store.token() == access) {
                     PageTokens.update(app, resp.tokenSites)
-                    com.agani.syncup.sso.SyncUpSignIn.update(app, resp.sso)
                     resp.notificationsNew?.let { Inbox.setCount(it) }
                 }
             }

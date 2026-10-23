@@ -144,6 +144,9 @@ internal fun NormalHome(
                 PillButton(Icons.Rounded.Mic, "Voice search", size = 40.dp, onClick = onVoice)
             }
 
+            // Once: "Open links in SyncUp?" (Make default / Not now) until SyncUp is the default browser.
+            DefaultBrowserNudge(Modifier.padding(top = 14.dp))
+
             val ann = account.announcement
             if (user != null && ann != null && ann.active && !ann.fullscreen && (ann.title.isNotBlank() || ann.message.isNotBlank())) {
                 Spacer(Modifier.height(14.dp))

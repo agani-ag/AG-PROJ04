@@ -50,7 +50,8 @@ enum class GroupMode(val key: String, val label: String) {
     MUSIC("music", "Music party"),
     WATCH("watch", "Watch together"),
     WALKIE("walkie", "Walkie talkie"),
-    SHARE("share", "Share files");
+    SHARE("share", "Share files"),
+    PHOTOS("photos", "Group photos");
 
     companion object {
         fun of(key: String?) = entries.firstOrNull { it.key == key }
@@ -83,7 +84,7 @@ class GroupJoinRequest(val endpointId: String, val token: String, val name: Stri
 class GroupPerson(val name: String, val token: String, val host: Boolean, val quality: Int)
 
 /**
- * One mode's side of the group link (Music party, Watch together, Walkie talkie, Share files).
+ * One mode's side of the group link (Music party, Watch together, Walkie talkie, Share files, Group photos).
  * On the host, an endpoint id is a guest; on a guest, it is the host. Main thread, except
  * [onReceive] / [onTransfer] / [onFile], which come from Nearby (also the main thread).
  */
@@ -118,7 +119,7 @@ internal interface GroupChannel {
  * Google Nearby Connections, star-shaped: the host's phone in the middle, up to [MAX_PHONES] in all.
  * This object owns finding groups, joining (code + Accept), who's in, each phone's link speed, the
  * host's clock (measured once — music and video both use it), reconnecting, and the notification
- * ([GroupService]). The modes — [Party] (music), [WatchParty], [GroupWalkie], [GroupShare] — run on
+ * ([GroupService]). The modes — [Party] (music), [WatchParty], [GroupWalkie], [GroupShare], [GroupPhotos] — run on
  * top of it: each has its own channel (the first byte of every message), and the host's
  * [switchTo] moves every phone to another mode at once — nobody joins again.
  *
@@ -139,6 +140,7 @@ object GroupLink {
     internal const val CH_SHARE: Byte = 4
     /** Decide's Coin toss / Wheel for everyone ([Together]): a side channel, not a mode — it works whatever mode is on. */
     internal const val CH_DECIDE: Byte = 5
+    internal const val CH_PHOTOS: Byte = 6
 
     private val strategy = Strategy.P2P_STAR
     private lateinit var app: Context
@@ -241,6 +243,7 @@ object GroupLink {
         WatchParty.init(app)
         GroupWalkie.init(app)
         GroupShare.init(app)
+        GroupPhotos.init(app)
     }
 
     internal fun register(mode: GroupMode, channel: GroupChannel) {
@@ -255,6 +258,7 @@ object GroupLink {
         GroupMode.WATCH -> CH_WATCH
         GroupMode.WALKIE -> CH_WALKIE
         GroupMode.SHARE -> CH_SHARE
+        GroupMode.PHOTOS -> CH_PHOTOS
     }
 
     private fun modeOf(ch: Byte): GroupMode? = when (ch) {
@@ -262,6 +266,7 @@ object GroupLink {
         CH_WATCH -> GroupMode.WATCH
         CH_WALKIE -> GroupMode.WALKIE
         CH_SHARE -> GroupMode.SHARE
+        CH_PHOTOS -> GroupMode.PHOTOS
         else -> null
     }
 

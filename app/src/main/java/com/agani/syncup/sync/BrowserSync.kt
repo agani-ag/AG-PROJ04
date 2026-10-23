@@ -47,6 +47,12 @@ enum class SyncType(val pref: String, val label: String) {
     MOOD("mood", "Mood"),
     // Tools → Everyday → Shopping.
     SHOPPING("shopping", "Shopping lists"),
+    ;
+
+    companion object {
+        /** Tools → Wellbeing: one switch in Settings → Sync turns all of these on or off together. */
+        val WELLBEING = listOf(WATER, STEPS, HABITS, SLEEP, MOOD)
+    }
 }
 
 /**
@@ -117,6 +123,12 @@ object BrowserSync {
     val active: Boolean get() = accountId != null && enabled
 
     fun isOn(type: SyncType): Boolean = typeOn.getValue(type).value
+
+    /** Settings → Sync → Wellbeing: on only while every wellbeing feature syncs. */
+    val wellbeingOn: Boolean get() = SyncType.WELLBEING.all { isOn(it) }
+
+    /** Turns Water, Steps, Habits, Sleep and Mood sync on or off together. */
+    fun setWellbeingOn(on: Boolean) = SyncType.WELLBEING.forEach { setOn(it, on) }
 
     fun init(context: Context, browserDb: BrowserDb) {
         if (::prefs.isInitialized) return

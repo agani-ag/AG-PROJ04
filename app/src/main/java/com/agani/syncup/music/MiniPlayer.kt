@@ -141,7 +141,7 @@ fun MiniPlayer(onOpen: () -> Unit, modifier: Modifier = Modifier) {
 
 /** Songs without cover art get a soft tile, its colour picked from the song. */
 private val ART_TINTS = listOf(
-    ToolTint.VIOLET, ToolTint.AMBER, ToolTint.TEAL, ToolTint.SKY,
+    ToolTint.VIOLET, ToolTint.AMBER, ToolTint.LIME, ToolTint.SKY,
     ToolTint.ROSE, ToolTint.GREEN, ToolTint.INDIGO, ToolTint.PINK,
 )
 

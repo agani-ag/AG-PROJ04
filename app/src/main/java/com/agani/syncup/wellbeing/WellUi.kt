@@ -74,7 +74,7 @@ internal fun wTint(light: Long, dark: Long, lightC: Long, darkC: Long): WTint {
 
 @Composable internal fun waterTint() = wTint(0xFF0E7490, 0xFF67E8F9, 0xFFCFFAFE, 0xFF0C2930)
 @Composable internal fun stepsTint() = wTint(0xFFB45309, 0xFFFCD34D, 0xFFFEF3C7, 0xFF30240C)
-@Composable internal fun breaksTint() = wTint(0xFF0F766E, 0xFF5EEAD4, 0xFFCCFBF1, 0xFF0D2A27)
+@Composable internal fun breaksTint() = wTint(0xFF15803D, 0xFF86EFAC, 0xFFDCFCE7, 0xFF0F2A18)
 @Composable internal fun sleepTint() = wTint(0xFF4338CA, 0xFFA5B4FC, 0xFFE0E7FF, 0xFF1C1F3D)
 @Composable internal fun habitsTint() = wTint(0xFFBE185D, 0xFFF9A8D4, 0xFFFCE7F3, 0xFF331526)
 @Composable internal fun moodTint() = wTint(0xFF4D7C0F, 0xFFBEF264, 0xFFECFCCB, 0xFF1C2A0D)

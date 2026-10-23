@@ -13,12 +13,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -67,7 +65,11 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material3.Badge
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -120,18 +122,14 @@ import java.util.Calendar
 enum class HomeTool { CALENDAR, FOREST, SHARE, WALKIE, MUSIC, VIDEO, RADIO, SENSORS, PARTY, WATCH_PARTY, GROUP, WATER, STEPS, HABITS, SLEEP, BREAKS, MOOD }
 
 // ============================================================================ the bottom bar
-/** Home · Browse · Tools · You — on Home, Tools and You (the browser keeps its own bar). */
+/**
+ * Home · Browse · Tools · You — on Home, Tools and You (the browser keeps its own bar). Docked along the
+ * bottom edge; the open tab is one rounded square holding its icon and its name.
+ */
 @Composable
 fun AppTabBar(current: MainTab, onSelect: (MainTab) -> Unit) {
-    // v7: a floating bar — a rounded card lifted off the bottom edge, the open tab in a soft pill.
     val cs = MaterialTheme.colorScheme
-    Row(
-        horizontalArrangement = Arrangement.SpaceAround,
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().background(cs.surface).navigationBarsPadding()
-            .padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 8.dp)
-            .appCard(RoundedCornerShape(26.dp)).height(66.dp),
-    ) {
+    NavigationBar(containerColor = cs.surfaceContainer, tonalElevation = 0.dp) {
         for ((tab, label, icons) in listOf(
             Triple(MainTab.HOME, "Home", Icons.Rounded.Home to Icons.Outlined.Home),
             Triple(MainTab.BROWSE, "Browse", Icons.Rounded.Public to Icons.Outlined.Public),
@@ -139,25 +137,28 @@ fun AppTabBar(current: MainTab, onSelect: (MainTab) -> Unit) {
             Triple(MainTab.YOU, "You", Icons.Rounded.Person to Icons.Outlined.Person),
         )) {
             val on = tab == current
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(20.dp))
-                    .clickable(onClickLabel = label) { onSelect(tab) }.padding(top = 9.dp),
+            val tint = if (on) cs.onPrimaryContainer else cs.onSurfaceVariant
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.weight(1f).height(80.dp) // the bar's own height (fillMaxHeight would take the whole page)
+                    .selectable(selected = on, role = Role.Tab, onClick = { onSelect(tab) }),
             ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(width = 56.dp, height = 30.dp).clip(RoundedCornerShape(15.dp))
-                        .background(if (on) cs.primaryContainer else androidx.compose.ui.graphics.Color.Transparent),
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.size(width = 76.dp, height = 60.dp).clip(RoundedCornerShape(18.dp))
+                        .background(if (on) cs.primaryContainer else Color.Transparent),
                 ) {
-                    val tint = if (on) cs.onPrimaryContainer else cs.onSurfaceVariant
                     if (tab == MainTab.YOU && com.agani.syncup.notifications.Inbox.newCount > 0) {
                         BadgedBox(badge = { Badge() }) { Icon(if (on) icons.first else icons.second, null, tint = tint) }
                     } else {
                         Icon(if (on) icons.first else icons.second, null, tint = tint)
                     }
+                    Text(
+                        label, fontSize = 12.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium, color = tint,
+                        maxLines = 1, modifier = Modifier.padding(top = 4.dp),
+                    )
                 }
-                Text(label, fontSize = 11.5.sp, fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
-                    color = if (on) cs.onSurface else cs.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
             }
         }
     }
@@ -567,7 +568,7 @@ private fun todayRows(onTool: (HomeTool) -> Unit): List<@Composable () -> Unit> 
             val next = Breaks.next()
             add {
                 TodayLine(
-                    Icons.Rounded.Visibility, ToolTint.TEAL,
+                    Icons.Rounded.Visibility, ToolTint.GREEN,
                     if (maxOf(shown, taken) == 0) "No breaks yet today" else "$taken of ${maxOf(shown, taken)} breaks taken",
                     next?.takeIf { com.agani.syncup.forest.FDays.of(it.first) == today }?.let { "Next ${if (it.second == "eye") "eye" else "move"} break ${clockText(it.first)}" } ?: "Done for today",
                 ) { onTool(HomeTool.BREAKS) }
@@ -639,7 +640,7 @@ private fun homeTools(): List<ToolSpec> = listOf(
     ToolSpec(HomeTool.HABITS, Icons.Rounded.TaskAlt, "Habits", ToolTint.PINK),
     ToolSpec(HomeTool.FOREST, Icons.Rounded.Eco, "Forest", ToolTint.LIME),
     ToolSpec(HomeTool.SHARE, Icons.Rounded.SwapHoriz, "Share", ToolTint.BLUE),
-    ToolSpec(HomeTool.WALKIE, Icons.Rounded.RecordVoiceOver, "Walkie", ToolTint.TEAL),
+    ToolSpec(HomeTool.WALKIE, Icons.Rounded.RecordVoiceOver, "Walkie", ToolTint.GREEN),
     ToolSpec(HomeTool.MUSIC, Icons.Rounded.LibraryMusic, "Music", ToolTint.VIOLET),
     ToolSpec(HomeTool.VIDEO, Icons.Rounded.SmartDisplay, "Videos", ToolTint.ROSE),
     ToolSpec(HomeTool.RADIO, Icons.Rounded.Radio, "Radio", ToolTint.ORANGE),
@@ -667,7 +668,7 @@ private fun nearbyRows(): List<NearbyRow> {
     } else {
         com.agani.syncup.party.partyStatus()?.let { rows.add(NearbyRow(HomeTool.PARTY, Icons.Rounded.MusicNote, "Party", it, ToolTint.PINK)) }
         com.agani.syncup.watchparty.watchPartyStatus()?.let { rows.add(NearbyRow(HomeTool.WATCH_PARTY, Icons.Rounded.SmartDisplay, "Watch Party", it, ToolTint.ROSE)) }
-        com.agani.syncup.walkie.walkieStatus()?.let { rows.add(NearbyRow(HomeTool.WALKIE, Icons.Rounded.RecordVoiceOver, "Walkie Talkie", it, ToolTint.TEAL)) }
+        com.agani.syncup.walkie.walkieStatus()?.let { rows.add(NearbyRow(HomeTool.WALKIE, Icons.Rounded.RecordVoiceOver, "Walkie Talkie", it, ToolTint.GREEN)) }
     }
     val qs = com.agani.syncup.quickshare.QuickShare
     if (qs.busy) {

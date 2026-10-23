@@ -64,7 +64,7 @@ internal object DecideTint {
     val COIN = ToolTint.AMBER
     val WHEEL = ToolTint.VIOLET
     val NUMBER = ToolTint.SKY
-    val YES_NO = ToolTint.TEAL
+    val YES_NO = ToolTint.GREEN
 }
 
 /** Where the Decide tools keep their small settings and counts (this phone only). */

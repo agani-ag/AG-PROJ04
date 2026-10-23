@@ -129,7 +129,7 @@ class AuthRepository(private val tokenStore: TokenStore) {
 
     /** Fetch the live radio channel list (empty when the admin has Radio off). */
     suspend fun radioChannels(): Result<RadioChannelsResponse> = runCatching {
-        ApiClient.service.radioChannels("Bearer ${tokenStore.token().orEmpty()}")
+        ApiClient.service.radioChannels()
     }
 
     /** Fetch a partner verification prompt (OTP / code / number) by id.
@@ -186,7 +186,7 @@ class AuthRepository(private val tokenStore: TokenStore) {
         }
     }
 
-    /** Deletes (deactivates) the account server-side, then clears the local session. */
+    /** Deletes the account server-side (for good, with all its data), then clears the local session. */
     suspend fun deleteAccount(): Result<Unit> = runCatching {
         if (USE_MOCK) {
             delay(400)

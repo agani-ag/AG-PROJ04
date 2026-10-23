@@ -47,16 +47,6 @@ interface ApiService {
     @POST("device/hello")
     suspend fun deviceHello(@Header("Authorization") auth: String?, @Body body: DeviceHelloRequest): DeviceHelloResponse
 
-    // Sign in with SyncUp: a one-time code for a page that asked, and You → Signed-in sites.
-    @POST("sso/code")
-    suspend fun ssoCode(@Header("Authorization") auth: String, @Body body: SsoCodeRequest): SsoCodeResponse
-
-    @GET("sso/sites")
-    suspend fun ssoSites(@Header("Authorization") auth: String): SsoSitesResponse
-
-    @POST("sso/disconnect")
-    suspend fun ssoDisconnect(@Header("Authorization") auth: String): SimpleOk
-
     /** Sign-out: detach the account from this install (it keeps public broadcasts). */
     @POST("devices/unregister")
     suspend fun deviceUnregister(@Header("Authorization") auth: String, @Body body: DeviceUnregisterRequest): SimpleOk
@@ -84,7 +74,7 @@ interface ApiService {
         @Body body: ChangePasswordRequest,
     )
 
-    /** User-initiated account deletion (backend deactivates the account + revokes tokens). */
+    /** User-initiated account deletion: the server erases the account and everything kept for it, for good. */
     @POST("account/delete")
     suspend fun deleteAccount(@Header("Authorization") auth: String)
 
@@ -100,9 +90,9 @@ interface ApiService {
     @GET("general-links")
     suspend fun generalLinks(@Query("v") version: String?): retrofit2.Response<GeneralLinksResponse>
 
-    /** Live radio channels (empty when the admin has Radio off). */
+    /** Live radio channels for everyone, signed in or not (empty when the admin has Radio off). */
     @GET("radio/channels")
-    suspend fun radioChannels(@Header("Authorization") auth: String): RadioChannelsResponse
+    suspend fun radioChannels(): RadioChannelsResponse
 
     /** Register this device's FCM token for push. */
     @POST("devices/register")

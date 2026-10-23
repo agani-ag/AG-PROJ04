@@ -206,7 +206,7 @@ fun ToolsScreen(
         )
         add(
             TileSpec(
-                Icons.Rounded.RecordVoiceOver, ToolTint.TEAL,
+                Icons.Rounded.RecordVoiceOver, ToolTint.GREEN,
                 "Walkie Talkie", "Talk to friends nearby",
                 status = walkieStatus(),
                 onClick = onWalkie, tab = ToolsTab.NEARBY,
@@ -215,7 +215,7 @@ fun ToolsScreen(
         add(
             TileSpec(
                 Icons.Rounded.Groups, ToolTint.INDIGO,
-                "Group", "Up to 8 phones: music, watch, talk, share",
+                "Group", "Up to 8 phones: music, watch, talk, share, photos",
                 status = if (com.agani.syncup.group.GroupLink.active) "In a group · ${com.agani.syncup.group.GroupLink.mode.label}" else null,
                 onClick = onGroup, tab = ToolsTab.NEARBY,
             ),
@@ -311,7 +311,7 @@ fun ToolsScreen(
         val nextBreak = Breaks.next()
         add(
             TileSpec(
-                Icons.Rounded.Visibility, ToolTint.TEAL,
+                Icons.Rounded.Visibility, ToolTint.GREEN,
                 "Breaks", "Eye & stretch breaks",
                 status = when {
                     !bs.setUp -> null

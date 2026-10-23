@@ -117,6 +117,8 @@ dependencies {
     // Location settings check — powers the in-app "Turn on location (GPS)" dialog
     // for web pages that request geolocation.
     implementation("com.google.android.gms:play-services-location:21.3.0")
+    // Sign-in / sign-up: the SIM's own number on the Phone field (Phone Number Hint; no permission).
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
 
     // Media3 (ExoPlayer + MediaSession) — the native Live Radio player (background + lock-screen).
     implementation("androidx.media3:media3-exoplayer:1.4.1")

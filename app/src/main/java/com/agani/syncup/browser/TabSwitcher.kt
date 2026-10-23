@@ -101,7 +101,7 @@ private val SKETCH_COLORS = listOf(
 private fun sketchColor(tab: BrowserTab): Color = when {
     tab.themeColor != null -> Color(tab.themeColor!!)
     tab.isHome -> Color(0xFF94A3B8)
-    tab.isWork -> Color(0xFF0F766E)
+    tab.isWork -> Color(0xFF15803D)
     else -> SKETCH_COLORS[(UrlInput.hostAndPath(tab.url).first.hashCode() and 0x7fffffff) % SKETCH_COLORS.size]
 }
 
@@ -711,7 +711,7 @@ private fun SectionSegment(section: Section, selected: Boolean, locked: Boolean,
             }
         }
         // Icon-only pills keep a hint of what's inside: a tab count in that section's own colour
-        // (Normal blue, SyncUp teal, Incognito purple), or a lock when sign-in is needed.
+        // (Normal blue, SyncUp green, Incognito purple), or a lock when sign-in is needed.
         if (!selected && (locked || count > 0)) {
             val ring = cs.surfaceContainer
             SectionTheme(section) {

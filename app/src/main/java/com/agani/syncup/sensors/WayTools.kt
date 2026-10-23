@@ -624,7 +624,7 @@ private fun systemColor(c: Int): Color = when (c) {
     GnssStatus.CONSTELLATION_GLONASS -> Color(0xFF34D399)
     GnssStatus.CONSTELLATION_GALILEO -> Color(0xFFA78BFA)
     GnssStatus.CONSTELLATION_BEIDOU -> Color(0xFFF472B6)
-    GnssStatus.CONSTELLATION_QZSS -> Color(0xFF2DD4BF)
+    GnssStatus.CONSTELLATION_QZSS -> Color(0xFFFDE047)
     7 -> Color(0xFFF59E0B)
     else -> Color(0xFF94A3B8)
 }

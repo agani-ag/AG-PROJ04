@@ -297,67 +297,6 @@ class WebPlatform(private val activity: ComponentActivity) {
         PageTokens.forUrl(webView.url)?.let { webView.evaluateJavascript(PageTokens.script(it), null) }
     }
 
-    // ------------------------------------------------------------------ Sign in with SyncUp
-    // Normal and Work WebViews with window.SyncUp.signIn on the sign-in websites (never Incognito):
-    // the document-start script, and the origins its message channel was opened for.
-    private val signInScripts = java.util.WeakHashMap<WebView, ScriptHandler?>()
-    private val signInOrigins = java.util.WeakHashMap<WebView, Set<String>>()
-    private val onSignInChanged: (Boolean) -> Unit = { personChanged -> signInScripts.keys.toList().forEach { applySignIn(it, personChanged) } }
-
-    init {
-        com.agani.syncup.sso.SyncUpSignIn.addListener(onSignInChanged)
-        activity.lifecycle.addObserver(
-            LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_DESTROY) com.agani.syncup.sso.SyncUpSignIn.removeListener(onSignInChanged) },
-        )
-    }
-
-    /**
-     * (Re)put window.SyncUp.account / signIn() on [webView] for the sign-in websites only (see
-     * SyncUpSignIn). The message channel is only reopened when the websites change — reopening it
-     * would leave a page that's already open talking to nobody. With [personChanged], the open page
-     * also gets the 'syncupaccount' event.
-     */
-    private fun applySignIn(webView: WebView, personChanged: Boolean = false) {
-        val signIn = com.agani.syncup.sso.SyncUpSignIn
-        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT) ||
-            !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
-        ) {
-            return
-        }
-        val origins = signIn.origins()
-        if (signInOrigins[webView] != origins) {
-            if (signInOrigins.containsKey(webView)) runCatching { WebViewCompat.removeWebMessageListener(webView, signIn.BRIDGE) }
-            if (origins.isNotEmpty()) {
-                runCatching {
-                    WebViewCompat.addWebMessageListener(webView, signIn.BRIDGE, origins) { _, message, sourceOrigin, isMainFrame, reply ->
-                        onSignInMessage(message.data, sourceOrigin.toString(), isMainFrame, reply)
-                    }
-                }
-            }
-            signInOrigins[webView] = origins
-        }
-        signInScripts[webView]?.let { runCatching { it.remove() } }
-        signInScripts[webView] = if (origins.isEmpty()) null
-        else runCatching { WebViewCompat.addDocumentStartJavaScript(webView, signIn.script(), origins) }.getOrNull()
-        // The page already open, if it's one of them, gets the new account now.
-        if (signIn.hostOf(webView.url) != null) webView.evaluateJavascript(signIn.accountScript(event = personChanged), null)
-    }
-
-    /** A sign-in website's page asked to sign in: only its main page, only from a sign-in website. */
-    private fun onSignInMessage(data: String?, sourceOrigin: String, isMainFrame: Boolean, reply: JavaScriptReplyProxy) {
-        val m = runCatching { JSONObject(data ?: "") }.getOrNull() ?: return
-        val n = m.optInt("n")
-        fun answer(code: String?) {
-            runCatching { reply.postMessage(JSONObject().put("n", n).put("code", code ?: JSONObject.NULL).toString()) }
-        }
-        val host = com.agani.syncup.sso.SyncUpSignIn.hostOf(sourceOrigin)
-        if (!isMainFrame || host == null) {
-            answer(null)
-            return
-        }
-        com.agani.syncup.sso.SyncUpSignIn.request(activity, host, m.optBoolean("silent"), ::answer)
-    }
-
     // ------------------------------------------------------------------ WebView factory
     /** Build a fully configured WebView for [tab] (assigned to its section's profile). */
     @SuppressLint("SetJavaScriptEnabled")
@@ -432,8 +371,6 @@ class WebPlatform(private val activity: ComponentActivity) {
         }
         // The SyncUp page token, on the websites switched on for it only. Incognito never gets one.
         if (tab.section != Section.INCOGNITO) applyPageTokens(webView)
-        // Sign in with SyncUp on its websites — never in Incognito either.
-        if (tab.section != Section.INCOGNITO) applySignIn(webView)
 
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {

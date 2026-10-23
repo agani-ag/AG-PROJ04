@@ -305,7 +305,7 @@ private fun TvChip(label: String, count: Int, selected: Boolean, star: Boolean =
 /** Each channel's tile colour, picked from its name (the same every time). */
 private val TILE_TINTS = listOf(
     ToolTint.RED, ToolTint.AMBER, ToolTint.VIOLET, ToolTint.GREEN, ToolTint.ROSE, ToolTint.ORANGE, ToolTint.LIME,
-    ToolTint.PINK, ToolTint.SKY, ToolTint.TEAL, ToolTint.INDIGO, ToolTint.CYAN, ToolTint.SLATE,
+    ToolTint.PINK, ToolTint.SKY, ToolTint.INDIGO, ToolTint.CYAN, ToolTint.SLATE,
 )
 
 /** "City News 24" → "CN". */

@@ -197,7 +197,7 @@ object Breaks {
                 ctx, Wellbeing.CH_BREAKS, Wellbeing.ID_BREAK,
                 if (eye) "Eye break" else "Move break",
                 if (eye) "Look at something far away for 20 seconds" else "Stand up and stretch — 2 minutes",
-                Wellbeing.open(ctx, "BREAKS", Wellbeing.ID_BREAK, kind), 0xFF0F766E,
+                Wellbeing.open(ctx, "BREAKS", Wellbeing.ID_BREAK, kind), 0xFF15803D,
                 listOf(
                     "Start" to Wellbeing.open(ctx, "BREAKS", 0x6E2101, kind),
                     "Skip" to Wellbeing.action(ctx, Wellbeing.A_BREAK_SKIP, 0x6E2102),
@@ -336,7 +336,7 @@ private fun EyeBreak(onDone: (taken: Boolean) -> Unit) {
     }
     com.agani.syncup.forest.BarIcons(light = false)
     Box(
-        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF0F766E), Color(0xFF115E59), Color(0xFF134E4A))))
+        Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF15803D), Color(0xFF166534), Color(0xFF14532D))))
             .windowInsetsPadding(WindowInsets.safeDrawing),
     ) {
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -350,22 +350,22 @@ private fun EyeBreak(onDone: (taken: Boolean) -> Unit) {
                     val sw = 12.dp.toPx()
                     val d = size.minDimension - sw
                     drawArc(Color.White.copy(alpha = .18f), 0f, 360f, false, Offset(sw / 2, sw / 2), Size(d, d), style = Stroke(sw))
-                    drawArc(Color(0xFF5EEAD4), -90f, 360f * frac, false, Offset(sw / 2, sw / 2), Size(d, d), style = Stroke(sw, cap = StrokeCap.Round))
+                    drawArc(Color(0xFF86EFAC), -90f, 360f * frac, false, Offset(sw / 2, sw / 2), Size(d, d), style = Stroke(sw, cap = StrokeCap.Round))
                 }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("$left", fontSize = 64.sp, fontWeight = FontWeight.Light, color = Color.White)
-                    Text("seconds", fontSize = 14.sp, color = Color(0xFFCCFBF1))
+                    Text("seconds", fontSize = 14.sp, color = Color(0xFFDCFCE7))
                 }
             }
             Text("Look at something far away", fontSize = 22.sp, fontWeight = FontWeight.Medium, color = Color.White, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 26.dp))
             Text(
                 "About 6 metres — out of a window is perfect. Let your eyes relax and blink slowly.",
-                fontSize = 14.5.sp, lineHeight = 21.sp, color = Color(0xFFCCFBF1), textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 40.dp, vertical = 8.dp),
+                fontSize = 14.5.sp, lineHeight = 21.sp, color = Color(0xFFDCFCE7), textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 40.dp, vertical = 8.dp),
             )
             Spacer(Modifier.weight(1f))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp)) {
                 PillButton("Skip", Color.White.copy(alpha = .14f), Color.White, Modifier.weight(1f)) { onDone(false) }
-                PillButton("Done", Color.White, Color(0xFF0F766E), Modifier.weight(1f)) { onDone(true) }
+                PillButton("Done", Color.White, Color(0xFF15803D), Modifier.weight(1f)) { onDone(true) }
             }
         }
     }
@@ -412,7 +412,7 @@ private fun MoveBreak(onDone: (taken: Boolean) -> Unit) {
         Text("${i + 1} of ${MOVES.size}", fontSize = 14.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(end = 14.dp))
     }) {
         Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(250.dp).clip(RoundedCornerShape(24.dp)).background(t.container.copy(alpha = .5f)), contentAlignment = Alignment.Center) {
-            Canvas(Modifier.size(220.dp)) { figure(m.pose, swing, t.accent, Color(0xFF14B8A6)) }
+            Canvas(Modifier.size(220.dp)) { figure(m.pose, swing, t.accent, Color(0xFF22C55E)) }
         }
         Text(m.title, fontSize = 22.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 18.dp))
         Text(m.how, fontSize = 14.5.sp, lineHeight = 21.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 30.dp, vertical = 6.dp))

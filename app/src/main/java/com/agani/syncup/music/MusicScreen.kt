@@ -111,7 +111,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-/** Party's soft pink (the Party button, the "in a party" bar, Play at a party). */
+/** Party's soft pink (the Party button, the "in a party" bar). */
 private val PartyTint = ToolTint.PINK
 
 /**
@@ -153,18 +153,16 @@ fun MusicScreen(onBack: () -> Unit, onOpenParty: () -> Unit = {}) {
 }
 
 /**
- * Radio, for everyone: **Party** (play songs in sync on phones nearby — no sign-in) and **Live
- * stations** (SyncUp's AudioSync broadcasts — signed-in users, while the admin has them on; the tab
- * is hidden when the admin has them off).
+ * Radio, for everyone, signed in or not: **Party** (play songs in sync on phones nearby) and **Live
+ * stations** (SyncUp's AudioSync broadcasts, while the admin has them on; the tab is hidden when the
+ * admin has them off).
  */
 @Composable
 fun RadioScreen(
     liveStations: Boolean,
-    signedIn: Boolean,
     partyTab: Boolean,
     onTab: (party: Boolean) -> Unit,
     loadStations: suspend () -> Result<RadioChannelsResponse>,
-    onSignIn: () -> Unit,
     onBack: () -> Unit,
 ) {
     val player = LocalPlayer.current ?: return
@@ -192,15 +190,7 @@ fun RadioScreen(
                         "Private broadcasts via this organization's own AudioSync only — not public radio stations.",
                         Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
                     )
-                    if (signedIn) {
-                        RadioTab(player, loadStations, onOpenPlayer = { nowPlaying = true })
-                    } else {
-                        EmptyState(
-                            Icons.Rounded.Radio, "Sign in to listen",
-                            "Live stations are for signed-in SyncUp users. Party works without signing in.",
-                            action = "Sign in", onAction = onSignIn,
-                        )
-                    }
+                    RadioTab(player, loadStations, onOpenPlayer = { nowPlaying = true })
                 }
             }
         }
@@ -629,13 +619,15 @@ private fun NowPlaying(player: PlayerHandle, onPlayAtParty: (() -> Unit)? = null
                     delay(1_000)
                 }
             }
+            // In the song's own colours, from its cover.
+            val colors = rememberCoverColors(player.artUri, player.isRadio)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(top = 18.dp).fillMaxWidth().clip(RoundedCornerShape(22.dp))
-                    .background(PartyTint.tile).clickable(onClick = onPlayAtParty).padding(14.dp),
+                    .background(colors.tile).clickable(onClick = onPlayAtParty).padding(14.dp),
             ) {
-                Box(Modifier.size(42.dp).clip(RoundedCornerShape(14.dp)).background(PartyTint.icon), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Rounded.Groups, null, tint = PartyTint.onSolid)
+                Box(Modifier.size(42.dp).clip(RoundedCornerShape(14.dp)).background(colors.solid), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Groups, null, tint = colors.onSolid)
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {

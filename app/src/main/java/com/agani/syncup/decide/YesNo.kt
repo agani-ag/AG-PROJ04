@@ -62,7 +62,7 @@ private const val HISTORY_SHOWN = 5
 private const val MAX_QUESTION = 200
 
 private enum class Answer(val word: String, val short: String, val line: String, val tint: ToolTint) {
-    YES("Yes!", "Yes", "Go for it", ToolTint.TEAL),
+    YES("Yes!", "Yes", "Go for it", ToolTint.GREEN),
     NO("No", "No", "Better not", ToolTint.ROSE),
     MAYBE("Maybe", "Maybe", "Ask again later", ToolTint.AMBER),
 }

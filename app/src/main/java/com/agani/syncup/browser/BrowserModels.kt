@@ -50,6 +50,9 @@ class BrowserTab(
     /** A pop-up window that hasn't started its first page yet. */
     var freshPopup = false
 
+    /** Opened by a link tapped in another app (SyncUp as its browser): Back on its first page closes it and returns there. */
+    var fromOtherApp = false
+
     /** "Desktop site": pages get a desktop browser's user agent. */
     var desktop by mutableStateOf(false)
 

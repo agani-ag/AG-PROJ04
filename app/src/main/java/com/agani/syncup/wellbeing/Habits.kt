@@ -131,7 +131,7 @@ internal val HABIT_ICONS: List<Pair<String, ImageVector>> = listOf(
 
 internal fun habitIcon(key: String): ImageVector = HABIT_ICONS.firstOrNull { it.first == key }?.second ?: Icons.Rounded.Star
 
-internal val HABIT_COLORS = listOf(0xFFDB2777, 0xFF7C3AED, 0xFF2563EB, 0xFF0D9488, 0xFF65A30D, 0xFFD97706, 0xFFDC2626)
+internal val HABIT_COLORS = listOf(0xFFDB2777, 0xFF7C3AED, 0xFF2563EB, 0xFF16A34A, 0xFF65A30D, 0xFFD97706, 0xFFDC2626)
 
 /** Ready-made habits to start from. */
 internal val STARTERS = listOf(
@@ -141,7 +141,7 @@ internal val STARTERS = listOf(
     Habit(name = "Vitamins", icon = "vitamins", color = 0xFFDB2777, remind = 8 * 60),
     Habit(name = "No sugar", icon = "nosugar", color = 0xFFDC2626),
     Habit(name = "Call family", icon = "call", color = 0xFF2563EB, freq = "days", days = 0b1100000),
-    Habit(name = "Journal", icon = "journal", color = 0xFF0D9488, remind = 22 * 60),
+    Habit(name = "Journal", icon = "journal", color = 0xFF16A34A, remind = 22 * 60),
 )
 
 /**

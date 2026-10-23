@@ -1,5 +1,8 @@
 package com.agani.syncup.browser
 
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.material.icons.rounded.SimCard
 import com.agani.syncup.browser.ui.SyncUpMark
 import android.content.Intent
 import android.net.Uri
@@ -233,6 +236,16 @@ private fun SignInForm(
     var password by form::password
     var showHelp by remember { mutableStateOf(false) }
     val login = values[mode].orEmpty()
+    // The phone's own numbers (Google's sheet), offered once when the Phone field is first tapped empty.
+    val phoneHint = rememberPhoneHint { values[LoginMode.PHONE] = it }
+    var hintOffered by remember { mutableStateOf(false) }
+    var loginFocused by remember { mutableStateOf(false) }
+    LaunchedEffect(mode, loginFocused) {
+        if (mode == LoginMode.PHONE && loginFocused && login.isBlank() && !hintOffered) {
+            hintOffered = true
+            phoneHint()
+        }
+    }
 
     SheetTitle("Sign in to SyncUp", "Sync your bookmarks, history and tabs across devices")
     Spacer(Modifier.height(20.dp))
@@ -261,6 +274,9 @@ private fun SignInForm(
             )
         },
         prefix = if (mode == LoginMode.PHONE) ({ Text("+91 ") }) else null,
+        trailingIcon = if (mode == LoginMode.PHONE) ({
+            IconButton(onClick = phoneHint) { Icon(Icons.Rounded.SimCard, "Use this phone's number") }
+        }) else null,
         singleLine = true, shape = FieldShape,
         keyboardOptions = KeyboardOptions(
             keyboardType = when (mode) {
@@ -270,7 +286,7 @@ private fun SignInForm(
             },
             imeAction = ImeAction.Next,
         ),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().onFocusChanged { loginFocused = it.isFocused },
     )
     Spacer(Modifier.height(14.dp))
     // Done on the keyboard signs in, like the button.
@@ -348,6 +364,9 @@ private fun SignUpForm(
     var phone by form::phone
     var password by form::newPassword
     var agreed by form::agreed
+    // The phone's own numbers (Google's sheet), offered once when the mobile field is first tapped empty.
+    val phoneHint = rememberPhoneHint { phone = it }
+    var hintOffered by remember { mutableStateOf(false) }
 
     val emailBad = email.isNotBlank() && !android.util.Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()
     val phoneBad = phone.isNotBlank() && !isIndianMobile(phone)
@@ -383,9 +402,15 @@ private fun SignUpForm(
         prefix = { Text("+91 ") },
         isError = phoneBad,
         supportingText = { Text(if (phoneBad) "Enter a 10-digit Indian mobile number" else "Email, mobile number or both — you can sign in with either") },
+        trailingIcon = { IconButton(onClick = phoneHint) { Icon(Icons.Rounded.SimCard, "Use this phone's number") } },
         singleLine = true, shape = shape,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone, imeAction = ImeAction.Next),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().onFocusChanged {
+            if (it.isFocused && phone.isBlank() && !hintOffered) {
+                hintOffered = true
+                phoneHint()
+            }
+        },
     )
     Spacer(Modifier.height(6.dp))
     PasswordField(password, { password = it }, supporting = "At least 6 characters")

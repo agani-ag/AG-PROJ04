@@ -50,6 +50,7 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PanTool
 import androidx.compose.material.icons.rounded.Phone
 import androidx.compose.material.icons.rounded.PhoneAndroid
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Theaters
@@ -114,22 +115,24 @@ import org.json.JSONObject
 /** The group's own colour (its Tools tile, the group bar, Switch). */
 internal val GroupTint = ToolTint.INDIGO
 
-/** The talk button's teal (the same in Light and Dark, with white on it). */
-private val WalkieTeal = Color(0xFF0F766E)
+/** The talk button's green (the same in Light and Dark, with white on it). */
+private val WalkieGreen = Color(0xFF15803D)
 
-/** Each mode's icon, and its tool's colour: Music party pink, Watch together rose, Walkie talkie teal, Share files blue. */
+/** Each mode's icon, and its tool's colour: Music party pink, Watch together rose, Walkie talkie green, Share files blue, Group photos rose. */
 internal fun GroupMode.icon(): ImageVector = when (this) {
     GroupMode.MUSIC -> Icons.Rounded.MusicNote
     GroupMode.WATCH -> Icons.Rounded.Theaters
     GroupMode.WALKIE -> Icons.Rounded.RecordVoiceOver
     GroupMode.SHARE -> Icons.Rounded.SwapHoriz
+    GroupMode.PHOTOS -> Icons.Rounded.PhotoLibrary
 }
 
 internal fun GroupMode.tint(): ToolTint = when (this) {
     GroupMode.MUSIC -> ToolTint.PINK
     GroupMode.WATCH -> ToolTint.ROSE
-    GroupMode.WALKIE -> ToolTint.TEAL
+    GroupMode.WALKIE -> ToolTint.GREEN
     GroupMode.SHARE -> ToolTint.BLUE
+    GroupMode.PHOTOS -> ToolTint.ROSE
 }
 
 private fun GroupMode.blurb(): String = when (this) {
@@ -137,6 +140,7 @@ private fun GroupMode.blurb(): String = when (this) {
     GroupMode.WATCH -> "A video on every phone, in sync"
     GroupMode.WALKIE -> "Talk to everyone in the group"
     GroupMode.SHARE -> "Send photos & files to the group"
+    GroupMode.PHOTOS -> "Everyone's photos in one place · Photo Show"
 }
 
 @Composable
@@ -320,7 +324,7 @@ private fun LinkChip(quality: Int) {
 }
 
 // ============================================================================ switching
-/** Host: "Switch the group to…" — the four modes, then what the new one needs. */
+/** Host: "Switch the group to…" — the five modes, then what the new one needs. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun GroupSwitchSheet(onDismiss: () -> Unit, onPickSongs: () -> Unit, onPickVideo: () -> Unit) {
@@ -349,8 +353,9 @@ fun GroupSwitchSheet(onDismiss: () -> Unit, onPickSongs: () -> Unit, onPickVideo
                                             .clickable {
                                                 when {
                                                     now -> onDismiss()
-                                                    m == GroupMode.SHARE -> {
-                                                        GroupLink.switchTo(GroupMode.SHARE)
+                                                    // Nothing to choose for these: the group switches at once.
+                                                    m == GroupMode.SHARE || m == GroupMode.PHOTOS -> {
+                                                        GroupLink.switchTo(m)
                                                         onDismiss()
                                                     }
                                                     else -> step = m
@@ -373,6 +378,8 @@ fun GroupSwitchSheet(onDismiss: () -> Unit, onPickSongs: () -> Unit, onPickVideo
                                         Text(m.blurb(), fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant, maxLines = 2)
                                     }
                                 }
+                                // An odd one out keeps its half width.
+                                if (pair.size == 1) Spacer(Modifier.weight(1f))
                             }
                         }
                     }
@@ -420,7 +427,7 @@ fun GroupSwitchSheet(onDismiss: () -> Unit, onPickSongs: () -> Unit, onPickVideo
                     }
                     BackRow { step = null }
                 }
-                GroupMode.SHARE -> Unit
+                GroupMode.SHARE, GroupMode.PHOTOS -> Unit
             }
         }
     }
@@ -431,6 +438,9 @@ fun GroupSwitchSheet(onDismiss: () -> Unit, onPickSongs: () -> Unit, onPickVideo
 private fun resumeLine(): String? = when (GroupLink.mode) {
     GroupMode.MUSIC -> Party.current?.let { "The music is kept. Switch back to Music party later and it carries on from “${it.title}”." }
     GroupMode.WATCH -> WatchParty.current?.let { "The video is kept. Switch back to Watch together later and it carries on from ${formatMs(WatchParty.positionMs())}." }
+    GroupMode.PHOTOS -> GroupPhotos.pool.size.takeIf { it > 0 }?.let { n ->
+        "The photos are kept. Switch back to Group photos later and all $n ${if (n == 1) "is" else "are"} still there."
+    }
     else -> null
 }
 
@@ -619,6 +629,12 @@ fun GroupOverlays() {
             GroupWalkie.notice = null
         }
     }
+    LaunchedEffect(GroupPhotos.notice) {
+        GroupPhotos.notice?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            GroupPhotos.notice = null
+        }
+    }
     GroupJoinRequestDialog()
     // The notification's Switch (host): the Switch sheet, whatever screen is open.
     val sheets = rememberGroupSheets()
@@ -695,23 +711,30 @@ private fun CodeCard(code: String, modifier: Modifier = Modifier, onCard: Boolea
     )
 }
 
-// ============================================================================ Walkie talkie & Share files
-/** Tools → the group's Walkie talkie / Share files (Music party and Watch together have their own pages). */
+// ============================================================================ Walkie talkie, Share files & Group photos
+/**
+ * Tools → the group's Walkie talkie / Share files / Group photos (Music party and Watch together have
+ * their own pages). Group photos' viewer and Photo Show go full screen over the page.
+ */
 @Composable
 fun GroupModeScreen(onBack: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
-        ToolTopBar(if (GroupLink.inGroup) GroupLink.mode.label else "Group", onBack)
-        when {
-            !GroupLink.inGroup -> NoteBox(
-                Icons.Rounded.Groups,
-                "You're not in a group. Start one from Radio → Party or Video player → Watch Party, or join one there.",
-                Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-            GroupLink.mode == GroupMode.WALKIE -> WalkieView()
-            GroupLink.mode == GroupMode.SHARE -> ShareView()
-            else -> GroupElsewhere(GroupLink.mode, onSwitchHere = {})
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
+            ToolTopBar(if (GroupLink.inGroup) GroupLink.mode.label else "Group", onBack)
+            when {
+                !GroupLink.inGroup -> NoteBox(
+                    Icons.Rounded.Groups,
+                    "You're not in a group. Start one from Radio → Party or Video player → Watch Party, or join one there.",
+                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+                GroupLink.mode == GroupMode.WALKIE -> WalkieView()
+                GroupLink.mode == GroupMode.SHARE -> ShareView()
+                GroupLink.mode == GroupMode.PHOTOS -> PhotosView()
+                else -> GroupElsewhere(GroupLink.mode, onSwitchHere = {})
+            }
         }
+        if (GroupLink.inGroup && GroupLink.mode == GroupMode.PHOTOS) PhotosFullScreen()
     }
 }
 
@@ -776,17 +799,17 @@ private fun WalkieView() {
                     if (hold && floor != null) {
                         val left = 1f - ((now - GroupWalkie.floorSince).toFloat() / GroupWalkie.TALK_LIMIT_MS).coerceIn(0f, 1f)
                         CircularProgressIndicator(
-                            progress = { left }, color = if (mine) WalkieTeal else cs.outline, trackColor = cs.outlineVariant,
+                            progress = { left }, color = if (mine) WalkieGreen else cs.outline, trackColor = cs.outlineVariant,
                             strokeWidth = 6.dp, modifier = Modifier.size(220.dp),
                         )
                     } else if (!off) {
-                        // The soft teal ring around the button.
+                        // The soft green ring around the button.
                         Box(Modifier.size(224.dp).clip(CircleShape).background(tint.tile))
                     }
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier.size(196.dp).clip(CircleShape)
-                            .background(if (off) cs.surfaceContainerHighest else WalkieTeal)
+                            .background(if (off) cs.surfaceContainerHighest else WalkieGreen)
                             .then(
                                 if (hold) Modifier.pointerInput(Unit) {
                                     detectTapGestures(onPress = {
@@ -815,7 +838,7 @@ private fun WalkieView() {
                     fontSize = 13.5.sp, lineHeight = 19.sp, color = cs.onSurfaceVariant, textAlign = TextAlign.Center,
                     modifier = Modifier.padding(top = 8.dp, start = 12.dp, end = 12.dp),
                 )
-                // Loudspeaker (soft teal) or earpiece.
+                // Loudspeaker (soft green) or earpiece.
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(top = 12.dp).clip(RoundedCornerShape(50))
@@ -856,7 +879,7 @@ private fun WalkieView() {
                 modifier = Modifier.cardSlice(first = i == 0, last = i == people.lastIndex).fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
             ) {
                 Box(
-                    Modifier.size(40.dp).clip(CircleShape).background(if (talking) WalkieTeal else tint.tile),
+                    Modifier.size(40.dp).clip(CircleShape).background(if (talking) WalkieGreen else tint.tile),
                     contentAlignment = Alignment.Center,
                 ) { Text(p.name.take(1).uppercase(), color = if (talking) Color.White else tint.icon, fontWeight = FontWeight.Medium) }
                 Spacer(Modifier.width(14.dp))

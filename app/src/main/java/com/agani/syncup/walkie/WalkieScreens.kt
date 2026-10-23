@@ -129,11 +129,10 @@ import com.agani.syncup.ui.theme.appCard
 import com.agani.syncup.ui.theme.dialogSurface
 import kotlinx.coroutines.delay
 
-private val Teal = Color(0xFF0F766E)
-private val TealBright = Color(0xFF14B8A6)
+private val Green = Color(0xFF15803D)
+private val GreenBright = Color(0xFF22C55E)
 private val Red = Color(0xFFDC2626)
 private val Amber = Color(0xFFD97706)
-private val Green = Color(0xFF15803D)
 
 private fun TalkMode.label() = if (this == TalkMode.HOLD) "Hold to talk" else "Open line"
 private fun JoinRule.label() = if (this == JoinRule.ASK) "Ask me first" else "Anyone nearby"
@@ -258,7 +257,7 @@ fun WalkieScreen(onBack: () -> Unit) {
                         }
                     },
                 )
-                GroupLink.phase == GroupPhase.JOINING -> GroupJoiningView(ToolTint.TEAL)
+                GroupLink.phase == GroupPhase.JOINING -> GroupJoiningView(ToolTint.GREEN)
                 // In a group: what it's doing; the host can switch it to Walkie talkie from here.
                 GroupLink.inGroup -> GroupElsewhere(GroupMode.WALKIE, onSwitchHere = { pickGroupTalk = true })
                 else -> HomeView(
@@ -338,7 +337,7 @@ fun WalkieScreen(onBack: () -> Unit) {
                     CodeBox(r.code, Modifier.padding(top = 16.dp))
                 }
             },
-            confirmButton = { Button(onClick = { Walkie.acceptJoin(r) }, colors = tintButton(ToolTint.TEAL)) { Text("Accept") } },
+            confirmButton = { Button(onClick = { Walkie.acceptJoin(r) }, colors = tintButton(ToolTint.GREEN)) { Text("Accept") } },
             dismissButton = { OutlinedButton(onClick = { Walkie.declineJoin(r) }) { Text("Decline") } },
             containerColor = cs.dialogSurface,
         )
@@ -439,16 +438,16 @@ private fun HomeView(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().appCard(CardShape).padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
             ) {
-                ToolTile(Icons.Rounded.RecordVoiceOver, ToolTint.TEAL, size = 36.dp)
+                ToolTile(Icons.Rounded.RecordVoiceOver, ToolTint.GREEN, size = 36.dp)
                 Spacer(Modifier.width(12.dp))
                 Text("Others see you as ", fontSize = 13.5.sp, color = cs.onSurfaceVariant)
                 Text(Walkie.myName, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                TextButton(onClick = onRename) { Text("Change", color = ToolTint.TEAL.icon) }
+                TextButton(onClick = onRename) { Text("Change", color = ToolTint.GREEN.icon) }
             }
         }
         item(key = "actions") {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
-                ActionCard(Icons.Rounded.RecordVoiceOver, "Start a channel", "Friends nearby join you", ToolTint.TEAL, Modifier.weight(1f), onStart)
+                ActionCard(Icons.Rounded.RecordVoiceOver, "Start a channel", "Friends nearby join you", ToolTint.GREEN, Modifier.weight(1f), onStart)
                 ActionCard(Icons.AutoMirrored.Rounded.Login, "Join a channel", "Talk on a friend's channel", ToolTint.BLUE, Modifier.weight(1f), onLook)
             }
         }
@@ -545,7 +544,7 @@ private fun ChannelRow(ch: WalkieChannel, modifier: Modifier, onJoin: () -> Unit
             }
         }
         Spacer(Modifier.width(8.dp))
-        Button(onClick = onJoin, colors = tintButton(ToolTint.TEAL), contentPadding = PaddingValues(horizontal = 16.dp), modifier = Modifier.height(36.dp)) {
+        Button(onClick = onJoin, colors = tintButton(ToolTint.GREEN), contentPadding = PaddingValues(horizontal = 16.dp), modifier = Modifier.height(36.dp)) {
             Text("Join", fontSize = 13.5.sp)
         }
     }
@@ -593,9 +592,9 @@ private fun StartSheet(onDismiss: () -> Unit) {
             )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 18.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(ToolTint.TEAL.tile).padding(horizontal = 14.dp, vertical = 12.dp),
+                modifier = Modifier.padding(top = 18.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(ToolTint.GREEN.tile).padding(horizontal = 14.dp, vertical = 12.dp),
             ) {
-                Icon(if (talk == TalkMode.HOLD) Icons.Rounded.PanTool else Icons.Rounded.Mic, null, tint = ToolTint.TEAL.icon, modifier = Modifier.size(18.dp))
+                Icon(if (talk == TalkMode.HOLD) Icons.Rounded.PanTool else Icons.Rounded.Mic, null, tint = ToolTint.GREEN.icon, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(10.dp))
                 Text(
                     "${talk.label()} · ${join.label()} — you can change both later from ⋮ in the channel.",
@@ -607,7 +606,7 @@ private fun StartSheet(onDismiss: () -> Unit) {
                     onDismiss()
                     Walkie.start(name, talk, join)
                 },
-                colors = tintButton(ToolTint.TEAL), modifier = Modifier.padding(top = 14.dp).fillMaxWidth().height(48.dp),
+                colors = tintButton(ToolTint.GREEN), modifier = Modifier.padding(top = 14.dp).fillMaxWidth().height(48.dp),
             ) { Text("Start channel", fontSize = 15.sp) }
         }
     }
@@ -619,8 +618,8 @@ private fun JoiningView() {
     val cs = MaterialTheme.colorScheme
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.weight(1f))
-        Box(Modifier.size(140.dp).clip(CircleShape).background(ToolTint.TEAL.tile), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.RecordVoiceOver, null, tint = ToolTint.TEAL.icon, modifier = Modifier.size(48.dp))
+        Box(Modifier.size(140.dp).clip(CircleShape).background(ToolTint.GREEN.tile), contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.RecordVoiceOver, null, tint = ToolTint.GREEN.icon, modifier = Modifier.size(48.dp))
         }
         val ask = Walkie.joinRule == JoinRule.ASK
         Text(
@@ -644,7 +643,7 @@ private fun ChannelView(onAllowMic: () -> Unit, onLeave: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         Walkie.banner?.let { b ->
-            Note(Icons.Rounded.SwapHoriz, b, ToolTint.TEAL, onClose = { Walkie.dismissBanner() })
+            Note(Icons.Rounded.SwapHoriz, b, ToolTint.GREEN, onClose = { Walkie.dismissBanner() })
             LaunchedEffect(b) {
                 delay(10_000)
                 if (Walkie.banner == b) Walkie.dismissBanner()
@@ -654,7 +653,7 @@ private fun ChannelView(onAllowMic: () -> Unit, onLeave: () -> Unit) {
             Walkie.phase == WalkiePhase.SWITCHING -> Note(Icons.Rounded.Sync, "Finding the channel again… it carries on by itself.", ToolTint.AMBER)
             Walkie.inPhoneCall -> Note(Icons.Rounded.PhoneAndroid, "Paused for your phone call — back after it.", ToolTint.AMBER)
         }
-        Walkie.callFrom?.let { Note(Icons.Rounded.NotificationsActive, "$it is calling everyone", ToolTint.TEAL) }
+        Walkie.callFrom?.let { Note(Icons.Rounded.NotificationsActive, "$it is calling everyone", ToolTint.GREEN) }
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 2.dp, bottom = 14.dp)) {
             Icon(
                 if (Walkie.isHub) Icons.Rounded.Star else Icons.Rounded.RecordVoiceOver, null,
@@ -705,15 +704,15 @@ private fun PeopleGrid() {
                     val me = Walkie.isMe(m)
                     val talking = (me && Walkie.onAir) || (!me && (m.id in Walkie.speaking || Walkie.floorId == m.id))
                     val onAir = me && Walkie.onAir
-                    // Who's talking gets a ring: red for you on air, teal for the others.
+                    // Who's talking gets a ring: red for you on air, green for the others.
                     val ring = when {
                         onAir -> Red
-                        talking -> TealBright
+                        talking -> GreenBright
                         else -> Color.Transparent
                     }
                     val tint = when {
                         onAir -> ToolTint.RED
-                        talking || me -> ToolTint.TEAL
+                        talking || me -> ToolTint.GREEN
                         else -> null
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
@@ -742,7 +741,7 @@ private fun PeopleGrid() {
                             fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             color = when {
                                 onAir -> cs.error
-                                talking || me -> ToolTint.TEAL.icon
+                                talking || me -> ToolTint.GREEN.icon
                                 else -> cs.onSurface
                             },
                             fontWeight = if (talking || me) FontWeight.Medium else FontWeight.Normal,
@@ -773,14 +772,14 @@ private fun HoldToTalk(onAllowMic: () -> Unit) {
             Pill(Icons.Rounded.RecordVoiceOver, "${Walkie.floorName ?: "Someone"} is talking · ${clock(now - Walkie.floorSinceMs)}")
         }
         val usable = Walkie.phase == WalkiePhase.IN_CHANNEL && !Walkie.inPhoneCall
-        // One flat colour: teal ready, red on air, grey while it can't be used.
+        // One flat colour: green ready, red on air, grey while it can't be used.
         val (fill, title, sub) = when {
             !Walkie.micAllowed -> Triple(cs.surfaceContainerHighest, "Allow microphone", "to talk — you can listen now")
             !usable -> Triple(cs.surfaceContainerHighest, if (Walkie.inPhoneCall) "Paused" else "Reconnecting…", "")
             Walkie.onAir -> Triple(Red, "You're on air", "${clock(now - Walkie.talkStartedMs)} · let go to stop")
-            Walkie.asking -> Triple(Color(0xFF115E59), "Connecting…", "keep holding")
+            Walkie.asking -> Triple(Color(0xFF166534), "Connecting…", "keep holding")
             other != null -> Triple(cs.surfaceContainerHighest, "Wait…", "your turn when ${Walkie.floorName ?: "they"} stops")
-            else -> Triple(Teal, "Hold to talk", "up to 1 minute")
+            else -> Triple(Green, "Hold to talk", "up to 1 minute")
         }
         val grey = fill == cs.surfaceContainerHighest
         Box(contentAlignment = Alignment.Center, modifier = Modifier.size(240.dp)) {
@@ -800,8 +799,8 @@ private fun HoldToTalk(onAllowMic: () -> Unit) {
                     modifier = Modifier.align(Alignment.BottomCenter).offset(y = 4.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFFFEE2E2)).padding(horizontal = 10.dp, vertical = 3.dp),
                 )
             } else if (!grey) {
-                // The soft teal ring around the button.
-                Box(Modifier.size(224.dp).clip(CircleShape).background(ToolTint.TEAL.tile))
+                // The soft green ring around the button.
+                Box(Modifier.size(224.dp).clip(CircleShape).background(ToolTint.GREEN.tile))
             }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
@@ -948,20 +947,20 @@ private fun LeaveSheet(onDismiss: () -> Unit, onChange: () -> Unit, onEnd: () ->
             Text("You run this channel. Keep it going for the others, or end it.", fontSize = 13.5.sp, lineHeight = 19.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(ToolTint.TEAL.tile.copy(alpha = .5f))
-                    .border(2.dp, ToolTint.TEAL.icon, RoundedCornerShape(20.dp))
+                modifier = Modifier.padding(top = 14.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(ToolTint.GREEN.tile.copy(alpha = .5f))
+                    .border(2.dp, ToolTint.GREEN.icon, RoundedCornerShape(20.dp))
                     .clickable {
                         onDismiss()
                         next?.let { Walkie.handOver(it, leave = true) }
                     }.padding(start = 14.dp, end = 6.dp, top = 12.dp, bottom = 12.dp),
             ) {
-                ToolTile(Icons.Rounded.SwapHoriz, ToolTint.TEAL, size = 40.dp)
+                ToolTile(Icons.Rounded.SwapHoriz, ToolTint.GREEN, size = 40.dp)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Hand over & leave", fontSize = 15.sp, fontWeight = FontWeight.Medium)
                     Text("${next?.name ?: "Someone"} will run the channel", fontSize = 12.5.sp, color = cs.onSurfaceVariant)
                 }
-                TextButton(onClick = onChange) { Text("Change", color = ToolTint.TEAL.icon) }
+                TextButton(onClick = onChange) { Text("Change", color = ToolTint.GREEN.icon) }
             }
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1023,13 +1022,13 @@ private fun ChoiceDialog(
 
 // ============================================================================ small pieces
 @Composable
-private fun ModeChip(mode: TalkMode) = SmallChip(if (mode == TalkMode.HOLD) Icons.Rounded.PanTool else Icons.Rounded.Mic, mode.label(), teal = true)
+private fun ModeChip(mode: TalkMode) = SmallChip(if (mode == TalkMode.HOLD) Icons.Rounded.PanTool else Icons.Rounded.Mic, mode.label(), green = true)
 
 @Composable
-private fun SmallChip(icon: ImageVector, text: String, teal: Boolean = false) {
+private fun SmallChip(icon: ImageVector, text: String, green: Boolean = false) {
     val cs = MaterialTheme.colorScheme
-    val bg = if (teal) ToolTint.TEAL.tile else cs.surfaceContainer
-    val fg = if (teal) ToolTint.TEAL.icon else cs.onSurfaceVariant
+    val bg = if (green) ToolTint.GREEN.tile else cs.surfaceContainer
+    val fg = if (green) ToolTint.GREEN.icon else cs.onSurfaceVariant
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.clip(RoundedCornerShape(50)).background(bg).padding(horizontal = 8.dp, vertical = 3.dp),
@@ -1040,20 +1039,20 @@ private fun SmallChip(icon: ImageVector, text: String, teal: Boolean = false) {
     }
 }
 
-/** A soft teal pill: who's talking, "Volume-key talk on". */
+/** A soft green pill: who's talking, "Volume-key talk on". */
 @Composable
 private fun Pill(icon: ImageVector, text: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.clip(RoundedCornerShape(18.dp)).background(ToolTint.TEAL.tile).padding(horizontal = 14.dp, vertical = 8.dp),
+        modifier = Modifier.clip(RoundedCornerShape(18.dp)).background(ToolTint.GREEN.tile).padding(horizontal = 14.dp, vertical = 8.dp),
     ) {
-        Icon(icon, null, tint = ToolTint.TEAL.icon, modifier = Modifier.size(18.dp))
+        Icon(icon, null, tint = ToolTint.GREEN.icon, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
-        Text(text, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = ToolTint.TEAL.icon)
+        Text(text, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = ToolTint.GREEN.icon)
     }
 }
 
-/** A note on a soft tile colour (teal news, amber warnings), with an optional ✕. */
+/** A note on a soft tile colour (green news, amber warnings), with an optional ✕. */
 @Composable
 private fun Note(icon: ImageVector, text: String, tint: ToolTint, onClose: (() -> Unit)? = null) {
     val cs = MaterialTheme.colorScheme
@@ -1074,20 +1073,20 @@ private fun Note(icon: ImageVector, text: String, tint: ToolTint, onClose: (() -
     }
 }
 
-/** One of the four buttons under the talk button: a white tile, soft teal while it's on. */
+/** One of the four buttons under the talk button: a white tile, soft green while it's on. */
 @Composable
 private fun ToolButton(icon: ImageVector, label: String, on: Boolean, modifier: Modifier, enabled: Boolean = true, color: Color = Color.Unspecified, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(20.dp)
     val fg = when {
         color != Color.Unspecified -> color
-        on -> ToolTint.TEAL.icon
+        on -> ToolTint.GREEN.icon
         else -> cs.onSurfaceVariant
     }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
         modifier = modifier.height(64.dp)
-            .then(if (on) Modifier.clip(shape).background(ToolTint.TEAL.tile) else Modifier.appCard(shape))
+            .then(if (on) Modifier.clip(shape).background(ToolTint.GREEN.tile) else Modifier.appCard(shape))
             .clickable(enabled = enabled, onClick = onClick),
     ) {
         Icon(icon, null, tint = fg, modifier = Modifier.size(20.dp))
@@ -1111,9 +1110,9 @@ private fun ActionCard(icon: ImageVector, title: String, subtitle: String, tint:
 @Composable
 private fun Letter(name: String) {
     Box(
-        Modifier.size(42.dp).clip(RoundedCornerShape(14.dp)).background(ToolTint.TEAL.tile),
+        Modifier.size(42.dp).clip(RoundedCornerShape(14.dp)).background(ToolTint.GREEN.tile),
         contentAlignment = Alignment.Center,
-    ) { Text(name.take(1).uppercase(), color = ToolTint.TEAL.icon, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
+    ) { Text(name.take(1).uppercase(), color = ToolTint.GREEN.icon, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
 }
 
 /** The code both phones show, on a white card. */

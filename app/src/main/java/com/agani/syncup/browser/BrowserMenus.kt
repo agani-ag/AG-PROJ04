@@ -135,7 +135,7 @@ internal fun SectionSheet(
 @Composable
 private fun SectionChoice(section: Section, subtitle: String, count: Int, selected: Boolean, locked: Boolean, onClick: () -> Unit) {
     // Every row keeps the sheet's own text and surfaces (light, dark or Incognito) and takes only its
-    // section's accent — Normal blue, SyncUp teal, Incognito violet — in the sheet's lightness.
+    // section's accent — Normal blue, SyncUp green, Incognito violet — in the sheet's lightness.
     MaterialTheme(colorScheme = accentOn(MaterialTheme.colorScheme, section)) {
         val cs = MaterialTheme.colorScheme
         // The section in use is a soft pill; the others are plain rows with their section's soft tile.
@@ -379,16 +379,16 @@ internal fun ErrorPage(message: String, onRetry: () -> Unit) {
 /** Home, Tools or You: a big soft button at the top of the browser's ⋮ menu. [busy]: something runs inside. */
 @Composable
 private fun HubButton(icon: ImageVector, label: String, modifier: Modifier, busy: Boolean = false, onClick: () -> Unit) {
+    // Like Home's Your tools: the icon on a square tile, its name underneath.
     val cs = MaterialTheme.colorScheme
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-        modifier = modifier.height(64.dp).clip(RoundedCornerShape(22.dp)).background(cs.primaryContainer).clickable(onClick = onClick),
+        modifier = modifier.clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = label, onClick = onClick).padding(vertical = 4.dp),
     ) {
-        Box {
-            Icon(icon, null, tint = cs.onPrimaryContainer, modifier = Modifier.size(22.dp))
-            if (busy) Box(Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-2).dp).size(8.dp).clip(CircleShape).background(cs.primary))
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(18.dp)).background(cs.primaryContainer)) {
+            Icon(icon, null, tint = cs.onPrimaryContainer, modifier = Modifier.size(26.dp))
+            if (busy) Box(Modifier.align(Alignment.TopEnd).offset(x = (-9).dp, y = 9.dp).size(8.dp).clip(CircleShape).background(cs.primary))
         }
-        Text(label, fontSize = 12.5.sp, fontWeight = FontWeight.Medium, color = cs.onPrimaryContainer, modifier = Modifier.padding(top = 4.dp))
+        Text(label, fontSize = 12.5.sp, color = cs.onSurface, maxLines = 1, modifier = Modifier.padding(top = 7.dp))
     }
 }

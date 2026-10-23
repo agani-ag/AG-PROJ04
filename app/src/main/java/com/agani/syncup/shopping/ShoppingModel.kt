@@ -172,7 +172,7 @@ internal fun qtyText(qty: Double, unit: QtyUnit): String {
 /** The colours a list can have, in the picker's order. */
 internal val ShopColors = listOf(
     ToolTint.GREEN, ToolTint.ORANGE, ToolTint.SKY, ToolTint.SLATE, ToolTint.VIOLET,
-    ToolTint.PINK, ToolTint.RED, ToolTint.AMBER, ToolTint.TEAL, ToolTint.INDIGO,
+    ToolTint.PINK, ToolTint.RED, ToolTint.AMBER, ToolTint.LIME, ToolTint.INDIGO,
 )
 
 internal fun shopTint(name: String): ToolTint = ToolTint.entries.firstOrNull { it.name == name } ?: ToolTint.GREEN

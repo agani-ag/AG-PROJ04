@@ -343,6 +343,9 @@ class TabManager(
     }
 
     /** System Back inside the browser. Returns false when there's nowhere left to go. */
+    /** Sends SyncUp to the background, back to the app a link came from (set by the Activity). */
+    var onBackToOtherApp: (() -> Unit)? = null
+
     fun back(): Boolean {
         val tab = activeTab() ?: return false
         val wv = views[tab.id]
@@ -358,6 +361,12 @@ class TabManager(
         if (back != null) {
             close(tab)
             select(back)
+            return true
+        }
+        // A link another app opened: close it and go back to that app, like Chrome.
+        if (tab.fromOtherApp && onBackToOtherApp != null) {
+            close(tab)
+            onBackToOtherApp?.invoke()
             return true
         }
         if (!tab.isHome) {

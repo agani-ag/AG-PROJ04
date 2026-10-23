@@ -101,8 +101,6 @@ data class DeviceHelloResponse(
     // The websites switched on for this install and their page tokens (the user's when signed in,
     // this phone's own when not), and the Notifications badge.
     @SerializedName("token_sites") val tokenSites: List<TokenSite>? = null,
-    // Sign in with SyncUp: the websites that may use it (signed out: no id).
-    val sso: SsoInfo? = null,
     @SerializedName("notifications_new") val notificationsNew: Int? = null,
 )
 
@@ -111,33 +109,6 @@ data class DeviceHelloResponse(
  * window.SyncUp.token — a different one per website. [host] is lower-case, without "www.".
  */
 data class TokenSite(val host: String? = null, val token: String? = null)
-
-/**
- * Sign in with SyncUp (SyncHub's tools): the websites that may use it, this person's id there (a
- * random one that never changes; null signed out), and whether they already said yes — then a page
- * can sign them in quietly. See sso/SyncUpSignIn.
- */
-data class SsoInfo(val hosts: List<String>? = null, val id: String? = null, val connected: Boolean = false)
-
-data class SsoCodeRequest(val host: String, val consent: Boolean? = null)
-
-data class SsoCodeResponse(
-    val success: Boolean = false,
-    val code: String? = null,
-    @SerializedName("needs_consent") val needsConsent: Boolean = false,
-    val client: String? = null,
-)
-
-/** You → Signed-in sites: where SyncUp signs this person in. */
-data class SsoSite(
-    val client: String? = null,
-    val name: String? = null,
-    val tools: List<String> = emptyList(),
-    val since: String? = null,
-    val shares: List<String> = emptyList(),
-)
-
-data class SsoSitesResponse(val success: Boolean = false, val sites: List<SsoSite> = emptyList())
 
 // ---------------------------------------------------------------- notifications page
 /** One push on the Notifications page (GET /notifications). */
@@ -264,7 +235,7 @@ data class ConfigResponse(
     @SerializedName("privacy_policy_url") val privacyPolicyUrl: String = "",
     // Global on/off for the in-app chat button (users + support agents).
     @SerializedName("chat_enabled") val chatEnabled: Boolean = true,
-    // Radio on/off for everyone (the admin's Radio page); shown as a tab in Music when signed in.
+    // Live stations on/off for everyone, signed in or not (the admin's Radio page): the Live stations tab in Radio.
     @SerializedName("radio_enabled") val radioEnabled: Boolean = false,
     // "Allow sign-up" on the admin's Config page — shows "Create account" on the sign-in sheet.
     @SerializedName("signup_enabled") val signupEnabled: Boolean = false,
@@ -304,8 +275,6 @@ data class SyncResponse(
     @SerializedName("partner_count") val partnerCount: Int = 0,
     // Websites switched on for this user and their page tokens (window.SyncUp.token).
     @SerializedName("token_sites") val tokenSites: List<TokenSite>? = null,
-    // Sign in with SyncUp: the websites, this person's id there, and whether they said yes.
-    val sso: SsoInfo? = null,
     // Pushes not opened yet — the Notifications bell.
     @SerializedName("notifications_new") val notificationsNew: Int = 0,
 )

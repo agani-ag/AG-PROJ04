@@ -87,7 +87,7 @@ import kotlinx.coroutines.delay
 private val LocalAppScheme = staticCompositionLocalOf<ColorScheme?> { null }
 
 /**
- * Normal = app theme · Work = teal accent on the same surfaces · Incognito = fixed dark violet.
+ * Normal = app theme · Work = green accent on the same surfaces · Incognito = fixed dark violet.
  * Nests correctly: a Normal badge inside the SyncUp tab switcher is still Normal blue.
  */
 @Composable
@@ -99,7 +99,7 @@ fun SectionTheme(section: Section, content: @Composable () -> Unit) {
 }
 
 /**
- * [on]'s colours with [section]'s accent (Normal blue, SyncUp teal, Incognito violet) in [on]'s
+ * [on]'s colours with [section]'s accent (Normal blue, SyncUp green, Incognito violet) in [on]'s
  * lightness — for a section's row drawn on another section's sheet, e.g. the Normal row on the dark
  * Incognito sheet keeps that sheet's text and surfaces, so it stays readable.
  */

@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,12 +27,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
-import androidx.compose.material.icons.rounded.Bedtime
-import androidx.compose.material.icons.rounded.SentimentSatisfied
 import androidx.compose.material.icons.rounded.ShoppingCart
-import androidx.compose.material.icons.rounded.TaskAlt
-import androidx.compose.material.icons.rounded.WaterDrop
+import androidx.compose.material.icons.rounded.Spa
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Block
@@ -98,6 +95,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.ManageAccounts
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -318,7 +316,7 @@ fun ProfileScreen(
                         SettingRow(
                             icon = Icons.Rounded.DeleteOutline,
                             title = "Delete account",
-                            subtitle = "Deactivate your account and sign out",
+                            subtitle = "Erase your account and everything synced to it",
                             danger = true,
                             onClick = { showDeleteAccount = true },
                         )
@@ -341,6 +339,18 @@ fun ProfileScreen(
                         )
                         if (BrowserSync.enabled) {
                             SyncType.entries.forEach { t ->
+                                // Wellbeing's five features share one switch, where Water would be.
+                                if (t == SyncType.WATER) {
+                                    SwitchRow(
+                                        icon = Icons.Rounded.Spa,
+                                        title = "Wellbeing",
+                                        subtitle = "Water, steps, habits, sleep and mood (mood stays private)",
+                                        checked = BrowserSync.wellbeingOn,
+                                        enabled = true,
+                                        onCheckedChange = { BrowserSync.setWellbeingOn(it) },
+                                    )
+                                }
+                                if (t in SyncType.WELLBEING) return@forEach
                                 SwitchRow(
                                     icon = when (t) {
                                         SyncType.BOOKMARKS -> Icons.Rounded.StarBorder
@@ -348,12 +358,8 @@ fun ProfileScreen(
                                         SyncType.TABS -> Icons.Rounded.Devices
                                         SyncType.SETTINGS -> Icons.Rounded.Tune
                                         SyncType.CALENDAR -> Icons.Rounded.CalendarMonth
-                                        SyncType.WATER -> Icons.Rounded.WaterDrop
-                                        SyncType.STEPS -> Icons.AutoMirrored.Rounded.DirectionsWalk
-                                        SyncType.HABITS -> Icons.Rounded.TaskAlt
-                                        SyncType.SLEEP -> Icons.Rounded.Bedtime
-                                        SyncType.MOOD -> Icons.Rounded.SentimentSatisfied
                                         SyncType.SHOPPING -> Icons.Rounded.ShoppingCart
+                                        else -> Icons.Rounded.Spa
                                     },
                                     title = t.label,
                                     subtitle = when (t) {
@@ -362,12 +368,8 @@ fun ProfileScreen(
                                         SyncType.TABS -> "See your open tabs on your other devices"
                                         SyncType.SETTINGS -> "Search engine, pop-ups, theme"
                                         SyncType.CALENDAR -> "To-dos and lists — their reminders on every phone"
-                                        SyncType.WATER -> "What you drank, your goal and reminders"
-                                        SyncType.STEPS -> "Each day's steps (the higher phone counts)"
-                                        SyncType.HABITS -> "Your habits, ticks and streaks"
-                                        SyncType.SLEEP -> "Your nights, bedtime and sounds"
-                                        SyncType.MOOD -> "Your check-ins — private, never shown to the admin"
                                         SyncType.SHOPPING -> "Your lists and what's on them"
+                                        else -> ""
                                     },
                                     checked = BrowserSync.isOn(t),
                                     enabled = true,
@@ -393,15 +395,23 @@ fun ProfileScreen(
                     }
                 }
 
+                // SyncUp as the phone's default browser: links from other apps open in a Normal tab.
+                val isDefaultBrowser = com.agani.syncup.browser.rememberIsDefaultBrowser()
+                val makeDefaultBrowser = com.agani.syncup.browser.rememberMakeDefaultBrowser()
                 SettingsSection(
                     first = user == null,
                     icon = Icons.Rounded.Language,
                     title = "Browser",
-                    summary = "${BrowserSettings.searchEngine.label} · pop-ups ${if (BrowserSettings.blockPopups) "blocked" else "allowed"} · " +
+                    summary = "${if (isDefaultBrowser) "Default" else "Not default"} · ${BrowserSettings.searchEngine.label} · " +
+                        "pop-ups ${if (BrowserSettings.blockPopups) "blocked" else "allowed"} · " +
                         "address bar at ${if (BrowserSettings.addressBarBottom) "bottom" else "top"}",
                     expanded = open == "browser",
                     onToggle = { open = if (open == "browser") null else "browser" },
                 ) {
+                    DefaultBrowserRow(isDefaultBrowser) {
+                        if (isDefaultBrowser) runCatching { context.startActivity(com.agani.syncup.browser.DefaultBrowser.settingsIntent()) }
+                        else makeDefaultBrowser()
+                    }
                     SettingRow(icon = Icons.Rounded.Search, title = "Search engine", subtitle = BrowserSettings.searchEngine.label, onClick = { showEngine = true })
                     SwitchRow(
                         icon = Icons.Rounded.Block,
@@ -876,11 +886,13 @@ fun ProfileScreen(
         AlertDialog(
             containerColor = MaterialTheme.colorScheme.dialogSurface,
             onDismissRequest = { if (!deleting) showDeleteAccount = false },
-            title = { Text("Delete account?") },
+            title = { Text("Delete your account?") },
             text = {
                 Text(
-                    "This deactivates your account, erases its synced browser data and signs you out on all devices. " +
-                        "Your links and reminders will stop. Contact SyncUp support to restore access.",
+                    "Your SyncUp account is deleted for good, with everything synced to it — bookmarks, history, open tabs, " +
+                        "to-dos, shopping lists and wellbeing — and your links, reminders and support chat. You'll be signed out on " +
+                        "every device. This can't be undone." +
+                        "\n\nWhat's already on this phone stays until you clear it.",
                 )
             },
             confirmButton = {
@@ -907,7 +919,7 @@ fun ProfileScreen(
                     if (deleting) {
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                     } else {
-                        Text("Delete")
+                        Text("Delete for good")
                     }
                 }
             },
@@ -1153,6 +1165,26 @@ private fun RowText(title: String, subtitle: String?, modifier: Modifier, danger
 
 /** The padding every row inside an open group shares. */
 private fun Modifier.groupRow(): Modifier = heightIn(min = 52.dp).padding(start = 18.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
+
+/** Settings → Browser's first row: whether SyncUp opens links from other apps, and Make default / Change. */
+@Composable
+private fun DefaultBrowserRow(isDefault: Boolean, onClick: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).groupRow()) {
+        RowIcon(Icons.Rounded.Link)
+        Spacer(Modifier.width(14.dp))
+        RowText(
+            "Default browser",
+            if (isDefault) "SyncUp opens links from other apps" else "Links from WhatsApp, Gmail and other apps open in another browser",
+            Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        androidx.compose.material3.FilledTonalButton(
+            onClick = onClick,
+            contentPadding = PaddingValues(horizontal = 14.dp),
+            modifier = Modifier.height(36.dp),
+        ) { Text(if (isDefault) "Change" else "Make default", fontSize = 13.5.sp, fontWeight = FontWeight.Medium) }
+    }
+}
 
 @Composable
 private fun SettingRow(icon: ImageVector, title: String, subtitle: String? = null, danger: Boolean = false, onClick: (() -> Unit)?) {

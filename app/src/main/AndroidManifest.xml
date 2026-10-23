@@ -114,6 +114,25 @@
                 android:resource="@xml/shortcuts" />
         </activity>
 
+        <!-- SyncUp as a browser: a link tapped in another app opens in a new Normal tab (and SyncUp can be
+             chosen as the default browser). A separate pass-through, so the link never opens a second copy
+             of SyncUp inside the other app. -->
+        <activity
+            android:name=".browser.OpenLinkActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:label="@string/app_name"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".web.WebViewActivity"
             android:exported="false"

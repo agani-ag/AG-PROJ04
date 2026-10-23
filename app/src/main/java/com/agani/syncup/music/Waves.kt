@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.agani.syncup.ui.theme.isLight
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.exp
@@ -350,15 +352,45 @@ private object CoverHues {
  */
 @Composable
 private fun rememberGlow(uri: Uri?, radio: Boolean): Color {
-    val context = LocalContext.current
     val tintIcon = artTint(uri, radio).icon
+    val h = rememberCoverHue(uri)
+    return remember(h, tintIcon) {
+        if (h == null || CoverHues.isNone(h)) glowOf(tintIcon) else tone(h[0], h[1].coerceIn(.6f, .95f), .55f)
+    }
+}
+
+/** The cover's main hue and saturation (worked out once per song, off the main thread); null while unknown. */
+@Composable
+private fun rememberCoverHue(uri: Uri?): FloatArray? {
+    val context = LocalContext.current
     val hue by produceState(uri?.let { CoverHues.cached(it) }, uri) {
         value = if (uri == null || !Artwork.isLocal(uri)) null
         else CoverHues.cached(uri) ?: withContext(Dispatchers.IO) { CoverHues.find(context, uri) }
     }
-    val h = hue
-    return remember(h, tintIcon) {
-        if (h == null || CoverHues.isNone(h)) glowOf(tintIcon) else tone(h[0], h[1].coerceIn(.6f, .95f), .55f)
+    return hue
+}
+
+/** A song's colour as a soft [tile] and a [solid] fill with [onSolid] on it, like a [ToolTint]. */
+internal class CoverColors(val tile: Color, val solid: Color, val onSolid: Color)
+
+/**
+ * The cover's own colour, as soft and as solid as the tool colours are (Play at a party). No cover (or a
+ * grey one): the soft tile colour the song has in the list.
+ */
+@Composable
+internal fun rememberCoverColors(uri: Uri?, radio: Boolean): CoverColors {
+    val tint = artTint(uri, radio)
+    val light = MaterialTheme.colorScheme.isLight
+    val tintTile = tint.tile
+    val tintSolid = tint.icon
+    val onSolid = tint.onSolid
+    val h = rememberCoverHue(uri)
+    return remember(h, light, tintTile, tintSolid, onSolid) {
+        when {
+            h == null || CoverHues.isNone(h) -> CoverColors(tintTile, tintSolid, onSolid)
+            light -> CoverColors(tone(h[0], h[1].coerceIn(.4f, .8f), .8f), tone(h[0], h[1].coerceIn(.55f, .9f), .14f), onSolid)
+            else -> CoverColors(tone(h[0], h[1].coerceIn(.3f, .6f), .016f), tone(h[0], h[1].coerceIn(.55f, .9f), .5f), onSolid)
+        }
     }
 }
 

@@ -295,7 +295,7 @@ private fun NotificationRow(item: NotificationItem, sentMs: Long?, isNew: Boolea
 @Composable
 private fun Leading(item: NotificationItem) {
     val tint = when (item.kind) {
-        "partner", "site" -> ToolTint.TEAL
+        "partner", "site" -> ToolTint.GREEN
         "reminder" -> ToolTint.AMBER
         "partners" -> ToolTint.VIOLET
         else -> ToolTint.BLUE

@@ -88,7 +88,8 @@ class MainActivity : FragmentActivity() {
 
     // A link a notification/reminder tap wants opened — honored once unlocked (and, for a Work
     // link, logged in). Broadcast links open in a Normal tab, signed in or not.
-    private data class PendingLink(val url: String, val title: String, val normal: Boolean = false)
+    // fromOtherApp: a link tapped in another app (SyncUp as its browser) — Back on its first page goes back there.
+    private data class PendingLink(val url: String, val title: String, val normal: Boolean = false, val fromOtherApp: Boolean = false)
     private val pendingLink = mutableStateOf<PendingLink?>(null)
 
     // Set when a chat entry point (button / bubble / push tap) asks us to open the chat screen.
@@ -136,7 +137,8 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         // The websites that get a SyncUp page token, saved from the last sync — before any tab loads.
         com.agani.syncup.browser.PageTokens.init(applicationContext)
-        com.agani.syncup.sso.SyncUpSignIn.init(applicationContext)
+        // "Continue with SyncUp" was removed (23 Oct 2026): drop what it kept on the phone.
+        applicationContext.deleteSharedPreferences("syncup_sign_in")
         // The server address known already, so the first screen's calls go to the right place.
         AppBootstrap.applyKnownBaseUrl()
         // Draw behind the status and navigation bars on every Android version (15+ already does),
@@ -178,6 +180,8 @@ class MainActivity : FragmentActivity() {
             tabManager.tabsIn(Section.NORMAL).filter { !it.isHome }.map { SyncTab(it.title, it.url) }
         }
         tabManager.onNormalTabsChanged = { BrowserSync.requestSync() }
+        // Back on the first page of a link another app opened: back to that app, like Chrome.
+        tabManager.onBackToOtherApp = { moveTaskToBack(true) }
         readDeepLink(intent)
         ReminderSyncWorker.schedulePeriodic(this) // daily safety-net reminder sync
 
@@ -296,6 +300,7 @@ class MainActivity : FragmentActivity() {
         // The sync engine outlives the Activity; don't let it hold on to this one.
         BrowserSync.tabsProvider = null
         tabManager.onNormalTabsChanged = null
+        tabManager.onBackToOtherApp = null
         tabManager.destroyAll()
         super.onDestroy()
     }
@@ -327,6 +332,11 @@ class MainActivity : FragmentActivity() {
             intent.removeExtra(ReminderContract.EXTRA_LINK_URL)
             intent.removeExtra(ReminderContract.EXTRA_LINK_TITLE)
             intent.removeExtra(EXTRA_OPEN_IN)
+        }
+        // A link tapped in another app, SyncUp being its browser (OpenLinkActivity): a new Normal tab.
+        intent?.getStringExtra(EXTRA_OPEN_LINK)?.takeIf { it.isNotBlank() }?.let {
+            pendingLink.value = PendingLink(it, "", normal = true, fromOtherApp = true)
+            intent.removeExtra(EXTRA_OPEN_LINK)
         }
         // A partner added this user: our foreground extra, or the tray's data payload (type=partners).
         if (intent?.getBooleanExtra(EXTRA_OPEN_PARTNERS, false) == true || intent?.getStringExtra("type") == "partners") {
@@ -593,7 +603,7 @@ class MainActivity : FragmentActivity() {
                 libraryPage = null
                 toolsPage = null
                 mainTab = com.agani.syncup.home.MainTab.BROWSE
-                tabManager.newTab(Section.NORMAL, link.url)
+                tabManager.newTab(Section.NORMAL, link.url).fromOtherApp = link.fromOtherApp
             } else if (link != null && state.isLoggedIn && state.user != null) {
                 pendingLink.value = null
                 // A link from a SyncUp push/reminder is a work link: open it as a Work tab (address hidden)
@@ -857,9 +867,9 @@ class MainActivity : FragmentActivity() {
         // The app opens straight into the browser. Login is optional and only adds SyncUp features.
         val loggedIn = state.isLoggedIn && state.user != null
 
-        // Radio is for signed-in users while the admin has it on. When that ends (sign-out, or the
-        // admin turns it off), a station that's still playing stops. Songs carry on.
-        val radioAvailable = loggedIn && radioEnabled
+        // Live stations are for everyone, signed in or not, while the admin has them on. When the admin
+        // turns them off, a station that's still playing stops. Songs carry on.
+        val radioAvailable = radioEnabled
         var radioWasAvailable by remember { mutableStateOf(false) }
         LaunchedEffect(radioAvailable) {
             if (radioWasAvailable && !radioAvailable && player.isRadio) player.stop()
@@ -1014,15 +1024,9 @@ class MainActivity : FragmentActivity() {
                         RequestNotificationPermission() // media notification (status bar + lock screen)
                         com.agani.syncup.music.RadioScreen(
                             liveStations = radioEnabled,
-                            signedIn = loggedIn,
                             partyTab = radioOnParty,
                             onTab = { radioOnParty = it },
                             loadStations = { vm.radioChannels() },
-                            onSignIn = {
-                                showRadio = false
-                                toolsPage = null
-                                showLogin = true
-                            },
                             onBack = { showRadio = false },
                         )
                     }
@@ -1257,8 +1261,6 @@ class MainActivity : FragmentActivity() {
             }
             // The group, whatever screen is open: join requests, "switched to…", ended, notes.
             com.agani.syncup.group.GroupOverlays()
-            // "Sign in to SyncHub" — SyncUp's own sheet when a SyncHub page asks the first time.
-            com.agani.syncup.sso.SignInConsentHost(state.user.takeIf { loggedIn })
             // Sign-in from Home, You or a tool (the browser shows its own sheet).
             if (showLogin && !loggedIn && booted && screen != AppScreen.Browser) {
                 androidx.compose.material3.ModalBottomSheet(containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLowest,
@@ -1354,6 +1356,8 @@ class MainActivity : FragmentActivity() {
     companion object {
         /** Intent extra: when true, MainActivity opens the chat screen (used by chat push taps). */
         const val EXTRA_OPEN_CHAT = "extra_open_chat"
+        /** A link tapped in another app (OpenLinkActivity): open it in a new Normal tab. */
+        const val EXTRA_OPEN_LINK = "extra_open_link"
 
         /** Intent extra: when true, MainActivity opens the Music player (media-notification tap). */
         const val EXTRA_OPEN_MUSIC = "extra_open_music"

@@ -156,18 +156,18 @@ fun AgHubTheme(
 }
 
 // ------------------------------------------------------------------ browser sections
-/** Work = the theme's teal accent. Surfaces are shared with Normal; only the accent changes. */
+/** Work (the SyncUp section) = the theme's green accent. Surfaces are shared with Normal; only the accent changes. */
 fun workScheme(base: ColorScheme): ColorScheme = if (base.isLight) {
     base.copy(
-        primary = Color(0xFF0F766E), onPrimary = Color.White,
-        primaryContainer = Color(0xFFCCFBF1), onPrimaryContainer = Color(0xFF134E4A),
-        secondaryContainer = Color(0xFFD5F5EE), onSecondaryContainer = Color(0xFF134E4A),
+        primary = Color(0xFF15803D), onPrimary = Color.White,
+        primaryContainer = Color(0xFFDCFCE7), onPrimaryContainer = Color(0xFF14532D),
+        secondaryContainer = Color(0xFFD9F5E1), onSecondaryContainer = Color(0xFF14532D),
     )
 } else {
     base.copy(
-        primary = Color(0xFF5EEAD4), onPrimary = Color(0xFF042F2E),
-        primaryContainer = Color(0xFF134E4A), onPrimaryContainer = Color(0xFFCCFBF1),
-        secondaryContainer = Color(0xFF1E3F3B), onSecondaryContainer = Color(0xFFCCFBF1),
+        primary = Color(0xFF86EFAC), onPrimary = Color(0xFF052E16),
+        primaryContainer = Color(0xFF14532D), onPrimaryContainer = Color(0xFFDCFCE7),
+        secondaryContainer = Color(0xFF1C3D27), onSecondaryContainer = Color(0xFFDCFCE7),
     )
 }
 

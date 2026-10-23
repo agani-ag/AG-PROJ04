@@ -166,7 +166,7 @@ class GroupService : Service() {
             if (nm.getNotificationChannel(CHANNEL) == null) {
                 nm.createNotificationChannel(
                     NotificationChannel(CHANNEL, "Group", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                        description = "While you're in a group (Music party, Watch together, Walkie talkie, Share files)"
+                        description = "While you're in a group (Music party, Watch together, Walkie talkie, Share files, Group photos)"
                         setSound(null, null)
                         enableVibration(false)
                         setShowBadge(false)
