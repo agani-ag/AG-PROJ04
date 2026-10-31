@@ -72,7 +72,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-private enum class AppScreen { ForceUpdate, Announcement, Home, Browser, ToolsHome, You, Profile, SiteSettings, Music, Radio, Library, Partners, Notifications, Tools }
+private enum class AppScreen { ForceUpdate, Welcome, Announcement, Home, Browser, ToolsHome, You, Profile, SiteSettings, Music, Radio, Library, Partners, Notifications, Tools }
 
 class MainActivity : FragmentActivity() {
 
@@ -171,9 +171,12 @@ class MainActivity : FragmentActivity() {
         // The admin's links for everyone — a signed-out phone's SyncUp section (kept on the phone).
         com.agani.syncup.browser.GeneralLinks.init(this)
         com.agani.syncup.browser.SiteIcons.init(this)
+        // Saved tabs from an earlier run = SyncUp was used on this phone before (restore() always makes a
+        // first tab, so its count can't tell a fresh install).
+        val usedBefore = getSharedPreferences("browser_tabs", MODE_PRIVATE).contains("normal")
         tabManager = TabManager(this, webPlatform, browserDb).also { it.restore() }
-        // SyncUp Home: what the app opens to, its cards; someone with tabs already used SyncUp before Home.
-        com.agani.syncup.home.HomePrefs.init(this, existingUser = Section.entries.any { tabManager.tabsIn(it).isNotEmpty() })
+        // SyncUp Home: what the app opens to, its cards, the welcome page (a fresh install only).
+        com.agani.syncup.home.HomePrefs.init(this, existingUser = usedBefore)
         // Browser sync: publishes the open Normal tabs and uploads changes shortly after they happen.
         BrowserSync.init(this, browserDb)
         BrowserSync.tabsProvider = {
@@ -470,6 +473,8 @@ class MainActivity : FragmentActivity() {
         var showPartners by remember { mutableStateOf(false) }
         var showNotifications by remember { mutableStateOf(false) }
         var signupEnabled by remember { mutableStateOf(false) }
+        // The server's config arrived (or couldn't): the welcome page knows whether sign-up is on.
+        var configLoaded by remember { mutableStateOf(false) }
         var libraryPage by remember { mutableStateOf<LibraryPage?>(null) }
         var toolsPage by remember { mutableStateOf<com.agani.syncup.tools.ToolsPage?>(null) }
         // SyncUp Home: Home · Browse · Tools · You (tools, settings and the rest open over the tab they came from).
@@ -522,6 +527,7 @@ class MainActivity : FragmentActivity() {
             // Server config (announcement + force-update + support contacts) — non-blocking.
             val cfg = withContext(Dispatchers.IO) { AppBootstrap.fetchConfig() }
             if (cfg != null) applyConfig(cfg)
+            configLoaded = true
             // The home page's shortcuts from the backend (the server address is known now).
             com.agani.syncup.browser.ShortcutCatalog.refresh(force = true)
             // The links for everyone (signed in they come with /sync; kept fresh for after sign-out).
@@ -629,8 +635,61 @@ class MainActivity : FragmentActivity() {
             }
         }
 
-        // Login is optional: close the sign-in screen once it succeeds.
-        LaunchedEffect(state.isLoggedIn) { if (state.isLoggedIn) showLogin = false }
+        // Login is optional: close the sign-in screen once it succeeds (and the welcome page with it).
+        LaunchedEffect(state.isLoggedIn) {
+            if (state.isLoggedIn) {
+                showLogin = false
+                com.agani.syncup.home.HomePrefs.welcomeDone()
+            }
+        }
+
+        // Who's signed in and their links: a partner user's links-only Home, their one link (HomePrefs).
+        LaunchedEffect(state.user, state.urls) {
+            com.agani.syncup.home.HomePrefs.account(state.user, if (state.user != null) state.urls else emptyList())
+        }
+
+        // Partners that added this person and wait for its password: a card each on Home.
+        var waitingPartners by remember { mutableStateOf<List<com.agani.syncup.data.PartnerDto>>(emptyList()) }
+        LaunchedEffect(state.isLoggedIn, state.partnersWaiting) {
+            waitingPartners = if (state.isLoggedIn && state.partnersWaiting > 0) {
+                vm.partners().getOrNull().orEmpty().filter { it.status == "not_enabled" }
+            } else {
+                emptyList()
+            }
+        }
+
+        // One partner, one link: SyncUp opens straight into it — when it starts, and right after signing
+        // in — unless the person switched that off (HomePrefs.opensLink). Decided once per run, so turning
+        // the switch on later doesn't jump away from where they are.
+        var startLinkDecided by rememberSaveable { mutableStateOf(false) }
+        // Signed out at some point this run: the next sign-in is a fresh one (it gets the "Signed in —" note).
+        var signedOutThisRun by rememberSaveable { mutableStateOf(!state.isLoggedIn) }
+        LaunchedEffect(state.isLoggedIn) {
+            if (!state.isLoggedIn) {
+                startLinkDecided = false
+                signedOutThisRun = true
+            }
+        }
+        LaunchedEffect(state.user, state.urls) {
+            val user = state.user ?: return@LaunchedEffect
+            if (startLinkDecided) return@LaunchedEffect
+            startLinkDecided = true
+            val fresh = signedOutThisRun
+            signedOutThisRun = false
+            val one = state.urls.singleOrNull()
+            val opens = one != null && (com.agani.syncup.home.HomePrefs.startLinkChoice ?: (user.partnerUser == true))
+            if (opens && one != null && pendingLink.value == null) {
+                tabManager.openWorkLink(one.title, one.url, one.id)
+                mainTab = com.agani.syncup.home.MainTab.BROWSE
+                val from = one.sourceName?.trim()?.takeIf { one.source == "partner" && it.isNotBlank() }
+                if (fresh) android.widget.Toast.makeText(this@MainActivity, "Signed in — opening ${from ?: one.title}", android.widget.Toast.LENGTH_SHORT).show()
+            } else if (fresh && user.partnerUser == true) {
+                val partners = state.urls.mapNotNull { l -> l.sourceName?.trim()?.takeIf { l.source == "partner" && it.isNotBlank() } }.distinct()
+                val what = if (partners.size == 1) "${partners[0]}'s links are ready" else "your links are ready"
+                android.widget.Toast.makeText(this@MainActivity, "Signed in — $what", android.widget.Toast.LENGTH_SHORT).show()
+                mainTab = com.agani.syncup.home.MainTab.HOME
+            }
+        }
 
         // Signing out (logout, account deleted, or the session ended server-side) → close every Work
         // tab and wipe the Work session. Normal browsing is kept. Only on the change itself: a
@@ -877,6 +936,8 @@ class MainActivity : FragmentActivity() {
         }
         val screen = when {
             forceUpdate -> AppScreen.ForceUpdate
+            // A fresh install's first open: the welcome page, until Skip or a sign-in.
+            com.agani.syncup.home.HomePrefs.welcomePending && !loggedIn -> AppScreen.Welcome
             loggedIn && showAnnouncement -> AppScreen.Announcement
             showMusic -> AppScreen.Music
             showRadio -> AppScreen.Radio
@@ -936,6 +997,37 @@ class MainActivity : FragmentActivity() {
             Crossfade(targetState = screen, animationSpec = tween(220), label = "screen") { target -> // v7: quick and light
                 when (target) {
                     AppScreen.ForceUpdate -> ForceUpdateScreen()
+                    AppScreen.Welcome -> com.agani.syncup.home.WelcomeScreen(
+                        signupEnabled = signupEnabled,
+                        configLoaded = configLoaded,
+                        // Sign-up off: the welcome page is the sign-in form itself.
+                        signInForm = {
+                            com.agani.syncup.browser.SignInSheet(
+                                form = authForm,
+                                loading = state.loading,
+                                error = state.error,
+                                supportEmail = supportEmail,
+                                supportPhone = supportPhone,
+                                signupEnabled = false,
+                                privacyUrl = privacyUrl,
+                                onLogin = { mode, login, password -> vm.login(mode, login.trim(), password) },
+                                onSignup = { _, _, _, _ -> },
+                                onClearError = { vm.clearError() },
+                            )
+                        },
+                        onSignIn = {
+                            authForm.creating = false
+                            showLogin = true
+                        },
+                        onCreate = {
+                            authForm.creating = true
+                            showLogin = true
+                        },
+                        onSkip = {
+                            com.agani.syncup.home.HomePrefs.welcomeDone()
+                            mainTab = com.agani.syncup.home.HomePrefs.startTab
+                        },
+                    )
                     AppScreen.Announcement -> AnnouncementScreen(
                         title = ann?.title ?: "",
                         message = ann?.message ?: "",
@@ -1058,6 +1150,15 @@ class MainActivity : FragmentActivity() {
                                     mainTab = com.agani.syncup.home.MainTab.BROWSE
                                 },
                                 onOpenBrowse = { mainTab = com.agani.syncup.home.MainTab.BROWSE },
+                                onSignIn = { showLogin = true },
+                                waitingPartners = if (loggedIn) waitingPartners else emptyList(),
+                                onEnablePartner = { id, password -> vm.enablePartner(id, password) },
+                                onPartnerEnabled = { name ->
+                                    android.widget.Toast.makeText(this@MainActivity, "$name turned on", android.widget.Toast.LENGTH_SHORT).show()
+                                    waitingPartners = waitingPartners.filter { it.partner != name }
+                                    // Their links arrive and the waiting count drops.
+                                    runFullRefresh(silent = true)
+                                },
                             )
                         }
                     }
@@ -1156,6 +1257,7 @@ class MainActivity : FragmentActivity() {
                                     else lifecycleScope.launch { com.agani.syncup.browser.GeneralLinks.refresh(spinner = true) }
                                 },
                                 backToHome = com.agani.syncup.home.HomePrefs.startOnHome,
+                                linkIsStart = com.agani.syncup.home.HomePrefs.opensLink,
                             ),
                         )
                     }

@@ -30,8 +30,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.automirrored.rounded.DirectionsWalk
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.Login
 import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Notifications
@@ -69,6 +71,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -81,6 +85,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -92,6 +97,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -99,6 +105,7 @@ import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.ui.BadgeTextStyle
 import com.agani.syncup.calendar.CalendarStore
 import com.agani.syncup.calendar.Days
+import com.agani.syncup.data.PartnerDto
 import com.agani.syncup.data.UrlItem
 import com.agani.syncup.forest.ForestRules
 import com.agani.syncup.forest.rememberForestNow
@@ -117,6 +124,7 @@ import com.agani.syncup.wellbeing.clockText
 import com.agani.syncup.wellbeing.hoursText
 import com.agani.syncup.wellbeing.timeText
 import java.util.Calendar
+import kotlinx.coroutines.launch
 
 /** What Home can open; MainActivity knows where each one lives. */
 enum class HomeTool { CALENDAR, FOREST, SHARE, WALKIE, MUSIC, VIDEO, RADIO, SENSORS, PARTY, WATCH_PARTY, GROUP, WATER, STEPS, HABITS, SLEEP, BREAKS, MOOD }
@@ -194,6 +202,12 @@ fun HomeScreen(
     onOpenBrowse: () -> Unit,
     /** The signed-in user's name: Home greets them by their first name ("SyncUp" without it). */
     userName: String? = null,
+    /** Signed out: the Today card starts with "Sign in to SyncUp". */
+    onSignIn: () -> Unit = {},
+    /** Partners that added this person and wait for its password: a card each, until "Later". */
+    waitingPartners: List<PartnerDto> = emptyList(),
+    onEnablePartner: suspend (id: String, password: String) -> Result<PartnerDto?> = { _, _ -> Result.success(null) },
+    onPartnerEnabled: (name: String) -> Unit = {},
 ) {
     val cs = MaterialTheme.colorScheme
     var customise by remember { mutableStateOf(false) }
@@ -239,11 +253,14 @@ fun HomeScreen(
         if (HomePrefs.introPending) {
             item(key = "intro") { GrownCard(onOpenBrowse = { HomePrefs.introDone(); onOpenBrowse() }, onDone = { HomePrefs.introDone() }) }
         }
+        for (p in waitingPartners.filter { signedIn && it.id !in HomePrefs.laterPartners }) {
+            item(key = "waiting-${p.id}") { PartnerWaitingCard(p, onEnablePartner, onPartnerEnabled) }
+        }
         if (HomePrefs.shows(HomeCard.TODAY)) {
             item(key = "today") {
                 Header("Today · ${todayText()}")
                 Card {
-                    val rows = todayRows(onTool)
+                    val rows = todayRows(onTool, signIn = if (signedIn) null else onSignIn)
                     if (rows.isEmpty()) {
                         Text("Nothing to show — turn rows back on in Customise Home", fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(16.dp))
                     }
@@ -319,11 +336,27 @@ fun HomeScreen(
                 }
             }
         }
-        if (HomePrefs.shows(HomeCard.LINKS) && links.isNotEmpty()) {
+        val one = HomePrefs.singleLink?.takeIf { signedIn && links.size == 1 }
+        if (HomePrefs.shows(HomeCard.LINKS) && one != null) {
+            // The usual partner user: one partner, one link — one big button.
+            item(key = "one-link") { OneLinkCard(one, onOpen = { onOpenLink(one) }) }
+        }
+        // Several links: a card per partner with its links as big tiles, then the rest as a list.
+        val byPartner = if (one != null) emptyMap() else links
+            .filter { it.source == "partner" && !it.sourceName.isNullOrBlank() }
+            .groupBy { it.sourceName!!.trim() }
+            .toSortedMap(String.CASE_INSENSITIVE_ORDER)
+        val rest = if (one != null) emptyList() else links.filter { l -> byPartner.values.none { l in it } }
+        if (HomePrefs.shows(HomeCard.LINKS)) {
+            for ((name, items) in byPartner) {
+                item(key = "partner-$name") { PartnerCard(name, items, onOpenLink, onAllLinks) }
+            }
+        }
+        if (HomePrefs.shows(HomeCard.LINKS) && rest.isNotEmpty()) {
             item(key = "links") {
-                Header("SyncUp links", action = if (links.size > 4) "All ${links.size}" else "All", onAction = onAllLinks)
+                Header(if (byPartner.isEmpty()) "SyncUp links" else "More links", action = if (rest.size > 4) "All ${rest.size}" else "All", onAction = onAllLinks)
                 Card {
-                    links.take(4).forEachIndexed { i, l ->
+                    rest.take(4).forEachIndexed { i, l ->
                         if (i > 0) Divider()
                         val from = l.sourceName?.takeIf { it.isNotBlank() } ?: "SyncUp"
                         CardRow(l.title, if (l.general) "For everyone" else from, onClick = { onOpenLink(l) }, chevron = false) {
@@ -452,6 +485,159 @@ private fun CardRow(
     }
 }
 
+// ---------------------------------------------------------------------------- partners' links
+/** A partner's first letter on a soft colour picked from its name (partners have no logo). */
+@Composable
+private fun LetterTile(name: String, size: Dp = 38.dp) {
+    val tint = ToolTint.entries[Math.floorMod(name.trim().lowercase().hashCode(), ToolTint.entries.size)]
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.size(size).clip(RoundedCornerShape(size * .32f)).background(tint.tile),
+    ) {
+        Text(
+            name.trim().take(1).uppercase().ifBlank { "•" }, color = tint.icon, fontWeight = FontWeight.Bold,
+            fontSize = (size.value * .42f).sp,
+        )
+    }
+}
+
+/**
+ * The user's only link as one big card: who it's from, the link, a big Open button, and "Open it as
+ * soon as SyncUp starts" (on by default for a partner user — HomePrefs.opensLink).
+ */
+@Composable
+private fun OneLinkCard(link: UrlItem, onOpen: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val partner = link.sourceName?.trim()?.takeIf { link.source == "partner" && it.isNotBlank() }
+    Column(Modifier.padding(top = 18.dp).fillMaxWidth().appCard(CardShape).padding(18.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            LetterTile(partner ?: link.title)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(partner ?: "SyncUp", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(if (partner != null) "Your partner on SyncUp" else "Your SyncUp link", fontSize = 12.5.sp, color = cs.onSurfaceVariant)
+            }
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(top = 22.dp, bottom = 18.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                .background(cs.surfaceContainer).clickable(onClick = onOpen).padding(16.dp),
+        ) {
+            com.agani.syncup.browser.LinkIcon(link, 56.dp)
+            Spacer(Modifier.width(16.dp))
+            Text(
+                link.title, fontSize = 19.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium, color = cs.onSurface,
+                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+            )
+        }
+        Button(onClick = onOpen, modifier = Modifier.fillMaxWidth().height(54.dp)) {
+            Text("Open ${link.title}", fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            Spacer(Modifier.width(8.dp))
+            Icon(Icons.AutoMirrored.Rounded.ArrowForward, null, modifier = Modifier.size(20.dp))
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                .clickable { HomePrefs.changeStartLink(!HomePrefs.opensLink) }.padding(vertical = 6.dp, horizontal = 2.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Open it as soon as SyncUp starts", fontSize = 14.sp, lineHeight = 19.sp, color = cs.onSurface)
+                Text("Skip this page next time", fontSize = 12.sp, lineHeight = 16.sp, color = cs.onSurfaceVariant)
+            }
+            Spacer(Modifier.width(8.dp))
+            Switch(checked = HomePrefs.opensLink, onCheckedChange = { HomePrefs.changeStartLink(it) })
+        }
+    }
+}
+
+/** One partner's links: its name and up to 6 links as big tiles, 3 a row; "All" opens the SyncUp section. */
+@Composable
+private fun PartnerCard(name: String, items: List<UrlItem>, onOpen: (UrlItem) -> Unit, onAll: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Column(Modifier.padding(top = 14.dp).fillMaxWidth().appCard(CardShape).padding(bottom = 8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 8.dp, top = 14.dp, bottom = 6.dp)) {
+            LetterTile(name)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(name, fontSize = 15.5.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${items.size} link${if (items.size == 1) "" else "s"}", fontSize = 12.sp, color = cs.onSurfaceVariant)
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onAll).padding(horizontal = 6.dp, vertical = 4.dp),
+            ) {
+                Text("All", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = cs.primary)
+                Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = cs.primary, modifier = Modifier.size(18.dp))
+            }
+        }
+        items.take(6).chunked(3).forEach { row ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                row.forEach { l ->
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).clickable { onOpen(l) }.padding(vertical = 8.dp, horizontal = 2.dp),
+                    ) {
+                        com.agani.syncup.browser.LinkIcon(l, 54.dp)
+                        Text(
+                            l.title, fontSize = 12.5.sp, lineHeight = 16.sp, color = cs.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center, modifier = Modifier.padding(top = 7.dp),
+                        )
+                    }
+                }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/** "Sunrise School added you": that partner's password right on Home (You → Partners does the same). */
+@Composable
+private fun PartnerWaitingCard(
+    partner: PartnerDto,
+    onEnable: suspend (id: String, password: String) -> Result<PartnerDto?>,
+    onEnabled: (name: String) -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    val scope = rememberCoroutineScope()
+    var password by remember(partner.id) { mutableStateOf("") }
+    var error by remember(partner.id) { mutableStateOf<String?>(null) }
+    var busy by remember(partner.id) { mutableStateOf(false) }
+    fun turnOn() {
+        if (busy || password.isBlank()) return
+        busy = true
+        scope.launch {
+            onEnable(partner.id, password)
+                .onSuccess { onEnabled(partner.partner) }
+                .onFailure { error = it.message ?: "Couldn't turn on" }
+            busy = false
+        }
+    }
+    Column(
+        Modifier.padding(top = 14.dp).fillMaxWidth().appCard(CardShape).border(2.dp, ToolTint.ORANGE.icon, CardShape).padding(16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            LetterTile(partner.partner)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("${partner.partner} added you", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    "Enter the password ${partner.partner} gave you to see their links.",
+                    fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        com.agani.syncup.browser.PasswordField(password, { password = it; error = null }, label = "${partner.partner} password", error = error, onDone = { turnOn() })
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+            Button(onClick = { turnOn() }, enabled = !busy && password.isNotBlank()) {
+                if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = cs.onPrimary) else Text("Turn on")
+            }
+            Spacer(Modifier.width(8.dp))
+            TextButton(onClick = { HomePrefs.partnerLater(partner.id) }, enabled = !busy) { Text("Later") }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------- Today
 @Composable
 private fun CalendarRow(onClick: () -> Unit) {
@@ -489,15 +675,27 @@ private fun ForestRow(onClick: () -> Unit) {
     }
 }
 
-/** The Today card's rows: Calendar and Forest, then each Wellbeing tool in use — minus the hidden ones. */
+/**
+ * The Today card's rows: signed out, "Sign in to SyncUp" first ([signIn]); then Calendar and Forest, then
+ * each Wellbeing tool in use — minus the hidden ones.
+ */
 @Composable
-private fun todayRows(onTool: (HomeTool) -> Unit): List<@Composable () -> Unit> {
+private fun todayRows(onTool: (HomeTool) -> Unit, signIn: (() -> Unit)? = null): List<@Composable () -> Unit> {
     val ctx = LocalContext.current
     remember { Wellbeing.init(ctx) }
     // Redraw when a Wellbeing tool changes.
     @Suppress("UNUSED_VARIABLE") val v = Water.version + Steps.version + Habits.version + Sleep.version + Mood.version + Breaks.version
     val today = com.agani.syncup.forest.FDays.today()
     return buildList<@Composable () -> Unit> {
+        if (signIn != null) {
+            add {
+                TodayLine(
+                    Icons.AutoMirrored.Rounded.Login, ToolTint.BLUE, "Sign in to SyncUp",
+                    "Your links and tools on every phone",
+                    action = "Sign in" to signIn, onClick = signIn,
+                )
+            }
+        }
         if (HomePrefs.shows(TodayRow.CALENDAR)) add { CalendarRow { onTool(HomeTool.CALENDAR) } }
         if (HomePrefs.shows(TodayRow.FOREST)) add { ForestRow { onTool(HomeTool.FOREST) } }
         val ws = Water.settings
@@ -733,7 +931,20 @@ fun HomeSettings(modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
     Column(modifier) {
         Label("Open SyncUp to", Modifier.padding(top = 6.dp, bottom = 8.dp))
-        PillTabs(listOf("Home", "Browse"), selected = if (HomePrefs.startOnHome) 0 else 1, onSelect = { HomePrefs.changeStartOnHome(it == 0) })
+        // A one-link user can also open straight into that link (the same switch as on its Home card).
+        val one = HomePrefs.singleLink
+        PillTabs(
+            listOfNotNull("Home", "Browse", one?.title),
+            selected = if (HomePrefs.opensLink) 2 else if (HomePrefs.startOnHome) 0 else 1,
+            onSelect = {
+                if (it == 2) {
+                    HomePrefs.changeStartLink(true)
+                } else {
+                    if (one != null) HomePrefs.changeStartLink(false)
+                    HomePrefs.changeStartOnHome(it == 0)
+                }
+            },
+        )
         Label("Cards on Home", Modifier.padding(top = 16.dp, bottom = 2.dp))
         for (card in HomeCard.entries) {
             Row(

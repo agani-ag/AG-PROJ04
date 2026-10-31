@@ -5,6 +5,8 @@ import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.agani.syncup.data.UrlItem
+import com.agani.syncup.data.User
 
 /** SyncUp's four places: Home, the browser, the tools, and the user's own things. */
 enum class MainTab { HOME, BROWSE, TOOLS, YOU }
@@ -23,7 +25,10 @@ enum class TodayRow(val title: String) {
     CALENDAR("Calendar"), FOREST("Forest"), WATER("Water"), STEPS("Steps"), HABITS("Habits"), SLEEP("Sleep"), BREAKS("Breaks"), MOOD("Mood"),
 }
 
-/** This phone's Home settings: what SyncUp opens to, the hidden cards, the one-time "SyncUp has grown" card. */
+/**
+ * This phone's Home settings: what SyncUp opens to, the hidden cards, the one-time "SyncUp has grown"
+ * card and the welcome page — and, for a partner user, their links-only Home and their one link.
+ */
 object HomePrefs {
     private lateinit var prefs: SharedPreferences
 
@@ -37,8 +42,27 @@ object HomePrefs {
     /** Someone who used SyncUp before Home existed: tell them once where the browser went. */
     var introPending by mutableStateOf(false)
         private set
+    /** A fresh install's first open: the welcome page comes before Home (until Skip or a sign-in). */
+    var welcomePending by mutableStateOf(false)
+        private set
+
+    /** "Open it as soon as SyncUp starts" for a one-link user: null = automatic (on for a partner user). */
+    var startLinkChoice by mutableStateOf<Boolean?>(null)
+        private set
+    /** The signed-in user is a partner user (created or added by a partner). */
+    var partnerUser by mutableStateOf(false)
+        private set
+    /** The user's only link (signed in with exactly one), else null. */
+    var singleLink by mutableStateOf<UrlItem?>(null)
+        private set
+    /** Partners whose "added you" card got "Later" — off Home (You → Partners still has them). */
+    var laterPartners by mutableStateOf<Set<String>>(emptySet())
+        private set
 
     val startTab: MainTab get() = if (startOnHome) MainTab.HOME else MainTab.BROWSE
+
+    /** SyncUp opens straight into the user's one link (the switch on Home; Customise Home → Open SyncUp to). */
+    val opensLink: Boolean get() = singleLink != null && (startLinkChoice ?: partnerUser)
 
     /** [existingUser]: this phone used SyncUp before (it has browser tabs to restore). */
     fun init(context: Context, existingUser: Boolean) {
@@ -49,6 +73,17 @@ object HomePrefs {
             .mapNotNull { runCatching { HomeCard.valueOf(it) }.getOrNull() }.toSet()
         hiddenRows = prefs.getStringSet(KEY_HIDDEN_ROWS, emptySet()).orEmpty()
             .mapNotNull { runCatching { TodayRow.valueOf(it) }.getOrNull() }.toSet()
+        startLinkChoice = if (prefs.contains(KEY_START_LINK)) prefs.getBoolean(KEY_START_LINK, false) else null
+        laterPartners = prefs.getStringSet(KEY_LATER_PARTNERS, emptySet()).orEmpty()
+        // The welcome page: only a fresh install. v7 already ran here (it wrote the intro key) or the
+        // phone has tabs: someone updating the app, who never sees it.
+        if (!prefs.contains(KEY_WELCOME_DONE)) {
+            val updating = existingUser || prefs.contains(KEY_INTRO_DONE)
+            welcomePending = !updating
+            prefs.edit().putBoolean(KEY_WELCOME_DONE, updating).apply()
+        } else {
+            welcomePending = !prefs.getBoolean(KEY_WELCOME_DONE, true)
+        }
         if (!prefs.contains(KEY_INTRO_DONE)) {
             // First start with Home: only someone who already used SyncUp gets the card.
             introPending = existingUser
@@ -82,8 +117,52 @@ object HomePrefs {
         prefs.edit().putBoolean(KEY_INTRO_DONE, true).apply()
     }
 
+    /** The welcome page is done for good (Skip, or signed in). */
+    fun welcomeDone() {
+        if (!welcomePending) return
+        welcomePending = false
+        prefs.edit().putBoolean(KEY_WELCOME_DONE, true).apply()
+    }
+
+    fun changeStartLink(on: Boolean) {
+        startLinkChoice = on
+        prefs.edit().putBoolean(KEY_START_LINK, on).apply()
+    }
+
+    fun partnerLater(partnerId: String) {
+        laterPartners = laterPartners + partnerId
+        prefs.edit().putStringSet(KEY_LATER_PARTNERS, laterPartners).apply()
+    }
+
+    /** Who's signed in (null = nobody) and their links — for the partner-user rules above. */
+    fun account(user: User?, links: List<UrlItem>) {
+        partnerUser = user?.partnerUser == true
+        singleLink = links.singleOrNull()?.takeIf { user != null }
+        if (user != null && partnerUser) partnerDefaults(user.id)
+    }
+
+    /**
+     * A partner user's Home holds only their SyncUp links: Today, Now playing, Nearby and Your tools
+     * start switched off. Once per account on this phone — after that, their own choices stay.
+     */
+    private fun partnerDefaults(accountId: String) {
+        val done = prefs.getStringSet(KEY_PARTNER_DONE, emptySet()).orEmpty()
+        if (accountId in done) return
+        hidden = HomeCard.entries.toSet() - HomeCard.LINKS
+        startOnHome = true
+        prefs.edit()
+            .putStringSet(KEY_HIDDEN, hidden.map { it.name }.toSet())
+            .putBoolean(KEY_START_HOME, true)
+            .putStringSet(KEY_PARTNER_DONE, done + accountId)
+            .apply()
+    }
+
     private const val KEY_START_HOME = "start_home"
     private const val KEY_HIDDEN = "hidden_cards"
     private const val KEY_HIDDEN_ROWS = "hidden_today_rows"
     private const val KEY_INTRO_DONE = "intro_done"
+    private const val KEY_WELCOME_DONE = "welcome_done"
+    private const val KEY_START_LINK = "start_link"
+    private const val KEY_PARTNER_DONE = "partner_defaults_done"
+    private const val KEY_LATER_PARTNERS = "later_partners"
 }

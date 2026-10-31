@@ -119,6 +119,11 @@ class BrowserActions(
     val onHome: () -> Unit = {},
     val onOpenYou: () -> Unit = {},
     val backToHome: Boolean = false,
+    /**
+     * The user's one link is what SyncUp opens to (HomePrefs.opensLink): on its page the bar names it and
+     * has a house button for SyncUp Home, and Back from its first page leaves the app, like Home's Back.
+     */
+    val linkIsStart: Boolean = false,
 )
 
 // ============================================================================ screen
@@ -255,6 +260,11 @@ fun BrowserScreen(
         }
     }
 
+    // The user's one link, opened as SyncUp's start (BrowserActions.linkIsStart).
+    val linkPage = actions.linkIsStart && section == Section.WORK && tabs.directLink != null
+    // Its first page: nothing to go back to inside the link — the system Back leaves the app, as on Home.
+    val linkFirstPage = linkPage && tab != null && !tab.canGoBack && tab.openerId == null && !tab.fromOtherApp
+
     // Back stays in the app: page history → the tab that opened this one → the tab's home →
     // Normal (from the SyncUp or Incognito home) → on Normal's home, a second Back within 2 s
     // sends the app to the background (tabs are kept, like the system's own Back).
@@ -268,6 +278,7 @@ fun BrowserScreen(
                 tab?.let { tabs.webView(it).clearMatches() }
             }
             showTabs -> showTabs = false
+            linkFirstPage -> activity?.moveTaskToBack(true)
             tabs.back() -> Unit
             section != Section.NORMAL -> switchSection(Section.NORMAL)
             actions.backToHome -> actions.onHome()
@@ -464,6 +475,11 @@ fun BrowserScreen(
                             showTabs = true
                         },
                         onMenu = { showMenu = true },
+                        // The one link as SyncUp's start: its name on the key, and SyncUp Home in place of the
+                        // tab count while it has a single page (pages its site opened bring the count back).
+                        canBack = !linkFirstPage && (tab.canGoBack || !tab.isHome),
+                        sectionLabel = if (linkPage) singleLink?.let { l -> l.sourceName?.trim()?.takeIf { l.source == "partner" && it.isNotBlank() } ?: l.title } else null,
+                        onHome = if (linkPage && tabs.cardsIn(section).size <= 1 && tabs.groupPages(tab.groupId).size <= 1) actions.onHome else null,
                     )
                 }
             }

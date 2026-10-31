@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -43,7 +44,8 @@ import com.agani.syncup.browser.ui.sectionName
 /**
  * Back · Forward · section key · Tabs · Menu — the same five buttons, evenly spaced, on every page,
  * docked on the bar's paper under one hairline. Back / Forward stay in place and are greyed out when
- * there's nowhere to go.
+ * there's nowhere to go. On the user's one link opened as SyncUp's start, the key carries its name
+ * ([sectionLabel]) and a house ([onHome], SyncUp Home) takes the tab count's place.
  */
 @Composable
 internal fun BottomBar(
@@ -57,6 +59,9 @@ internal fun BottomBar(
     onSectionLong: () -> Unit,
     onTabs: () -> Unit,
     onMenu: () -> Unit,
+    canBack: Boolean = tab.canGoBack || !tab.isHome,
+    sectionLabel: String? = null,
+    onHome: (() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth().background(cs.bar)) {
@@ -66,10 +71,10 @@ internal fun BottomBar(
             horizontalArrangement = Arrangement.SpaceAround,
             modifier = Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 4.dp),
         ) {
-            BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", enabled = tab.canGoBack || !tab.isHome, onClick = onBack)
+            BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", enabled = canBack, onClick = onBack)
             BarIcon(Icons.AutoMirrored.Rounded.ArrowForward, "Forward", enabled = tab.canGoForward, onClick = onForward)
-            SectionKey(section, onClick = onSection, onLongClick = onSectionLong)
-            Box(
+            SectionKey(section, onClick = onSection, onLongClick = onSectionLong, label = sectionLabel)
+            if (onHome != null) BarIcon(Icons.Outlined.Home, "SyncUp Home", onClick = onHome) else Box(
                 Modifier
                     .size(48.dp)
                     .clip(CircleShape)

@@ -38,6 +38,8 @@ data class User(
     val phone: String? = null,
     val username: String? = null,
     val source: String? = null, // admin | partner | self
+    // Created or added by a partner (v8): Home keeps to their partner's links. Missing = no.
+    @SerializedName("partner_user") val partnerUser: Boolean? = null,
 ) {
     /** What the user signs in with, for display: email, else phone, else @username. */
     val loginLabel: String

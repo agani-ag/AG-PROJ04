@@ -23,8 +23,8 @@ android {
         applicationId = "com.agani.syncup"
         minSdk = 24
         targetSdk = 36
-        versionCode = 7
-        versionName = "7"
+        versionCode = 9
+        versionName = "7.1"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -131,9 +131,10 @@ dependencies {
     // Tools → Quick Share: phone-to-phone file transfer (Bluetooth to find, direct Wi-Fi to send).
     implementation("com.google.android.gms:play-services-nearby:19.3.0")
     // Tools → Sensors: the camera picture for Magnifier and Colour picker.
-    implementation("androidx.camera:camera-camera2:1.3.4")
-    implementation("androidx.camera:camera-lifecycle:1.3.4")
-    implementation("androidx.camera:camera-view:1.3.4")
+    // 1.4+: its native library is 16 KB page aligned (Play rejects 1.3.x builds for Android 15+ devices).
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+    implementation("androidx.camera:camera-view:1.4.2")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 

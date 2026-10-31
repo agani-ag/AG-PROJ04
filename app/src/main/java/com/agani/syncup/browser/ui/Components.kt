@@ -182,25 +182,35 @@ fun PillButton(icon: ImageVector, desc: String, size: Dp = 34.dp, tint: Color = 
     }
 }
 
-/** The section switcher in the bottom bar: the section's glyph on a tinted pill, in its colour. */
+/**
+ * The section switcher in the bottom bar: the section's glyph on a tinted pill, in its colour. With
+ * [label] (the user's one link opened as SyncUp's start) the pill also carries that name.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun SectionKey(section: Section, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) {
+fun SectionKey(section: Section, onClick: () -> Unit, onLongClick: (() -> Unit)? = null, label: String? = null) {
     val cs = MaterialTheme.colorScheme
     // v7: Normal's key is plain grey; SyncUp and Incognito keep their soft accent.
     val normal = section == Section.NORMAL
     val bg by animateColorAsState(if (normal) cs.surfaceContainer else cs.primaryContainer, tween(200), label = "key")
     val fg by animateColorAsState(if (normal) cs.onSurface else cs.primary, tween(200), label = "keyIcon")
-    Box(
-        contentAlignment = Alignment.Center,
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
         modifier = Modifier
-            .size(width = 52.dp, height = 36.dp)
+            .height(36.dp)
+            .then(if (label == null) Modifier.width(52.dp) else Modifier.widthIn(max = 160.dp))
             .clip(RoundedCornerShape(50))
             .background(bg)
             .combinedClickable(onClickLabel = "Switch section", onClick = onClick, onLongClick = onLongClick)
-            .semantics { contentDescription = "${sectionName(section)} section" },
+            .then(if (label == null) Modifier else Modifier.padding(start = 10.dp, end = 14.dp))
+            .semantics { contentDescription = label ?: "${sectionName(section)} section" },
     ) {
-        Icon(sectionIcon(section), null, tint = fg, modifier = Modifier.size(22.dp))
+        Icon(sectionIcon(section), null, tint = fg, modifier = Modifier.size(if (label == null) 22.dp else 20.dp))
+        if (label != null) {
+            Spacer(Modifier.width(6.dp))
+            Text(label, color = fg, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
