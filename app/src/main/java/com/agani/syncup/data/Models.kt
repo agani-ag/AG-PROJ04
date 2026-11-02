@@ -362,6 +362,18 @@ data class GeneralLinksResponse(
     val links: List<UrlItem> = emptyList(),
 )
 
+data class DnsCatalogResponse(
+    val version: String = "",
+    val services: List<DnsServiceDto> = emptyList(),
+)
+
+data class DnsServiceDto(
+    val id: Long = 0,
+    val name: String = "",
+    val address: String = "",
+    val description: String = "",
+)
+
 data class ShortcutCatalogResponse(
     val version: String = "",
     val categories: List<ShortcutCategoryDto> = emptyList(),

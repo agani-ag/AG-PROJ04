@@ -45,6 +45,11 @@ object BrowserSettings {
     /** Show the ⬇ button when a page has videos, music or files to download. */
     var mediaDetector by mutableStateOf(true)
         private set
+    /** Shortcuts on the Browse page start with the sites this person uses most (see MostUsed). */
+    var recommendedSites by mutableStateOf(true)
+        private set
+    /** Sites taken off Recommended with a long press; they stay in History. */
+    val removedSites = mutableStateListOf<String>()
     /** Sites (registrable domains) the user let open pop-ups while blocking is on. */
     val popupSites = mutableStateListOf<String>()
     /** The same for Incognito: forgotten when the app closes. */
@@ -62,6 +67,8 @@ object BrowserSettings {
         textZoom = p.getInt("text_zoom", 100)
         blockAds = p.getBoolean("block_ads", true)
         mediaDetector = p.getBoolean("media_detector", true)
+        recommendedSites = p.getBoolean("recommended_sites", true)
+        p.getStringSet("removed_sites", emptySet())?.let { removedSites.addAll(it.sorted()) }
         p.getStringSet("popup_sites", emptySet())?.let { popupSites.addAll(it.sorted()) }
     }
 
@@ -100,6 +107,31 @@ object BrowserSettings {
     fun updateMediaDetector(on: Boolean) {
         mediaDetector = on
         prefs?.edit()?.putBoolean("media_detector", on)?.apply()
+    }
+
+    fun updateRecommendedSites(on: Boolean) {
+        recommendedSites = on
+        prefs?.edit()?.putBoolean("recommended_sites", on)?.apply()
+    }
+
+    fun removeFromRecommended(key: String) {
+        if (key !in removedSites) removedSites.add(key)
+        saveRemovedSites()
+    }
+
+    fun bringBackToRecommended(key: String) {
+        removedSites.remove(key)
+        saveRemovedSites()
+    }
+
+    /** Another account came in: which sites the last person removed is theirs. */
+    fun clearRemovedSites() {
+        removedSites.clear()
+        saveRemovedSites()
+    }
+
+    private fun saveRemovedSites() {
+        prefs?.edit()?.putStringSet("removed_sites", removedSites.toSet())?.apply()
     }
 
     /** May a page on [site] open pop-ups without a tap? */

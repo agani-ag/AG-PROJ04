@@ -19,39 +19,24 @@ data class CatalogCategory(val id: Long, val name: String, val items: List<Catal
 
 /**
  * The home page's shortcuts, set by the admin on the backend (Admin → Home shortcuts) for everyone,
- * signed in or not. A copy is kept on the phone, so the home page works offline and opens instantly;
- * it's refreshed when the app starts and when the home page shows (at most every few hours), and the
- * backend answers "unchanged" (304) when nothing changed. Before the first fetch: the built-in few.
+ * signed in or not. The app has none of its own: every shortcut comes from the backend. A copy is kept
+ * on the phone, so the home page works offline and opens instantly; it's refreshed when the app starts
+ * and when the home page shows (at most every few hours), and the backend answers "unchanged" (304)
+ * when nothing changed. Before the first fetch there are none.
  */
 object ShortcutCatalog {
     private const val REFRESH_MS = 3L * 3600 * 1000
-
-    /**
-     * What the home page shows before it has ever reached the backend — the same as the backend's
-     * ready-made "Popular" (seed_home_shortcuts). Free, and all work without signing in.
-     */
-    private val DEFAULTS = listOf(
-        CatalogCategory(
-            -1, "Popular",
-            listOf(
-                "Google" to "https://www.google.com",
-                "YouTube" to "https://m.youtube.com",
-                "Wikipedia" to "https://www.wikipedia.org",
-                "Google Maps" to "https://www.google.com/maps",
-                "Google News" to "https://news.google.com",
-                "Translate" to "https://translate.google.com",
-                "Cricbuzz" to "https://www.cricbuzz.com",
-                "ChatGPT" to "https://chatgpt.com",
-            ).mapIndexed { i, (t, u) -> CatalogShortcut(-(i + 1L), t, u, "Popular") },
-        ),
-    )
 
     private var file: File? = null
     private var version: String = ""
     private var fetchedAt = 0L
     private var loading = false
 
-    var categories by mutableStateOf(DEFAULTS)
+    var categories by mutableStateOf<List<CatalogCategory>>(emptyList())
+        private set
+
+    /** There are no shortcuts yet and the backend couldn't be reached (a first start offline). */
+    var unreachable by mutableStateOf(false)
         private set
 
     /** The chip chosen on the home page (null = All); kept while the app is open. */
@@ -65,7 +50,7 @@ object ShortcutCatalog {
             if (f.exists()) {
                 val r = Gson().fromJson(f.readText(), ShortcutCatalogResponse::class.java)
                 version = r.version
-                toCategories(r)?.let { categories = it }
+                categories = toCategories(r)
             }
         }
     }
@@ -75,16 +60,22 @@ object ShortcutCatalog {
         if (loading || (!force && System.currentTimeMillis() - fetchedAt < REFRESH_MS)) return
         loading = true
         try {
-            val resp = withContext(Dispatchers.IO) { runCatching { ApiClient.service.shortcuts(version.ifBlank { null }) }.getOrNull() } ?: return
+            val resp = withContext(Dispatchers.IO) { runCatching { ApiClient.service.shortcuts(version.ifBlank { null }) }.getOrNull() }
             // Only a real answer counts as fresh; a failure is tried again next time.
-            if (resp.code() == 304) {
+            if (resp != null && resp.code() == 304) {
+                unreachable = false
                 fetchedAt = System.currentTimeMillis()
                 return
             }
-            val body = resp.body() ?: return
+            val body = resp?.body()
+            if (body == null) {
+                unreachable = categories.isEmpty()
+                return
+            }
+            unreachable = false
             fetchedAt = System.currentTimeMillis()
             version = body.version
-            categories = toCategories(body) ?: DEFAULTS
+            categories = toCategories(body)
             withContext(Dispatchers.IO) { runCatching { file?.writeText(Gson().toJson(body)) } }
             if (chosen != null && categories.none { it.id == chosen }) chosen = null
         } finally {
@@ -103,10 +94,9 @@ object ShortcutCatalog {
             .take(limit).toList()
     }
 
-    /** null when the backend has nothing to show: the built-in few stay. */
-    private fun toCategories(r: ShortcutCatalogResponse): List<CatalogCategory>? =
+    private fun toCategories(r: ShortcutCatalogResponse): List<CatalogCategory> =
         r.categories.mapNotNull { c ->
             val items = c.shortcuts.filter { it.url.startsWith("http") }.map { CatalogShortcut(it.id, it.title, it.url, c.name) }
             if (items.isEmpty()) null else CatalogCategory(c.id, c.name, items)
-        }.takeIf { it.isNotEmpty() }
+        }
 }

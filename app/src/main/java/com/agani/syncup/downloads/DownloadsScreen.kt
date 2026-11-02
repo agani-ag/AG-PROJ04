@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
@@ -278,6 +279,7 @@ private fun kindLook(kind: FileKind): Pair<ImageVector, Tint> = when (kind) {
 
 @Composable
 private fun ActiveCard(t: DownloadTask) {
+    val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
     // Each running / waiting download is its own white card (there are only ever a few).
     Column(
@@ -297,6 +299,9 @@ private fun ActiveCard(t: DownloadTask) {
                 DlState.PAUSED -> RoundAction(Icons.Rounded.PlayArrow, "Resume") { Downloads.resume(t) }
                 DlState.FAILED -> RoundAction(Icons.Rounded.Refresh, "Retry") { Downloads.resume(t) }
                 else -> RoundAction(Icons.Rounded.Pause, "Pause") { Downloads.pause(t) }
+            }
+            t.copyableLink?.let { link ->
+                BarIcon(Icons.Rounded.Link, "Copy link", tint = cs.onSurfaceVariant) { copyLink(context, link) }
             }
             BarIcon(Icons.Rounded.Close, "Cancel download", tint = cs.onSurfaceVariant) { Downloads.cancel(t) }
         }
@@ -395,16 +400,13 @@ private fun DoneRow(t: DownloadTask, first: Boolean, last: Boolean) {
                 if (t.url.isNotBlank()) {
                     DropdownMenuItem(text = { Text("Download again") }, onClick = {
                         menu = false
-                        Downloads.start(DownloadRequest(url = t.url, userAgent = t.userAgent, referer = t.referer, source = t.source, work = t.work, incognito = t.incognito), t.fileName)
+                        Downloads.start(DownloadRequest(url = t.link, userAgent = t.userAgent, referer = t.referer, source = t.source, work = t.work, incognito = t.incognito), t.fileName)
                     })
                 }
-                // A SyncUp link's address stays hidden.
-                if (t.url.isNotBlank() && !t.work) {
+                t.copyableLink?.let { link ->
                     DropdownMenuItem(text = { Text("Copy link") }, onClick = {
                         menu = false
-                        (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                            .setPrimaryClip(android.content.ClipData.newPlainText("Link", t.url))
-                        Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
+                        copyLink(context, link)
                     })
                 }
                 DropdownMenuItem(text = { Text("Delete file", color = cs.error) }, onClick = { menu = false; deleting = true })
@@ -445,6 +447,12 @@ private fun DoneRow(t: DownloadTask, first: Boolean, last: Boolean) {
             dismissButton = { TextButton(onClick = { deleting = false }) { Text("Cancel") } },
         )
     }
+}
+
+private fun copyLink(context: Context, link: String) {
+    (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+        .setPrimaryClip(android.content.ClipData.newPlainText("Link", link))
+    Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
 }
 
 private fun open(context: Context, t: DownloadTask) {

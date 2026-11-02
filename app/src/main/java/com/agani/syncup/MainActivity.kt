@@ -72,7 +72,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-private enum class AppScreen { ForceUpdate, Welcome, Announcement, Home, Browser, ToolsHome, You, Profile, SiteSettings, Music, Radio, Library, Partners, Notifications, Tools }
+private enum class AppScreen { ForceUpdate, Welcome, Announcement, Home, Browser, ToolsHome, You, Profile, SiteSettings, Dns, Music, Radio, Library, Partners, Notifications, Tools }
 
 class MainActivity : FragmentActivity() {
 
@@ -476,6 +476,7 @@ class MainActivity : FragmentActivity() {
         var forceUpdate by remember { mutableStateOf(false) }
         var showProfile by remember { mutableStateOf(false) }
         var showSiteSettings by remember { mutableStateOf(false) }
+        var showDns by remember { mutableStateOf(false) }
         var showMusic by remember { mutableStateOf(false) }
         var showRadio by remember { mutableStateOf(false) }
         // Radio's tab: Party (true) or Live stations.
@@ -541,6 +542,8 @@ class MainActivity : FragmentActivity() {
             configLoaded = true
             // The home page's shortcuts from the backend (the server address is known now).
             com.agani.syncup.browser.ShortcutCatalog.refresh(force = true)
+            // The DNS services the admin offers, all turned off until the person chooses.
+            com.agani.syncup.dns.DnsServices.refresh()
             // The links for everyone (signed in they come with /sync; kept fresh for after sign-out).
             com.agani.syncup.browser.GeneralLinks.refresh()
         }
@@ -612,6 +615,8 @@ class MainActivity : FragmentActivity() {
                 // A channel list: Channels opens with its name and link filled in, for the person to save.
                 pendingLink.value = null
                 showProfile = false
+                showSiteSettings = false
+                showDns = false
                 showMusic = false
                 showRadio = false
                 showPartners = false
@@ -624,6 +629,8 @@ class MainActivity : FragmentActivity() {
                 // push to this phone) — SyncUp tabs need sign-in. (The session is restored before this runs.)
                 pendingLink.value = null
                 showProfile = false
+                showSiteSettings = false
+                showDns = false
                 showMusic = false
                 showRadio = false
                 showPartners = false
@@ -637,6 +644,8 @@ class MainActivity : FragmentActivity() {
                 // A link from a SyncUp push/reminder is a work link: open it as a Work tab (address hidden)
                 // — the link's own tab when it's one of the user's links and already open.
                 showProfile = false
+                showSiteSettings = false
+                showDns = false
                 showMusic = false
                 showRadio = false
                 showNotifications = false
@@ -912,7 +921,8 @@ class MainActivity : FragmentActivity() {
         androidx.activity.compose.BackHandler(enabled = showRadio) { showRadio = false }
         androidx.activity.compose.BackHandler(enabled = showPartners && !showMusic && !showRadio) { showPartners = false }
         androidx.activity.compose.BackHandler(enabled = showNotifications && !showMusic && !showRadio && !showPartners) { showNotifications = false }
-        androidx.activity.compose.BackHandler(enabled = showProfile && !showMusic && !showRadio && !showPartners && !showSiteSettings) { showProfile = false }
+        androidx.activity.compose.BackHandler(enabled = showProfile && !showMusic && !showRadio && !showPartners && !showSiteSettings && !showDns) { showProfile = false }
+        androidx.activity.compose.BackHandler(enabled = showDns && !showMusic && !showRadio && !showPartners) { showDns = false }
         androidx.activity.compose.BackHandler(enabled = showSiteSettings && !showMusic && !showRadio && !showPartners) { showSiteSettings = false }
         androidx.activity.compose.BackHandler(enabled = libraryPage != null && !showProfile) { libraryPage = null }
         // Tools: a tool goes back to the Tools page, the Tools page back to the browser.
@@ -966,6 +976,7 @@ class MainActivity : FragmentActivity() {
             showRadio -> AppScreen.Radio
             showPartners && loggedIn -> AppScreen.Partners
             showNotifications -> AppScreen.Notifications
+            showDns -> AppScreen.Dns
             showSiteSettings -> AppScreen.SiteSettings
             showProfile -> AppScreen.Profile
             libraryPage != null -> AppScreen.Library
@@ -1090,6 +1101,7 @@ class MainActivity : FragmentActivity() {
                             onCheckUsername = { vm.checkUsername(it) },
                             onClearBrowsingData = { history, cookies, cache -> tabManager.clearBrowsingData(history, cookies, cache) },
                             onOpenSiteSettings = { showSiteSettings = true },
+                            onOpenDns = { showDns = true },
                             onDeleteAccount = {
                                 val result = vm.deleteAccount()
                                 if (result.isSuccess) {
@@ -1101,6 +1113,7 @@ class MainActivity : FragmentActivity() {
                         )
                     }
                     AppScreen.SiteSettings -> com.agani.syncup.browser.SiteSettingsScreen(onBack = { showSiteSettings = false })
+                    AppScreen.Dns -> com.agani.syncup.dns.DnsScreen(onBack = { showDns = false })
                     AppScreen.Notifications -> com.agani.syncup.notifications.NotificationsScreen(
                         onBack = { showNotifications = false },
                         onOpen = { item ->

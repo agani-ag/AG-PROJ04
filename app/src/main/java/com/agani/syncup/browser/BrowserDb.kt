@@ -131,6 +131,15 @@ class BrowserDb private constructor(context: Context) : SQLiteOpenHelper(context
         }
     }
 
+    /** Pages visited since [fromMs], newest first, for working out the most used sites (see [MostUsed]). */
+    internal fun visitsSince(fromMs: Long, limit: Int = 100_000): List<PageVisit> =
+        readableDatabase.rawQuery(
+            "SELECT url, title, visited_at FROM history WHERE deleted = 0 AND visited_at >= ? ORDER BY visited_at DESC LIMIT $limit",
+            arrayOf(fromMs.toString()),
+        ).use { c ->
+            buildList { while (c.moveToNext()) add(PageVisit(c.getString(0), c.getString(1), c.getLong(2))) }
+        }
+
     fun deleteHistory(id: Long) {
         tombstone("history", "id = ?", arrayOf(id.toString()))
     }

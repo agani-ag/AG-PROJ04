@@ -83,6 +83,9 @@ interface ApiService {
     suspend fun config(): ConfigResponse
 
     /** The home page's shortcut catalogue, for everyone. Sending the version we have → 304 when unchanged. */
+    @GET("dns")
+    suspend fun dns(@Query("v") version: String?): retrofit2.Response<DnsCatalogResponse>
+
     @GET("shortcuts")
     suspend fun shortcuts(@Query("v") version: String?): retrofit2.Response<ShortcutCatalogResponse>
 

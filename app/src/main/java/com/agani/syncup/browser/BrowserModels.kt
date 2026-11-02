@@ -50,6 +50,9 @@ class BrowserTab(
     /** A pop-up window that hasn't started its first page yet. */
     var freshPopup = false
 
+    /** Where a download's link began, when the browser followed redirects to reach it. */
+    val linkTrail = com.agani.syncup.downloads.LinkTrail()
+
     /** Opened by a link tapped in another app (SyncUp as its browser): Back on its first page closes it and returns there. */
     var fromOtherApp = false
 

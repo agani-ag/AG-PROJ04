@@ -182,7 +182,7 @@ object Downloads {
             mime = Files.mimeFor(fileName, info?.mime ?: req.mime),
             total = info?.size?.takeIf { it > 0 } ?: req.contentLength,
             source = req.source, work = req.work, incognito = req.incognito,
-            userAgent = req.userAgent, referer = req.referer, createdAt = System.currentTimeMillis(),
+            userAgent = req.userAgent, referer = req.referer, createdAt = System.currentTimeMillis(), link = req.origin ?: req.url,
         )
         if (info != null) {
             t.probed = true

@@ -32,7 +32,10 @@ import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.material.icons.rounded.Spa
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
 import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Block
+import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.HideSource
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DarkMode
@@ -170,6 +173,7 @@ fun ProfileScreen(
     onDeleteAccount: suspend () -> Result<Unit>,
     onClearBrowsingData: (history: Boolean, cookies: Boolean, cache: Boolean) -> Unit = { _, _, _ -> },
     onOpenSiteSettings: () -> Unit = {},
+    onOpenDns: () -> Unit = {},
     partnersWaiting: Int = 0,
     showPartners: Boolean = false,
     onOpenPartners: () -> Unit = {},
@@ -197,6 +201,7 @@ fun ProfileScreen(
     var showDeleteAccount by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var showEngine by remember { mutableStateOf(false) }
+    var showRemovedSites by remember { mutableStateOf(false) }
     var showTextSize by remember { mutableStateOf(false) }
     var confirmClearPopupSites by remember { mutableStateOf(false) }
     var showClearData by remember { mutableStateOf(false) }
@@ -416,6 +421,7 @@ fun ProfileScreen(
                         else makeDefaultBrowser()
                     }
                     SettingRow(icon = Icons.Rounded.Search, title = "Search engine", subtitle = BrowserSettings.searchEngine.label, onClick = { showEngine = true })
+                    SettingRow(icon = Icons.Rounded.Dns, title = "DNS", subtitle = com.agani.syncup.dns.DnsServices.summary, onClick = onOpenDns)
                     SwitchRow(
                         icon = Icons.Rounded.Block,
                         title = "Block pop-ups",
@@ -466,6 +472,23 @@ fun ProfileScreen(
                         enabled = true,
                         onCheckedChange = { BrowserSettings.updateMediaDetector(it) },
                     )
+                    SwitchRow(
+                        icon = Icons.Rounded.AutoAwesome,
+                        title = "Recommended sites",
+                        subtitle = "Your most used sites, first in Shortcuts. Worked out on this phone",
+                        checked = BrowserSettings.recommendedSites,
+                        enabled = true,
+                        onCheckedChange = { BrowserSettings.updateRecommendedSites(it) },
+                    )
+                    val removedSites = BrowserSettings.removedSites.size
+                    if (BrowserSettings.recommendedSites && removedSites > 0) {
+                        SettingRow(
+                            icon = Icons.Rounded.HideSource,
+                            title = "Sites you removed",
+                            subtitle = "$removedSites site${if (removedSites == 1) "" else "s"} won't be recommended",
+                            onClick = { showRemovedSites = true },
+                        )
+                    }
                     SettingRow(
                         icon = Icons.Rounded.FormatSize,
                         title = "Text size",
@@ -691,6 +714,24 @@ fun ProfileScreen(
                 }
             },
             confirmButton = { TextButton(onClick = { showEngine = false }) { Text("Close") } },
+        )
+    }
+    if (showRemovedSites && BrowserSettings.removedSites.isNotEmpty()) {
+        AlertDialog(
+            containerColor = MaterialTheme.colorScheme.dialogSurface,
+            onDismissRequest = { showRemovedSites = false },
+            title = { Text("Sites you removed") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    BrowserSettings.removedSites.toList().forEach { site ->
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(site, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { BrowserSettings.bringBackToRecommended(site) }) { Text("Bring back") }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showRemovedSites = false }) { Text("Close") } },
         )
     }
     if (showTextSize) {

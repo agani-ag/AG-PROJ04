@@ -74,11 +74,45 @@ data class DownloadRequest(
     val work: Boolean = false,
     val incognito: Boolean = false,
     val suggestedName: String? = null,
+    /** The link that redirected to [url], when the browser already followed it there. */
+    val origin: String? = null,
 ) {
     /** Best guess at the file name before the link is checked. */
     fun guessName(): String = Files.cleanName(
         suggestedName?.takeIf { it.isNotBlank() } ?: URLUtil.guessFileName(url, contentDisposition, mime),
     )
+}
+
+/**
+ * Follows a tab's page requests. By the time the browser hands over a download it has already followed the
+ * redirects, so this is how to know the link it began from. One per tab; requests arrive on WebView's own threads.
+ */
+class LinkTrail {
+    private var lastRequest = ""
+    private var redirectedTo = ""
+    private var startedFrom = ""
+
+    /** The page itself was requested. Going anywhere other than where the last redirect led ends that trail. */
+    @Synchronized
+    fun requested(url: String) {
+        if (url != redirectedTo) {
+            redirectedTo = ""
+            startedFrom = ""
+        }
+        lastRequest = url
+    }
+
+    /** The last request answered with a redirect to [url]. */
+    @Synchronized
+    fun redirected(url: String) {
+        if (startedFrom.isEmpty()) startedFrom = lastRequest
+        redirectedTo = url
+        lastRequest = url
+    }
+
+    /** The link that led to a download of [url], or null if it didn't come by redirect. */
+    @Synchronized
+    fun originOf(url: String): String? = startedFrom.takeIf { it.isNotEmpty() && url == redirectedTo }
 }
 
 /** What a quick check of a link found. */
@@ -115,7 +149,16 @@ class DownloadTask(
     val userAgent: String,
     val referer: String,
     val createdAt: Long,
+    /**
+     * The address this download began from. [url] moves on to wherever redirects lead, and that's often a
+     * temporary address; this is the one that keeps working when copied or tried again.
+     */
+    val link: String = url,
 ) {
+    /** What can be copied and shared: a web address, but never a SyncUp link's, whose address stays hidden. */
+    val copyableLink: String?
+        get() = link.takeIf { !work && (it.startsWith("https://", ignoreCase = true) || it.startsWith("http://", ignoreCase = true)) }
+
     @Volatile var url: String = url
     var fileName by mutableStateOf(fileName)
     var mime by mutableStateOf(mime)

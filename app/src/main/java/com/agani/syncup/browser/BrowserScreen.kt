@@ -396,6 +396,18 @@ fun BrowserScreen(
                                     onSearch = { startEditing("") },
                                     onVoice = { voiceSearch() },
                                     onOpenUrl = { openInCurrent(it) },
+                                    onOpenInNewTab = { url ->
+                                        val opened = tabs.openInBackground(tabs.activeTab() ?: tabs.ensureTab(tabs.section), url)
+                                        scope.launch {
+                                            snackbar.currentSnackbarData?.dismiss()
+                                            val r = snackbar.showSnackbar("Opened in a new tab", actionLabel = "Switch", duration = SnackbarDuration.Short)
+                                            if (r == SnackbarResult.ActionPerformed && tabs.tabs.contains(opened)) tabs.select(opened)
+                                        }
+                                    },
+                                    onRemoveSite = { site ->
+                                        BrowserSettings.removeFromRecommended(site.key)
+                                        offerUndo("${site.title} removed from Recommended") { BrowserSettings.bringBackToRecommended(site.key) }
+                                    },
                                     onAvatar = { if (!signedIn) actions.onSignIn() else showAccount = true },
                                     onOpenWork = { switchSection(Section.WORK) },
                                     onOpenMusic = actions.onOpenMusic,

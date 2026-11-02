@@ -11,7 +11,7 @@ import org.json.JSONArray
  * The Download Manager's list, on this phone only. Incognito downloads are never written here.
  * A finished download keeps no cookies or parts — only what the list shows and where the file is.
  */
-internal class DownloadDb(context: Context) : SQLiteOpenHelper(context.applicationContext, "downloads.db", null, 1) {
+internal class DownloadDb(context: Context) : SQLiteOpenHelper(context.applicationContext, "downloads.db", null, 2) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -20,11 +20,15 @@ internal class DownloadDb(context: Context) : SQLiteOpenHelper(context.applicati
                 "parts TEXT NOT NULL DEFAULT '[]', resumable INTEGER NOT NULL DEFAULT 0, etag TEXT, last_modified TEXT, " +
                 "user_agent TEXT NOT NULL DEFAULT '', referer TEXT NOT NULL DEFAULT '', cookies TEXT, " +
                 "source TEXT NOT NULL DEFAULT '', work INTEGER NOT NULL DEFAULT 0, content_uri TEXT, " +
-                "legacy_id INTEGER NOT NULL DEFAULT 0, error TEXT, created_at INTEGER NOT NULL, finished_at INTEGER NOT NULL DEFAULT 0)",
+                "legacy_id INTEGER NOT NULL DEFAULT 0, error TEXT, created_at INTEGER NOT NULL, finished_at INTEGER NOT NULL DEFAULT 0, " +
+                "link TEXT NOT NULL DEFAULT '')",
         )
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        // Older downloads only kept the address they ended on, so that's the link they have.
+        if (oldVersion < 2) db.execSQL("ALTER TABLE tasks ADD COLUMN link TEXT NOT NULL DEFAULT ''")
+    }
 
     fun insert(t: DownloadTask, cookies: String?): Long =
         writableDatabase.insert("tasks", null, values(t, cookies).apply { put("created_at", t.createdAt) })
@@ -42,7 +46,7 @@ internal class DownloadDb(context: Context) : SQLiteOpenHelper(context.applicati
     fun load(): List<Pair<DownloadTask, String?>> =
         readableDatabase.rawQuery(
             "SELECT id, url, file_name, mime, total, state, parts, resumable, etag, last_modified, user_agent, referer, " +
-                "cookies, source, work, content_uri, legacy_id, error, created_at, finished_at FROM tasks ORDER BY created_at DESC LIMIT 1000",
+                "cookies, source, work, content_uri, legacy_id, error, created_at, finished_at, link FROM tasks ORDER BY created_at DESC LIMIT 1000",
             null,
         ).use { c ->
             buildList {
@@ -51,6 +55,7 @@ internal class DownloadDb(context: Context) : SQLiteOpenHelper(context.applicati
                         id = c.getLong(0), url = c.getString(1), fileName = c.getString(2), mime = c.getString(3),
                         total = c.getLong(4), source = c.getString(13), work = c.getInt(14) == 1, incognito = false,
                         userAgent = c.getString(10), referer = c.getString(11), createdAt = c.getLong(18),
+                        link = c.getString(20).ifBlank { c.getString(1) },
                     )
                     t.state = runCatching { DlState.valueOf(c.getString(5)) }.getOrDefault(DlState.FAILED)
                     t.parts = parseParts(c.getString(6))
@@ -90,7 +95,7 @@ internal class DownloadDb(context: Context) : SQLiteOpenHelper(context.applicati
         put("state", t.state.name); put("parts", partsJson(t.parts)); put("resumable", if (t.resumable) 1 else 0)
         put("etag", t.etag); put("last_modified", t.lastModified); put("user_agent", t.userAgent); put("referer", t.referer)
         put("cookies", cookies); put("source", t.source); put("work", if (t.work) 1 else 0); put("content_uri", t.contentUri)
-        put("legacy_id", t.legacyId); put("error", t.error); put("finished_at", t.finishedAt)
+        put("legacy_id", t.legacyId); put("error", t.error); put("finished_at", t.finishedAt); put("link", t.link)
     }
 
     private fun partsJson(parts: List<Part>): String =

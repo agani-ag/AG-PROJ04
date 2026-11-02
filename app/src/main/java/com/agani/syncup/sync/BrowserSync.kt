@@ -184,6 +184,8 @@ object BrowserSync {
                 }.apply()
                 otherDevices = emptyList()
                 lastSyncMs = 0L
+                com.agani.syncup.browser.RecommendedSites.clear()
+                BrowserSettings.clearRemovedSites()
                 dataVersion++
             }
         }

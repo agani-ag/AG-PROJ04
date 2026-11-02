@@ -426,7 +426,11 @@ class WebPlatform(private val activity: ComponentActivity) {
 
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                 // WebView's own threads: only quick checks here. The page itself is never blocked.
-                if (request == null || request.isForMainFrame) return null
+                if (request == null) return null
+                if (request.isForMainFrame) {
+                    request.url?.toString()?.let { tab.linkTrail.requested(it) }
+                    return null
+                }
                 val url = request.url?.toString() ?: return null
                 val headers = request.requestHeaders.orEmpty()
                 if (AdBlocker.activeFor(tab) && AdBlocker.shouldBlock(url, tab.pageHost, header(headers, "Accept"))) {
@@ -466,6 +470,7 @@ class WebPlatform(private val activity: ComponentActivity) {
 
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val uri = request?.url ?: return false
+                if (request.isForMainFrame && request.isRedirect) tab.linkTrail.redirected(uri.toString())
                 val popupStart = tab.freshPopup && request.isForMainFrame
                 if (popupStart) {
                     tab.freshPopup = false
@@ -574,7 +579,7 @@ class WebPlatform(private val activity: ComponentActivity) {
             val pageMade = downloadUrl.startsWith("blob:") || downloadUrl.startsWith("data:")
             val start = {
                 if (pageMade) pageFiles.save(webView, tab, downloadUrl, mimeType)
-                else Downloads.request(downloadRequest(webView, tab, downloadUrl, userAgent, contentDisposition, mimeType, contentLength))
+                else Downloads.request(downloadRequest(webView, tab, downloadUrl, userAgent, contentDisposition, mimeType, contentLength).copy(origin = tab.linkTrail.originOf(downloadUrl)))
             }
             withStorage(start)
         }

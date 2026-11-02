@@ -46,8 +46,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import com.agani.syncup.music.LocalPlayer
 import com.agani.syncup.music.MiniPlayer
 import androidx.compose.ui.Modifier
@@ -62,6 +64,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.agani.syncup.data.UrlItem
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import com.agani.syncup.R
 import com.agani.syncup.browser.ui.Avatar
 import com.agani.syncup.browser.ui.BarIcon
@@ -80,7 +83,8 @@ private fun greeting(): String = when (Calendar.getInstance().get(Calendar.HOUR_
  * No address bar. Signed out: account icon, SyncUp mark, search, shortcuts. Signed in: greeting +
  * avatar, search, admin announcement (strip), Work card (only when the user has work links),
  * shortcuts; the Music mini player floats above the bottom bar while something is loaded. Search is
- * a white card pill and the shortcuts sit in one white card (v7).
+ * a white card pill and the shortcuts sit in one white card (v7). The shortcuts start with the sites
+ * this person uses most, whose full ranking opens as its own page here.
  */
 @Composable
 internal fun NormalHome(
@@ -91,6 +95,8 @@ internal fun NormalHome(
     onSearch: () -> Unit,
     onVoice: () -> Unit,
     onOpenUrl: (String) -> Unit,
+    onOpenInNewTab: (String) -> Unit,
+    onRemoveSite: (UsedSite) -> Unit,
     onAvatar: () -> Unit,
     onOpenWork: () -> Unit,
     onOpenMusic: () -> Unit,
@@ -99,6 +105,19 @@ internal fun NormalHome(
     val cs = MaterialTheme.colorScheme
     val user = account.user
     val playerShown = LocalPlayer.current?.item != null
+    var allRecommended by rememberSaveable { mutableStateOf(false) }
+    if (allRecommended && BrowserSettings.recommendedSites) {
+        RecommendedPage(
+            onBack = { allRecommended = false },
+            onOpen = {
+                allRecommended = false
+                onOpenUrl(it)
+            },
+            onOpenInNewTab = onOpenInNewTab,
+            onRemove = onRemoveSite,
+        )
+        return
+    }
 
     Box(Modifier.fillMaxSize()) {
         Column(
@@ -217,7 +236,7 @@ internal fun NormalHome(
             // SyncUp's shortcut catalogue, by category.
             LaunchedEffect(Unit) { ShortcutCatalog.refresh() }
             Spacer(Modifier.height(20.dp))
-            CatalogShortcuts(onOpen = onOpenUrl)
+            CatalogShortcuts(onOpen = onOpenUrl, onOpenInNewTab = onOpenInNewTab, onRemoveSite = onRemoveSite, onShowRecommended = { allRecommended = true })
         }
         if (playerShown) {
             MiniPlayer(onOpen = onOpenMusic, modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 12.dp, vertical = 12.dp))
@@ -229,21 +248,45 @@ internal fun NormalHome(
 private const val PER_CATEGORY = 8
 
 /**
- * SyncUp's shortcut catalogue: category chips (All + each category), then on All up to
- * [PER_CATEGORY] of each category with "Show all", or a chosen category's whole grid.
+ * SyncUp's shortcut catalogue, all from the backend: category chips (All + each category), then on
+ * All up to [PER_CATEGORY] of each category with "Show all", or a chosen category's whole grid. Once
+ * History shows sites this person keeps using, All starts with them and they leave the cards below.
  */
 @Composable
-private fun CatalogShortcuts(onOpen: (String) -> Unit) {
+private fun CatalogShortcuts(
+    onOpen: (String) -> Unit,
+    onOpenInNewTab: (String) -> Unit,
+    onRemoveSite: (UsedSite) -> Unit,
+    onShowRecommended: () -> Unit,
+) {
+    val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val cats = ShortcutCatalog.categories
     val chosen = ShortcutCatalog.chosen?.let { id -> cats.firstOrNull { it.id == id } }
+    val showRecommended = BrowserSettings.recommendedSites
+    LaunchedEffect(showRecommended, cats, com.agani.syncup.sync.BrowserSync.dataVersion) {
+        if (showRecommended) RecommendedSites.refresh(context)
+    }
+    // A first start offline has no shortcuts yet: keep trying while this page shows.
+    LaunchedEffect(ShortcutCatalog.unreachable) {
+        while (ShortcutCatalog.unreachable) {
+            delay(15_000)
+            ShortcutCatalog.refresh()
+        }
+    }
+    val used = if (showRecommended) RecommendedSites.used.filterNot { it.key in BrowserSettings.removedSites } else emptyList()
+    val recommended = used.take(MostUsed.PLACES)
+    var pressed by remember { mutableStateOf<UsedSite?>(null) }
     Column {
-        if (cats.size > 1) {
+        if (cats.isEmpty() && recommended.isEmpty() && ShortcutCatalog.unreachable) {
+            InfoNote("Shortcuts will appear here once you're online.")
+        }
+        if (cats.size > 1 || recommended.isNotEmpty()) {
             // The chips run to the screen's edges (past the page's side margins) and keep the
             // chosen one in view.
             val chips = rememberLazyListState()
             LaunchedEffect(chosen?.id) {
-                val index = chosen?.let { ch -> cats.indexOfFirst { it.id == ch.id } + 1 } ?: 0
+                val index = chosen?.let { ch -> cats.indexOfFirst { it.id == ch.id } + if (recommended.isNotEmpty()) 2 else 1 } ?: 0
                 chips.animateScrollToItem((index - 1).coerceAtLeast(0))
             }
             LazyRow(
@@ -259,10 +302,14 @@ private fun CatalogShortcuts(onOpen: (String) -> Unit) {
                     .padding(bottom = 6.dp),
             ) {
                 item { CategoryChip("All", chosen == null) { ShortcutCatalog.chosen = null } }
+                if (recommended.isNotEmpty()) item { CategoryChip("Recommended", false, onShowRecommended) }
                 items(cats, key = { it.id }) { cat -> CategoryChip(cat.name, chosen?.id == cat.id) { ShortcutCatalog.chosen = cat.id } }
             }
         }
-        val shown = if (chosen != null) listOf(chosen) else cats
+        if (chosen == null && recommended.isNotEmpty()) {
+            RecommendedCard(recommended, used.size, onOpen, onLongPress = { pressed = it }, onShowAll = onShowRecommended)
+        }
+        val shown = if (chosen != null) listOf(chosen) else MostUsed.withoutRecommended(cats, recommended)
         Column { shown.forEach { cat ->
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 16.dp, bottom = 10.dp)) {
                 Text(cat.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = cs.onSurface)
@@ -284,6 +331,9 @@ private fun CatalogShortcuts(onOpen: (String) -> Unit) {
                 TileRows(items.map { item -> { CatalogTile(item, onOpen) } })
             }
         } }
+    }
+    pressed?.let { site ->
+        RecommendedSheet(site, onDismiss = { pressed = null }, onOpen = onOpen, onOpenInNewTab = onOpenInNewTab, onRemove = onRemoveSite)
     }
 }
 
@@ -325,7 +375,7 @@ private fun RowScope.CatalogTile(item: CatalogShortcut, onOpen: (String) -> Unit
 
 /** Tiles four to a row. */
 @Composable
-private fun TileRows(cells: List<@Composable RowScope.() -> Unit>) {
+internal fun TileRows(cells: List<@Composable RowScope.() -> Unit>) {
     Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
         cells.chunked(4).forEach { row ->
             Row(Modifier.fillMaxWidth()) {
