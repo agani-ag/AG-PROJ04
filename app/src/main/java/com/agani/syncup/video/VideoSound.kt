@@ -8,6 +8,7 @@ import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.Virtualizer
 import android.os.Build
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,8 +30,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BrightnessHigh
+import androidx.compose.material.icons.rounded.BrightnessLow
+import androidx.compose.material.icons.rounded.BrightnessMedium
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.automirrored.rounded.VolumeDown
+import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.ColorScheme
@@ -51,13 +57,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.agani.syncup.browser.ui.StepSlider
 import kotlinx.coroutines.delay
+import kotlin.math.log2
 import kotlin.math.roundToInt
 
 /** A sound style for videos — the phone's own sound effects, nothing downloaded. */
@@ -74,12 +84,12 @@ enum class SoundStyle(val key: String, val label: String) {
 }
 
 /**
- * How videos sound: the volume booster (100–200%) and a [SoundStyle]. Remembered for all videos and
+ * How videos sound: the volume booster (100–300%) and a [SoundStyle]. Remembered for all videos and
  * used by every player (the Video player, Watch Party) — each phone sets its own.
  */
 object VideoSound {
     private const val PREFS = "video_sound"
-    const val MAX_BOOST = 200
+    const val MAX_BOOST = 300
 
     var boost by mutableIntStateOf(100)
         private set
@@ -117,6 +127,107 @@ object VideoSound {
     }
 }
 
+/** A booster's gain in millibels: twice as loud (200%) = +10 dB, three times (300%) about +16 dB. */
+internal fun boostGain(boost: Int): Int = if (boost <= 100) 0 else (1000 * log2(boost / 100.0)).roundToInt()
+
+/**
+ * The players' sound level, for the right-side slide and the volume keys, one unit per 100%: 0..1 = the phone's
+ * volume, 1..2 = the booster's 100–200%, 2..3 = its 200–300%.
+ */
+internal object SoundLevel {
+    const val MAX = VideoSound.MAX_BOOST / 100f
+
+    fun of(volume: Float, boost: Int): Float = if (boost > 100) boost / 100f else volume.coerceIn(0f, 1f)
+
+    /** The booster at [level], in 5% steps. */
+    fun boostAt(level: Float): Int = 100 + (((level - 1f).coerceAtLeast(0f) * 100f) / 5f).roundToInt() * 5
+
+    /**
+     * A volume key: the phone's volume a step; past full volume the booster ([boost], changed through [setBoost])
+     * 10% at a time (down takes it off first).
+     */
+    fun key(context: Context, up: Boolean, boost: Int = VideoSound.boost, setBoost: (Int) -> Unit = { VideoSound.changeBoost(context, it) }) {
+        val audio = context.getSystemService(AudioManager::class.java)
+        val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        val volume = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        when {
+            up && volume >= max -> setBoost(boost + 10)
+            !up && boost > 100 -> setBoost(boost - 10)
+            else -> runCatching { audio.setStreamVolume(AudioManager.STREAM_MUSIC, (volume + if (up) 1 else -1).coerceIn(0, max), 0) }
+        }
+    }
+}
+
+/** Which bar shows at the side of a player while sliding: brightness on the left, volume on the right. */
+internal enum class PlayerBar { BRIGHTNESS, VOLUME }
+
+/** The left-side bar: the screen's brightness, 0..1. */
+@Composable
+internal fun BrightnessBar(brightness: Float, modifier: Modifier = Modifier, height: Dp = 150.dp) {
+    val icon = when {
+        brightness < .34f -> Icons.Rounded.BrightnessLow
+        brightness < .67f -> Icons.Rounded.BrightnessMedium
+        else -> Icons.Rounded.BrightnessHigh
+    }
+    LevelBar("${(brightness * 100).roundToInt()}%", brightness, listOf(Color.White), height, modifier) {
+        Icon(icon, "Brightness", tint = Color.White, modifier = Modifier.size(20.dp))
+    }
+}
+
+/** The volume bar's bands, one per 100%: the phone's volume, then the booster's 100–200% and 200–300%. */
+private val VolumeBands = listOf(Color.White, Color(0xFFF59E0B), Color(0xFFEF4444))
+
+/** The colour of the band [boost] (or full volume, 100) is in. */
+internal fun boostColor(boost: Int): Color = VolumeBands[((boost - 1) / 100).coerceIn(0, VolumeBands.lastIndex)]
+
+/**
+ * The right-side bar in three equal bands: the phone's volume (white), the booster's 100–200% (amber) and its
+ * 200–300% (red).
+ */
+@Composable
+internal fun VolumeBar(volume: Float, boost: Int, modifier: Modifier = Modifier, height: Dp = 150.dp) {
+    val boosted = boost > 100
+    LevelBar(if (boosted) "$boost%" else "${(volume * 100).roundToInt()}%", SoundLevel.of(volume, boost) / SoundLevel.MAX, VolumeBands, height, modifier) {
+        if (boosted) {
+            Text("BOOST", color = boostColor(boost), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = .5.sp)
+        } else {
+            val icon = when {
+                volume <= 0f -> Icons.AutoMirrored.Rounded.VolumeOff
+                volume < .5f -> Icons.AutoMirrored.Rounded.VolumeDown
+                else -> Icons.AutoMirrored.Rounded.VolumeUp
+            }
+            Icon(icon, "Volume", tint = Color.White, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+/** A slim upright bar filled from the bottom to [fraction], in equal [bands] of colour (the value text takes its band's). */
+@Composable
+private fun LevelBar(value: String, fraction: Float, bands: List<Color>, height: Dp, modifier: Modifier, foot: @Composable () -> Unit) {
+    val f = fraction.coerceIn(0f, 1f)
+    val n = bands.size
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier.width(52.dp).clip(RoundedCornerShape(26.dp)).background(Color.Black.copy(alpha = .8f)).padding(vertical = 12.dp),
+    ) {
+        val band = (kotlin.math.ceil(f * n - 1e-4f).toInt() - 1).coerceIn(0, n - 1)
+        Text(value, color = bands[band], fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Spacer(Modifier.height(8.dp))
+        Canvas(Modifier.width(6.dp).height(height).clip(RoundedCornerShape(3.dp))) {
+            drawRect(Color.White.copy(alpha = .25f))
+            bands.forEachIndexed { i, color ->
+                val from = i.toFloat() / n
+                val filled = (f - from).coerceIn(0f, 1f / n)
+                if (filled > 0f) drawRect(color, Offset(0f, size.height * (1f - from - filled)), Size(size.width, size.height * filled))
+                // Where one band ends and the next starts.
+                if (i > 0) drawRect(Color.Black.copy(alpha = .7f), Offset(0f, size.height * (1f - from) - 1.dp.toPx()), Size(size.width, 2.dp.toPx()))
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Box(Modifier.height(20.dp), contentAlignment = Alignment.Center) { foot() }
+    }
+}
+
 /**
  * The booster and style on one player's sound (its audio session). Create once per player, call
  * [apply] when the settings change, [release] with the player. Effects a phone lacks are skipped.
@@ -129,10 +240,10 @@ class SoundEffects(private val session: Int) {
     private var dynamics: DynamicsProcessing? = null
 
     fun apply(boost: Int, style: SoundStyle) {
-        // Boost: 100% = as is, 200% = +10 dB (about twice as loud), with the effect's own limiter.
+        // Boost: 100% = as is, 200% = +10 dB (about twice as loud), 300% ≈ +16 dB, with the effect's own limiter.
         runCatching {
             val l = loudness ?: LoudnessEnhancer(session).also { loudness = it }
-            l.setTargetGain(((boost - 100) * 10).coerceIn(0, 1000))
+            l.setTargetGain(boostGain(boost))
             l.enabled = boost > 100
         }
         runCatching {
@@ -198,7 +309,6 @@ class SoundEffects(private val session: Int) {
 
 private val PanelBg = Color(0xFF0F1115)
 private val Rose = Color(0xFFE11D48)
-private val Amber = Color(0xFFF59E0B)
 
 /** The red of the players' seek bar and progress lines. */
 internal val SeekRed = Color(0xFFEF4444)
@@ -291,7 +401,7 @@ fun SoundPanel(onClose: () -> Unit, modifier: Modifier = Modifier) {
         StepSlider(
             value = VideoSound.boost.toFloat(), range = 100f..VideoSound.MAX_BOOST.toFloat(), step = 10f, label = "boost",
             onChange = { VideoSound.changeBoost(context, ((it / 5f).roundToInt() * 5)) },
-            colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = if (VideoSound.boost > 100) Amber else Color.White, inactiveTrackColor = Color.White.copy(alpha = .25f)),
+            colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = boostColor(VideoSound.boost), inactiveTrackColor = Color.White.copy(alpha = .25f)),
         )
         if (VideoSound.boost > 150) {
             Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(top = 2.dp)) {

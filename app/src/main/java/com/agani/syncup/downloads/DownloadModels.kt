@@ -127,6 +127,8 @@ class DownloadTask(
     /** 0..1 for each part (the small bars). */
     var partProgress by mutableStateOf<List<Float>>(emptyList())
     var error by mutableStateOf<String?>(null)
+    /** While running: why it's not moving ("Reconnecting to Studio One…"), or null. */
+    var note by mutableStateOf<String?>(null)
     var finishedAt by mutableLongStateOf(0L)
 
     /** The saved file: a MediaStore content:// address (Android 10+) or a file path (older). */

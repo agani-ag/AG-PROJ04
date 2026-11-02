@@ -13,6 +13,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Rational
+import android.view.KeyEvent
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -65,7 +66,6 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Bluetooth
-import androidx.compose.material.icons.rounded.BrightnessMedium
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.Forward10
@@ -149,14 +149,17 @@ import com.agani.syncup.music.SectionHead
 import com.agani.syncup.music.ToolTile
 import com.agani.syncup.music.ToolTint
 import com.agani.syncup.music.cardSlice
+import com.agani.syncup.video.BrightnessBar
+import com.agani.syncup.video.PlayerBar
 import com.agani.syncup.video.SeekLine
 import com.agani.syncup.video.SoundEffects
+import com.agani.syncup.video.SoundLevel
 import com.agani.syncup.video.SoundPanel
+import com.agani.syncup.video.VolumeBar
 import com.agani.syncup.video.VideoSeekBar
 import com.agani.syncup.video.VideoSound
 import com.agani.syncup.video.playerScheme
 import kotlin.math.abs
-import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 private val Rose = Color(0xFFE11D48)
@@ -173,6 +176,7 @@ class WatchPartyActivity : ComponentActivity() {
     private var player: ExoPlayer? = null
     private var effects: SoundEffects? = null
     private var inPip by mutableStateOf(false)
+    private var volumeKeyAt by mutableLongStateOf(0L)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -198,7 +202,7 @@ class WatchPartyActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = playerScheme(Rose)) {
                 LaunchedEffect(VideoSound.boost, VideoSound.style) { fx.apply(VideoSound.boost, VideoSound.style) }
-                WatchScreen(exo, inPip, visible = { lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) }, onBack = { finish() }, onPip = { enterPip() })
+                WatchScreen(exo, inPip, volumeKeyAt, visible = { lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) }, onBack = { finish() }, onPip = { enterPip() })
             }
         }
     }
@@ -227,6 +231,17 @@ class WatchPartyActivity : ComponentActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         inPip = isInPictureInPictureMode
+    }
+
+    // The volume keys: this phone's volume, then the booster past full volume, shown on the player's own bar.
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val up = event.keyCode == KeyEvent.KEYCODE_VOLUME_UP
+        if (inPip || !up && event.keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) return super.dispatchKeyEvent(event)
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            SoundLevel.key(this, up)
+            volumeKeyAt = SystemClock.uptimeMillis()
+        }
+        return true
     }
 
     override fun onStop() {
@@ -284,7 +299,7 @@ private fun mediaSource(context: Context, v: WatchVideo, subtitles: Uri?): Media
 @OptIn(UnstableApi::class)
 @kotlin.OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun WatchScreen(exo: ExoPlayer, inPip: Boolean, visible: () -> Boolean, onBack: () -> Unit, onPip: () -> Unit) {
+private fun WatchScreen(exo: ExoPlayer, inPip: Boolean, volumeKeyAt: Long, visible: () -> Boolean, onBack: () -> Unit, onPip: () -> Unit) {
     val context = LocalContext.current
     val activity = context as ComponentActivity
     var position by remember { mutableLongStateOf(0L) }
@@ -346,6 +361,26 @@ private fun WatchScreen(exo: ExoPlayer, inPip: Boolean, visible: () -> Boolean, 
             activity.window.attributes.screenBrightness.takeIf { it >= 0 }
                 ?: (runCatching { Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS) }.getOrDefault(128) / 255f),
         )
+    }
+    // The bar at the side while sliding or pressing a volume key (the controls step aside for it).
+    var bar by remember { mutableStateOf<PlayerBar?>(null) }
+    var barAt by remember { mutableLongStateOf(0L) }
+    fun showBar(b: PlayerBar) {
+        bar = b
+        barAt = System.currentTimeMillis()
+        showControls = false
+    }
+    LaunchedEffect(barAt) {
+        if (bar != null) {
+            delay(1_000)
+            bar = null
+        }
+    }
+    LaunchedEffect(volumeKeyAt) {
+        if (volumeKeyAt > 0) {
+            volume = audio.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVol
+            showBar(PlayerBar.VOLUME)
+        }
     }
 
     // ---------------------------------------------------------------- keeping this phone at the party's moment
@@ -607,7 +642,7 @@ private fun WatchScreen(exo: ExoPlayer, inPip: Boolean, visible: () -> Boolean, 
                     .pointerInput(locked) {
                         if (locked) return@pointerInput
                         var scale = 1f
-                        // The right-side slide: 0..1 = volume, 1..2 = boost, kept unrounded while sliding.
+                        // The right-side slide: 0..1 = volume, 1..3 = boost, kept unrounded while sliding.
                         var level = -1f
                         var levelAt = 0L
                         detectTransformGestures { centroid, pan, gestureZoom, _ ->
@@ -620,25 +655,29 @@ private fun WatchScreen(exo: ExoPlayer, inPip: Boolean, visible: () -> Boolean, 
                                 if (centroid.x < size.width / 2) {
                                     brightness = (brightness + delta).coerceIn(0.01f, 1f)
                                     activity.window.attributes = activity.window.attributes.apply { screenBrightness = brightness }
-                                    show(Icons.Rounded.BrightnessMedium, "Brightness ${(brightness * 100).toInt()}%")
+                                    showBar(PlayerBar.BRIGHTNESS)
                                 } else {
-                                    // 0..1 = the phone's volume, 1..2 = the booster on top (100–200%). Just this phone.
+                                    // 0..1 = the phone's volume, 1..3 = the booster on top (100–300%). Just this phone.
                                     val now = System.currentTimeMillis()
-                                    if (level < 0f || now - levelAt > 400) {
-                                        level = if (VideoSound.boost > 100) 1f + (VideoSound.boost - 100) / 100f else volume
-                                    }
+                                    if (level < 0f || now - levelAt > 400) level = SoundLevel.of(volume, VideoSound.boost)
                                     levelAt = now
-                                    level = (level + delta).coerceIn(0f, 2f)
+                                    level = (level + delta).coerceIn(0f, SoundLevel.MAX)
                                     volume = level.coerceAtMost(1f)
                                     audio.setStreamVolume(AudioManager.STREAM_MUSIC, (volume * maxVol).toInt(), 0)
-                                    VideoSound.changeBoost(context, 100 + (((level - 1f).coerceAtLeast(0f) * 100f) / 5f).roundToInt() * 5)
-                                    if (VideoSound.boost > 100) show(Icons.AutoMirrored.Rounded.VolumeUp, "Boost ${VideoSound.boost}%")
-                                    else show(Icons.AutoMirrored.Rounded.VolumeUp, "Volume ${(volume * 100).toInt()}%")
+                                    VideoSound.changeBoost(context, SoundLevel.boostAt(level))
+                                    showBar(PlayerBar.VOLUME)
                                 }
                             }
                         }
                     },
             )
+            // Brightness on the left, volume (and the booster above it) on the right; shorter on the upright video.
+            val barHeight = if (full) 150.dp else 64.dp
+            when (bar) {
+                PlayerBar.BRIGHTNESS -> BrightnessBar(brightness, Modifier.align(Alignment.CenterStart).windowInsetsPadding(WindowInsets.safeDrawing).padding(start = 24.dp), barHeight)
+                PlayerBar.VOLUME -> VolumeBar(volume, VideoSound.boost, Modifier.align(Alignment.CenterEnd).windowInsetsPadding(WindowInsets.safeDrawing).padding(end = 24.dp), barHeight)
+                null -> Unit
+            }
             hint?.let { (icon, text) ->
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

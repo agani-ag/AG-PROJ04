@@ -8,7 +8,14 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import com.agani.syncup.stationfiles.FilesTab
+import com.agani.syncup.stationfiles.FolderRef
+import com.agani.syncup.stationfiles.FolderStackSaver
+import com.agani.syncup.stationfiles.StationFolderScreen
+import com.agani.syncup.stationfiles.Stations
+import com.agani.syncup.stationfiles.WifiTag
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -40,7 +47,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -90,6 +100,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -98,6 +110,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.repeatOnLifecycle
 import com.agani.syncup.browser.ui.EmptyState
 import com.agani.syncup.browser.ui.PillButton
 import com.agani.syncup.data.RadioChannel
@@ -110,6 +123,7 @@ import com.agani.syncup.ui.theme.appCard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Party's soft pink (the Party button, the "in a party" bar). */
 private val PartyTint = ToolTint.PINK
@@ -130,10 +144,13 @@ fun MusicScreen(onBack: () -> Unit, onOpenParty: () -> Unit = {}) {
         onOpenParty()
     })
 
+    // The volume keys go on past full volume into the boost here, shown on a bar at the right.
+    MusicVolumeKeys()
     Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
         ToolTopBar("Music", onBack)
         Box(Modifier.weight(1f)) {
-            SongsTab(player, onOpenPlayer = { nowPlaying = true }, onParty = { songs -> startParty(songs, 0L) }, onOpenParty = onOpenParty)
+            SongsTab(player, onOpenPlayer = { nowPlaying = true }, onOpenParty = onOpenParty)
+            if (!nowPlaying) MusicVolumeBar(Modifier.align(Alignment.CenterEnd).padding(end = 16.dp))
         }
         AnimatedVisibility(
             visible = player.item != null,
@@ -168,32 +185,16 @@ fun RadioScreen(
     val player = LocalPlayer.current ?: return
     val cs = MaterialTheme.colorScheme
     var nowPlaying by rememberSaveable { mutableStateOf(false) }
-    val onParty = partyTab || !liveStations
-
-    Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
-        ToolTopBar("Radio", onBack)
-        if (liveStations) {
-            PillTabs(
-                listOf("Party", "Live stations"),
-                selected = if (onParty) 0 else 1,
-                onSelect = { onTab(it == 0) },
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp),
-            )
-        }
-        Box(Modifier.weight(1f)) {
-            if (onParty) {
-                com.agani.syncup.party.PartyTab()
-            } else {
-                Column {
-                    NoteBox(
-                        Icons.Rounded.Info,
-                        "Private broadcasts via this organization's own AudioSync only — not public radio stations.",
-                        Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
-                    )
-                    RadioTab(player, loadStations, onOpenPlayer = { nowPlaying = true })
-                }
-            }
-        }
+    // Files (stations' shared folders) lives with Live stations: both come from AudioSync, both need the admin's switch.
+    var onFiles by rememberSaveable { mutableStateOf(false) }
+    var folders by rememberSaveable(stateSaver = FolderStackSaver) { mutableStateOf(emptyList<FolderRef>()) }
+    LaunchedEffect(partyTab) { if (partyTab) onFiles = false }
+    val tab = when {
+        !liveStations || (partyTab && !onFiles) -> 0
+        onFiles -> 2
+        else -> 1
+    }
+    val mini: @Composable () -> Unit = {
         AnimatedVisibility(
             visible = player.item != null,
             enter = slideInVertically(tween(220)) { it } + fadeIn(tween(220)),
@@ -203,12 +204,54 @@ fun RadioScreen(
         }
     }
 
+    // Stations and their files play in the Music player: the volume keys go on into its boost (not on Party).
+    val inFolder = folders.isNotEmpty() && liveStations
+    if (inFolder || tab != 0) MusicVolumeKeys()
+    if (inFolder) {
+        BackHandler { folders = folders.dropLast(1) }
+        Box(Modifier.fillMaxSize()) {
+            StationFolderScreen(folders.last(), onBack = { folders = folders.dropLast(1) }, onOpen = { folders = folders + it }, bottom = mini)
+            if (!nowPlaying) MusicVolumeBar(Modifier.align(Alignment.CenterEnd).padding(end = 16.dp))
+        }
+    } else {
+        Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
+            ToolTopBar("Radio", onBack)
+            if (liveStations) {
+                PillTabs(
+                    listOf("Party", "Live stations", "Files"),
+                    selected = tab,
+                    onSelect = {
+                        onFiles = it == 2
+                        if (it != 2) onTab(it == 0)
+                    },
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp),
+                )
+            }
+            Box(Modifier.weight(1f)) {
+                when (tab) {
+                    0 -> com.agani.syncup.party.PartyTab()
+                    2 -> FilesTab(onOpen = { folders = listOf(it) })
+                    else -> Column {
+                        NoteBox(
+                            Icons.Rounded.Info,
+                            "Private broadcasts via this organization's own AudioSync only — not public radio stations.",
+                            Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
+                        )
+                        RadioTab(player, loadStations, onOpenPlayer = { nowPlaying = true })
+                    }
+                }
+                if (tab != 0 && !nowPlaying) MusicVolumeBar(Modifier.align(Alignment.CenterEnd).padding(end = 16.dp))
+            }
+            mini()
+        }
+    }
+
     if (nowPlaying && player.item != null) NowPlayingSheet(player, onDismiss = { nowPlaying = false })
 }
 
 // ============================================================================ songs
 @Composable
-private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit, onParty: (List<Song>) -> Unit, onOpenParty: () -> Unit) {
+private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit, onOpenParty: () -> Unit) {
     val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
     var granted by remember { mutableStateOf(LocalSongs.canRead(context)) }
@@ -219,6 +262,9 @@ private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit, onParty: (L
     }
     var songs by remember { mutableStateOf<List<Song>?>(null) } // null while loading
     var query by rememberSaveable { mutableStateOf("") }
+    // Folders: the songs by the folder they're in; [openFolder] is the one open (its path).
+    var byFolder by rememberSaveable { mutableStateOf(false) }
+    var openFolder by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Re-read on every return to the app: picks up songs added meanwhile, and access given in Settings.
     var reload by remember { mutableIntStateOf(0) }
@@ -262,6 +308,11 @@ private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit, onParty: (L
                 if (q.isEmpty()) all
                 else all.filter { it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true) }
             }
+            val folder = openFolder.takeIf { byFolder }
+            val shown = remember(list, folder) { if (folder == null) list else list.filter { it.folder == folder } }
+            val folders = remember(list) { list.groupBy { it.folder }.toList().sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { folderName(it.first) }) }
+            val showFolders = byFolder && folder == null
+            if (folder != null) BackHandler { openFolder = null }
             // While this phone hosts a party, Music adds to it instead of playing on its own.
             val hosting = Party.role == PartyRole.HOST
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp)) {
@@ -319,28 +370,38 @@ private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit, onParty: (L
                             val small = PaddingValues(horizontal = 10.dp)
                             if (hosting) {
                                 Button(
-                                    onClick = { Party.addSongs(list.filterNot { Party.isQueued(it.uri) }) },
+                                    onClick = { Party.addSongs(shown.filterNot { Party.isQueued(it.uri) }) },
                                     colors = ButtonDefaults.buttonColors(containerColor = PartyTint.tile, contentColor = PartyTint.icon),
-                                    contentPadding = small, modifier = Modifier.weight(1f).height(40.dp),
+                                    contentPadding = small, modifier = Modifier.weight(2f).height(40.dp),
                                 ) { ButtonLabel(Icons.Rounded.Add, "Add all to party") }
                             } else {
-                                Button(onClick = { player.playSongs(list, 0) }, contentPadding = small, modifier = Modifier.weight(1f).height(40.dp)) {
+                                Button(onClick = { player.playSongs(shown, 0) }, contentPadding = small, modifier = Modifier.weight(1f).height(40.dp)) {
                                     ButtonLabel(Icons.Rounded.PlayArrow, "Play")
                                 }
-                                FilledTonalButton(onClick = { player.playSongs(list, 0, shuffled = true) }, contentPadding = small, modifier = Modifier.weight(1f).height(40.dp)) {
+                                FilledTonalButton(onClick = { player.playSongs(shown, 0, shuffled = true) }, contentPadding = small, modifier = Modifier.weight(1f).height(40.dp)) {
                                     ButtonLabel(Icons.Rounded.Shuffle, "Shuffle")
                                 }
-                                // Play the listed songs at a party: everyone nearby hears them in sync.
-                                Button(
-                                    onClick = { onParty(list) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = PartyTint.tile, contentColor = PartyTint.icon),
-                                    contentPadding = small, modifier = Modifier.weight(1f).height(40.dp),
-                                ) { ButtonLabel(Icons.Rounded.Groups, "Party") }
                             }
+                            // Songs by folder (on: tinted).
+                            FilledTonalButton(
+                                onClick = {
+                                    byFolder = !byFolder
+                                    openFolder = null
+                                },
+                                colors = if (byFolder) ButtonDefaults.filledTonalButtonColors(containerColor = cs.primaryContainer, contentColor = cs.primary)
+                                else ButtonDefaults.filledTonalButtonColors(),
+                                contentPadding = small, modifier = Modifier.weight(1f).height(40.dp),
+                            ) { ButtonLabel(Icons.Rounded.Folder, "Folders") }
                         }
                     }
                 }
-                item(key = "count") { SectionHead("${list.size} song${if (list.size == 1) "" else "s"}") }
+                item(key = "count") {
+                    when {
+                        folder != null -> FolderHead(folder, shown.size) { openFolder = null }
+                        showFolders -> SectionHead("${folders.size} folder${if (folders.size == 1) "" else "s"}")
+                        else -> SectionHead("${list.size} song${if (list.size == 1) "" else "s"}")
+                    }
+                }
                 if (list.isEmpty()) {
                     item(key = "none") {
                         Text(
@@ -349,19 +410,65 @@ private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit, onParty: (L
                         )
                     }
                 }
-                itemsIndexed(list, key = { _, s -> s.id }) { index, song ->
-                    val slice = Modifier.cardSlice(first = index == 0, last = index == list.lastIndex)
-                    if (hosting) {
-                        val queued = Party.isQueued(song.uri)
-                        SongRow(song, slice, current = false, playing = false, partyAdded = queued) { if (!queued) Party.addSongs(listOf(song)) }
-                    } else {
-                        val current = song.id == player.songId
-                        SongRow(song, slice, current, playing = current && player.isPlaying) {
-                            if (current) onOpenPlayer() else player.playSongs(list, index)
+                if (showFolders) {
+                    itemsIndexed(folders, key = { _, f -> "folder:${f.first}" }) { index, (path, inIt) ->
+                        FolderRow(path, inIt.size, Modifier.cardSlice(first = index == 0, last = index == folders.lastIndex)) { openFolder = path }
+                    }
+                } else {
+                    itemsIndexed(shown, key = { _, s -> s.id }) { index, song ->
+                        val slice = Modifier.cardSlice(first = index == 0, last = index == shown.lastIndex)
+                        if (hosting) {
+                            val queued = Party.isQueued(song.uri)
+                            SongRow(song, slice, current = false, playing = false, partyAdded = queued) { if (!queued) Party.addSongs(listOf(song)) }
+                        } else {
+                            val current = song.id == player.songId
+                            SongRow(song, slice, current, playing = current && player.isPlaying) {
+                                if (current) onOpenPlayer() else player.playSongs(shown, index)
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+/** A folder's name from its path ("Music/Tamil" → "Tamil"). */
+private fun folderName(path: String) = path.substringAfterLast('/').ifBlank { "Other songs" }
+
+/** A folder of songs: one slice of the list's card. */
+@Composable
+private fun FolderRow(path: String, count: Int, slice: Modifier, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = slice.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 66.dp).padding(horizontal = 14.dp, vertical = 9.dp),
+    ) {
+        Box(Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(cs.primaryContainer), contentAlignment = Alignment.Center) {
+            Icon(Icons.Rounded.Folder, null, tint = cs.primary)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(folderName(path), fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                "$count song${if (count == 1) "" else "s"}" + if (path.isNotBlank()) " · $path" else "",
+                fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = cs.onSurfaceVariant)
+    }
+}
+
+/** Above an open folder's songs: back to the folders, its name and how many. */
+@Composable
+private fun FolderHead(path: String, count: Int, onBack: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp)) {
+        IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "All folders") }
+        Spacer(Modifier.width(4.dp))
+        Column(Modifier.weight(1f)) {
+            Text(folderName(path), fontSize = 16.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("$count song${if (count == 1) "" else "s"}", fontSize = 12.5.sp, color = cs.onSurfaceVariant)
         }
     }
 }
@@ -426,17 +533,31 @@ private fun RadioTab(player: PlayerHandle, loadStations: suspend () -> Result<Ra
     var stations by remember { mutableStateOf<List<RadioChannel>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var listError by remember { mutableStateOf<String?>(null) }
-    // Stations come and go (a broadcaster goes on / off air), so the list refreshes while it's open.
-    LaunchedEffect(Unit) {
-        while (true) {
-            loadStations().fold(
-                onSuccess = { stations = it.channels; listError = null },
-                onFailure = { listError = it.message ?: "Couldn't load stations." },
-            )
-            loading = false
-            delay(15_000)
+    val owner = LocalLifecycleOwner.current
+    // Stations come and go (a broadcaster goes on / off air), so the list refreshes while it's on screen,
+    // and sooner when the live socket of the station being played says it stopped.
+    LaunchedEffect(owner) {
+        owner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                loadStations().fold(
+                    onSuccess = {
+                        Stations.accept(it) // so a station played from here can use its own Wi-Fi
+                        stations = it.channels
+                        listError = null
+                    },
+                    onFailure = { listError = it.message ?: "Couldn't load stations." },
+                )
+                loading = false
+                withTimeoutOrNull(15_000) {
+                    RadioLive.changed.receive()
+                    delay(2_000) // the station's goodbye reaches the server a moment after its socket says so
+                }
+            }
         }
     }
+    // The station being played shows what its live socket says; the others, what the list says.
+    val liveNow = RadioLive.now
+    val shown = stations.map { s -> if (liveNow != null && player.isOn(s)) s.copy(nowPlaying = liveNow.title, listeners = liveNow.listeners) else s }
 
     when {
         loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -455,10 +576,10 @@ private fun RadioTab(player: PlayerHandle, loadStations: suspend () -> Result<Ra
                     )
                 }
             }
-            itemsIndexed(stations, key = { _, s -> s.id }) { index, station ->
-                val active = station.id == player.stationId
-                StationRow(station, Modifier.cardSlice(first = index == 0, last = index == stations.lastIndex), active, playing = active && player.isPlaying) {
-                    if (active) onOpenPlayer() else player.playRadio(stations, index)
+            itemsIndexed(shown, key = { _, s -> s.id }) { index, station ->
+                val active = player.isOn(station)
+                StationRow(station, Modifier.cardSlice(first = index == 0, last = index == shown.lastIndex), active, playing = active && player.isPlaying, onWifi = active && station.streamUrl == Stations.directRadio) {
+                    if (active) onOpenPlayer() else player.playRadio(shown, index)
                 }
             }
         }
@@ -469,7 +590,7 @@ private fun RadioTab(player: PlayerHandle, loadStations: suspend () -> Result<Ra
 private val STATION_TINTS = listOf(ToolTint.ORANGE, ToolTint.ROSE, ToolTint.VIOLET, ToolTint.CYAN, ToolTint.GREEN, ToolTint.BLUE, ToolTint.AMBER)
 
 @Composable
-private fun StationRow(station: RadioChannel, slice: Modifier, active: Boolean, playing: Boolean, onClick: () -> Unit) {
+private fun StationRow(station: RadioChannel, slice: Modifier, active: Boolean, playing: Boolean, onWifi: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val tint = STATION_TINTS[(station.name.hashCode() and 0x7fffffff) % STATION_TINTS.size]
     Row(
@@ -502,8 +623,25 @@ private fun StationRow(station: RadioChannel, slice: Modifier, active: Boolean, 
             )
         }
         Spacer(Modifier.width(8.dp))
+        if (onWifi) {
+            WifiTag()
+            Spacer(Modifier.width(8.dp))
+        }
         if (playing) EqBars() else Icon(if (active) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (active) "Paused" else "Play", tint = cs.primary)
     }
+}
+
+/** How the station's song and listeners reach the phone: WS (its live socket) or HTTP (the regular list check). */
+@Composable
+private fun RadioLinkTag(ws: Boolean) {
+    val cs = MaterialTheme.colorScheme
+    Text(
+        if (ws) "WS" else "HTTP", fontSize = 11.sp, lineHeight = 14.sp, fontWeight = FontWeight.SemiBold,
+        color = if (ws) ToolTint.GREEN.icon else cs.onSurfaceVariant,
+        modifier = Modifier.clip(RoundedCornerShape(50)).background(if (ws) ToolTint.GREEN.tile else cs.surfaceContainer)
+            .semantics { contentDescription = if (ws) "Live updates: WebSocket" else "Updates: HTTP" }
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
 }
 
 // ============================================================================ now playing
@@ -514,7 +652,11 @@ private fun NowPlayingSheet(player: PlayerHandle, onDismiss: () -> Unit, onPlayA
         onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
     ) {
-        NowPlaying(player, onPlayAtParty)
+        MusicVolumeKeys()
+        Box {
+            NowPlaying(player, onPlayAtParty)
+            MusicVolumeBar(Modifier.align(Alignment.CenterEnd).padding(end = 12.dp))
+        }
     }
 }
 
@@ -554,12 +696,24 @@ private fun NowPlaying(player: PlayerHandle, onPlayAtParty: (() -> Unit)? = null
             player.subtitle, fontSize = 14.sp, lineHeight = 20.sp, color = cs.onSurfaceVariant,
             maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
         )
+        // A song from a station's files that's coming straight from its PC.
+        val fileKey = player.item?.mediaId?.takeIf { it.startsWith(FILE_ID) }?.let { id -> Stations.onSameWifi.firstOrNull { id.startsWith(FILE_ID + it) } }
+        if (fileKey != null) {
+            Spacer(Modifier.height(6.dp))
+            WifiTag()
+        }
         Spacer(Modifier.height(14.dp))
         if (radio) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(64.dp)) {
                 Icon(Icons.Rounded.GraphicEq, null, tint = cs.primary, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Live — no rewinding", fontSize = 13.sp, color = cs.onSurfaceVariant)
+                Text(if (player.buffering) "Connecting…" else "Live — no rewinding", fontSize = 13.sp, color = cs.onSurfaceVariant)
+                Spacer(Modifier.width(8.dp))
+                RadioLinkTag(ws = player.liveSocketOn)
+                if (player.item?.mediaMetadata?.extras?.getString(EXTRA_STREAM_URL).let { it != null && it == Stations.directRadio }) {
+                    Spacer(Modifier.width(6.dp))
+                    WifiTag()
+                }
             }
         } else {
             SeekBar(player)

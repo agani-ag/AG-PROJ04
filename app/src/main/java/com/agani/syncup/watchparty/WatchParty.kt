@@ -109,13 +109,25 @@ object WatchParty {
     /** Nobody waits longer than this for a slow phone. */
     private const val GATE_TIMEOUT_MS = 20_000L
     /** Pieces on their way to one guest at a time. */
-    private const val WINDOW = 8
+    private const val WINDOW = 4
     /** A piece on its way that hasn't moved for this long is taken as lost: its place frees up and it goes again. */
     private const val STUCK_MS = 20_000L
     /** The queue in a "state" stays well under Nearby's 32 KB message limit (bytes). */
     private const val STATE_QUEUE_BYTES = 18_000
     const val MAX_GUESTS = GroupLink.MAX_PHONES - 1
-    private const val CHUNK = PartyWire.CHUNK
+    /** A video goes in 1 MB pieces, each a Nearby stream (far quicker than 30 KB messages). */
+    private const val CHUNK = 1 shl 20
+    /** How far past a guest's reading point the host sends: about 3 minutes of the video (the user's pick). */
+    private const val AHEAD_MS = 180_000L
+    private const val MIN_AHEAD = 32L * 1024 * 1024
+    /** Ahead, when the video's length isn't known. */
+    private const val UNKNOWN_AHEAD = 256L * 1024 * 1024
+    /** Bluetooth carries roughly this much; a video needing more stalls on it (bytes a second). */
+    private const val BLUETOOTH_BYTES_PER_S = 120_000L
+
+    /** About [AHEAD_MS] of [v], in bytes (from its size and length). */
+    private fun aheadBytes(v: WatchVideo): Long =
+        if (v.durationMs > 0) (v.size * AHEAD_MS / v.durationMs).coerceAtLeast(MIN_AHEAD) else UNKNOWN_AHEAD
 
     private lateinit var app: Context
     private val io = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -202,6 +214,8 @@ object WatchParty {
     private class Guest(val endpointId: String, val name: String) {
         val sent = ConcurrentHashMap<Int, BitSet>()
         val cursor = ConcurrentHashMap<Int, Int>()
+        /** Where the guest's player is reading (bytes), from its "at" and "want": sending stays a few minutes past it. */
+        val readAt = ConcurrentHashMap<Int, Long>()
         val inFlight = ConcurrentHashMap<Long, Pair<Int, Int>>()
         /** Payload id → when it last moved (sent, or bytes reported going). */
         val movedAt = ConcurrentHashMap<Long, Long>()
@@ -301,7 +315,7 @@ object WatchParty {
                 val video = WatchVideo(id, v.title, v.durationMs, v.size, v.mime, if (source.isLink) source.uri else "", myName)
                 if (!source.isLink) {
                     localUris[id] = source.uri
-                    tracks[id] = TrackData.local(app, Uri.parse(source.uri), v.size)
+                    tracks[id] = TrackData.local(app, Uri.parse(source.uri), v.size, CHUNK)
                 }
                 queue.add(video)
                 val from = source.startMs.takeIf { v.durationMs <= 0 || it < v.durationMs - 1_000 } ?: 0L
@@ -427,6 +441,14 @@ object WatchParty {
                 role = WpRole.GUEST
                 phase = if (GroupLink.phase == GroupPhase.RECONNECTING) WpPhase.RECONNECTING else WpPhase.IN_ROOM
                 helloSent = false
+                lastReported = -1L
+                heartbeat?.cancel()
+                heartbeat = io.launch {
+                    while (isActive) {
+                        delay(2_000)
+                        main.post { reportReadPoint() }
+                    }
+                }
                 if (clock.count >= 6) sayHello() else main.postDelayed({ sayHello() }, 2_000)
                 wantsPlayer = true
                 expectPlayer()
@@ -494,8 +516,18 @@ object WatchParty {
                 val id = o.optInt("track")
                 val piece = o.optInt("piece")
                 g.cursor[id] = piece
+                g.readAt[id] = piece.toLong() * CHUNK // a seek: the window moves there
                 // Missing although sent (and not on its way): send it again.
                 if (g.inFlight.values.none { it.first == id && it.second == piece }) g.sent[id]?.let { synchronized(it) { it.clear(piece) } }
+                g.wake.trySend(Unit)
+            }
+            "at" -> {
+                val id = o.optInt("track")
+                val at = o.optLong("byte")
+                g.readAt[id] = at
+                // Pieces it no longer keeps (well behind its reading point) count as not sent: a seek back gets them again.
+                val behind = ((at - TrackData.KEEP_BEHIND) / CHUNK).toInt()
+                if (behind > 0) g.sent[id]?.let { synchronized(it) { it.clear(0, behind) } }
                 g.wake.trySend(Unit)
             }
             "ready" -> if (o.optInt("track") == currentId) {
@@ -533,6 +565,16 @@ object WatchParty {
         gateTimer?.let { main.removeCallbacks(it) }
         gateTimer = Runnable { if (stage == WpStage.PREPARING) startNow() }.also { main.postDelayed(it, GATE_TIMEOUT_MS) }
         broadcastState()
+        current?.let { v ->
+            // Sending starts about where playing will (each guest's player then says exactly where it reads).
+            if (v.durationMs > 0 && v.size > 0) guests.values.forEach { it.readAt[v.id] = v.size * posMs / v.durationMs }
+            // A heavy video can't keep up over Bluetooth: say so, rather than "getting ready" for ever.
+            val slow = GroupLink.slowPeople
+            if (!v.isLink && v.durationMs > 0 && slow.isNotEmpty() && v.size * 1000 / v.durationMs > BLUETOOTH_BYTES_PER_S) {
+                notice = "${slow.joinToString()} ${if (slow.size == 1) "is" else "are"} on Bluetooth, too slow for this video. " +
+                    "Turn on Wi-Fi on both phones (no need to join a network)."
+            }
+        }
         guests.values.forEach { it.wake.trySend(Unit) }
     }
 
@@ -658,7 +700,7 @@ object WatchParty {
             val sent = g.sentOf(v.id)
             synchronized(sent) { sent.set(piece) }
             g.cursor[v.id] = piece + 1
-            val payload = GroupLink.payload(GroupMode.WATCH, PartyWire.chunk(v.id, offset, buf, n))
+            val payload = GroupLink.streamPayload(GroupMode.WATCH, PartyWire.chunk(v.id, offset, buf, n))
             g.inFlight[payload.id] = v.id to piece
             g.movedAt[payload.id] = System.currentTimeMillis()
             if (!GroupLink.send(g.endpointId, payload)) {
@@ -680,14 +722,20 @@ object WatchParty {
         }
     }
 
+    /**
+     * The next piece for [g]: from where it asked last, up to about 3 minutes past where its player reads;
+     * then nothing until it reads further (a 10 GB film needs only a few hundred MB on a guest).
+     */
     private fun nextFor(g: Guest): Pair<WatchVideo, Int>? {
         val v = queue.toList().firstOrNull { it.id == currentId } ?: return null
         if (v.isLink || v.size <= 0 || !tracks.containsKey(v.id)) return null
         val count = ((v.size + CHUNK - 1) / CHUNK).toInt()
+        val base = ((g.readAt[v.id] ?: 0L) / CHUNK).toInt().coerceIn(0, count - 1)
+        val limit = (((g.readAt[v.id] ?: 0L) + aheadBytes(v)) / CHUNK).toInt().coerceIn(0, count - 1)
         val sent = g.sentOf(v.id)
-        val from = (g.cursor[v.id] ?: 0).coerceIn(0, count)
+        val from = (g.cursor[v.id] ?: base).coerceIn(0, count)
         val piece = synchronized(sent) {
-            sent.nextClearBit(from).takeIf { it < count } ?: sent.nextClearBit(0).takeIf { it < count }
+            sent.nextClearBit(from).takeIf { it <= limit } ?: sent.nextClearBit(base).takeIf { it <= limit }
         } ?: return null
         return v to piece
     }
@@ -738,6 +786,17 @@ object WatchParty {
     }
 
     // ================================================================== guests
+    private var lastReported = -1L
+
+    /** Guest: where its player reads in the current video, every 2 s, so the host sends just ahead of it. */
+    private fun reportReadPoint() {
+        if (role != WpRole.GUEST || phase != WpPhase.IN_ROOM) return
+        val at = tracks[currentId]?.lastRead ?: return
+        if (at == lastReported) return
+        lastReported = at
+        sendToHost(PartyWire.msg("at").put("track", currentId).put("byte", at))
+    }
+
     private fun sayHello() {
         if (helloSent || phase != WpPhase.IN_ROOM) return
         helloSent = true
@@ -762,14 +821,15 @@ object WatchParty {
         val list = mutableListOf<WatchVideo>()
         o.optJSONArray("queue")?.let { a -> for (i in 0 until a.length()) list.add(WatchVideo.fromJson(a.getJSONObject(i))) }
         val newCurrent = o.optInt("current", -1)
-        // A cache only for the video being watched (videos are big); old ones go.
+        // A cache only for the video being watched, and only around where it plays: about 3 minutes ahead and a
+        // little behind (a 10 GB film needs a few hundred MB, not 10 GB). Old ones go.
         list.firstOrNull { it.id == newCurrent }?.let { v ->
             if (!v.isLink && v.size > 0 && !tracks.containsKey(v.id)) {
-                val free = app.cacheDir.usableSpace
-                if (free < v.size + 100L * 1024 * 1024) {
-                    notice = "Not enough free space for “${v.title}” (needs ${v.size / (1024 * 1024)} MB). Free some space to watch."
+                val need = minOf(v.size, aheadBytes(v) + TrackData.KEEP_BEHIND + 2 * 16L * CHUNK) + 100L * 1024 * 1024
+                if (app.cacheDir.usableSpace < need) {
+                    notice = "Not enough free space to watch “${v.title}” (needs about ${need / (1024 * 1024)} MB). Free some space to watch."
                 } else {
-                    tracks[v.id] = TrackData.incoming(app, v.id, v.size, CACHE).also { d ->
+                    tracks[v.id] = TrackData.incoming(app, v.id, v.size, CACHE, CHUNK, rolling = true).also { d ->
                         d.onMissing = { piece -> main.post { sendToHost(PartyWire.msg("want").put("track", v.id).put("piece", piece)) } }
                     }
                 }

@@ -126,6 +126,10 @@ dependencies {
     // Video player (Tools → Video player): the player view and HLS (m3u8) streams.
     implementation("androidx.media3:media3-ui:1.4.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
+    // The player finds these by name, and without them a channel of that type (.mpd, .ism, rtsp://) crashes the app.
+    implementation("androidx.media3:media3-exoplayer-dash:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-smoothstreaming:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-rtsp:1.4.1")
     // Live TV channel logos (remote images) and nothing else — small, Apache 2.0.
     implementation("io.coil-kt:coil-compose:2.7.0")
     // Tools → Quick Share: phone-to-phone file transfer (Bluetooth to find, direct Wi-Fi to send).

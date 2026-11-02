@@ -54,7 +54,7 @@ class SyncUpMessagingService : FirebaseMessagingService() {
         val logId = message.data["log_id"]
         showNotification(
             title, body, imageUrl, message.data["link_url"], message.data["link_title"], isChat, actionId,
-            openInNormal = message.data["open_in"] == "normal",
+            openIn = message.data["open_in"],
             openPartners = message.data["type"] == "partners",
             broadcast = !message.data["audience"].isNullOrBlank(),
             logId = logId,
@@ -73,7 +73,7 @@ class SyncUpMessagingService : FirebaseMessagingService() {
         linkTitle: String?,
         openChat: Boolean = false,
         actionId: String? = null,
-        openInNormal: Boolean = false,
+        openIn: String? = null,
         openPartners: Boolean = false,
         broadcast: Boolean = false,
         logId: String? = null,
@@ -94,8 +94,8 @@ class SyncUpMessagingService : FirebaseMessagingService() {
                 !linkUrl.isNullOrBlank() -> {
                     putExtra(ReminderContract.EXTRA_LINK_URL, linkUrl)
                     putExtra(ReminderContract.EXTRA_LINK_TITLE, linkTitle ?: "")
-                    // Broadcast links open in a Normal tab; account pushes open in Work.
-                    if (openInNormal) putExtra(MainActivity.EXTRA_OPEN_IN, "normal")
+                    // Broadcast links open in a Normal tab; account pushes open in Work; a channel list opens Channels.
+                    if (openIn == "normal" || openIn == "channels") putExtra(MainActivity.EXTRA_OPEN_IN, openIn)
                 }
             }
         }

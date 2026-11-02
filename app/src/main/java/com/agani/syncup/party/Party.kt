@@ -89,8 +89,12 @@ object Party {
     private const val LEAD_NS = 1_200_000_000L
     /** Song pieces on their way to one guest at a time (keeps clock pings from waiting long). */
     private const val WINDOW = 6
-    /** Songs sent ahead of time: the playing one and the next ones. */
-    private const val PREFETCH = 2
+    /**
+     * Only the songs that play are sent, like Watch together's videos: the playing one up to this far past where
+     * the guest's player reads, and the next one from the playing one's last [NEXT_LEAD_MS].
+     */
+    private const val AHEAD_MS = 180_000L
+    private const val NEXT_LEAD_MS = 45_000L
     /** A piece on its way that hasn't moved for this long is taken as lost: its place frees up and it goes again. */
     private const val STUCK_MS = 20_000L
     /** The queue in a "state" stays well under Nearby's 32 KB message limit (bytes). */
@@ -165,6 +169,10 @@ object Party {
         val movedAt = ConcurrentHashMap<Long, Long>()
         /** Song → the piece this guest's player waits for (it asked: "want"). */
         val wanted = ConcurrentHashMap<Int, Int>()
+        /** Song → where this guest's player reads (bytes; "at" every 2 s, and "want"). */
+        val readAt = ConcurrentHashMap<Int, Long>()
+        /** Songs this guest added: on its phone already, never sent to it. */
+        val own: MutableSet<Int> = ConcurrentHashMap.newKeySet()
         val wake = Channel<Unit>(Channel.CONFLATED)
         var pump: Job? = null
 
@@ -313,6 +321,7 @@ object Party {
                 phase = if (GroupLink.phase == GroupPhase.RECONNECTING) PartyPhase.RECONNECTING else PartyPhase.IN_ROOM
                 helloSent = false
                 connectSession()
+                startReporting()
                 // Back in music with the clock already measured: straight away; just joined: once it is.
                 if (clock.count >= 6) sayHello() else main.postDelayed({ sayHello() }, 2_000)
             }
@@ -329,6 +338,7 @@ object Party {
                 guests.clear()
             }
             heartbeat?.cancel()
+            reporter?.cancel()
             endTimer?.let { main.removeCallbacks(it) }
             endTimer = null
             stopAudio()
@@ -382,10 +392,15 @@ object Party {
                     GuestAdds.ASK -> addRequests.add(r)
                 }
             }
+            "at" -> {
+                g.readAt[o.optInt("track")] = o.optLong("at")
+                g.wake.trySend(Unit)
+            }
             "want" -> {
                 val id = o.optInt("track")
                 val piece = o.optInt("piece")
                 g.wanted[id] = piece
+                g.readAt[id] = piece.toLong() * PartyWire.CHUNK
                 // Its player waits for a piece already sent (and not on its way): it got lost — again.
                 if (g.inFlight.values.none { it.first == id && it.second == piece }) g.sent[id]?.let { synchronized(it) { it.clear(piece) } }
                 g.wake.trySend(Unit)
@@ -400,7 +415,11 @@ object Party {
         val id = nextTrackId++
         val track = PartyTrack(id, r.title, r.artist, r.durationMs, r.size, r.mime, r.guest)
         tracks[id] = TrackData.incoming(app, id, r.size)
-        guests[r.endpointId]?.sentOf(id)?.let { synchronized(it) { it.set(0, pieceCount(r.size)) } } // theirs: not sent back
+        guests[r.endpointId]?.let { g ->
+            // Theirs: not sent back.
+            g.own.add(id)
+            g.sentOf(id).let { synchronized(it) { it.set(0, pieceCount(r.size)) } }
+        }
         queue.add(track)
         sendTo(listOf(r.endpointId), PartyWire.msg("addok").put("req", r.req).put("track", id))
         afterQueueChange()
@@ -461,6 +480,7 @@ object Party {
         currentId = trackId
         paused = false
         t0HostNs = System.nanoTime() + LEAD_NS - fromMs * 1_000_000
+        forgetDropped()
         broadcastState()
         startAudio()
         guests.values.forEach { it.wake.trySend(Unit) }
@@ -568,10 +588,8 @@ object Party {
     }
 
     /**
-     * Host → one guest: the songs it needs, piece by piece — the playing one first, then the next
-     * ones — at most [WINDOW] pieces on the way at a time. Within a song: its first and last pieces
-     * (players read both before playing), then from where the song is now (someone joining late
-     * hears it at once), then the part already played (for a seek back).
+     * Host → one guest: what it needs of the songs that play ([nextFor]), piece by piece, at most [WINDOW] pieces
+     * on the way at a time.
      */
     private suspend fun pump(g: Guest) {
         val buf = ByteArray(PartyWire.CHUNK)
@@ -621,34 +639,67 @@ object Party {
         }
     }
 
-    /** The next piece [g] should get, or null when it has everything coming up. */
+    /**
+     * The next piece [g] should get, or null when it has what it needs for now: the playing song up to [AHEAD_MS]
+     * past where its player reads, and in that song's last [NEXT_LEAD_MS] the next one. Songs further down the
+     * queue (a whole library can be in it) aren't sent until their turn.
+     */
     private fun nextFor(g: Guest): Pair<PartyTrack, Int>? {
         val list = queue.toList()
-        val start = list.indexOfFirst { it.id == currentId }.coerceAtLeast(0)
-        for (t in list.drop(start).take(1 + PREFETCH)) {
+        val i = list.indexOfFirst { it.id == currentId }
+        val c = list.getOrNull(i) ?: return null
+        val now = positionMs()
+        val upcoming = list.getOrNull(i + 1)?.takeIf { c.durationMs > 0 && c.durationMs - now < NEXT_LEAD_MS }
+        for ((t, nowMs) in listOfNotNull(c to now, upcoming?.let { it to 0L })) {
             if (!tracks.containsKey(t.id)) continue
-            val count = pieceCount(t.size)
-            val sent = g.sentOf(t.id)
-            val wanted = g.wanted[t.id]
-            val piece = synchronized(sent) {
-                fun free(i: Int) = i in 0 until count && !sent.get(i)
-                when {
-                    // The guest's player is waiting for exactly this one.
-                    wanted != null && free(wanted) -> wanted
-                    free(0) -> 0
-                    free(count - 1) -> count - 1
-                    else -> {
-                        // From where the guest's player reads, else a little before where the song is
-                        // now (a guess from the size; fine for constant-bitrate files, close enough for the rest).
-                        val nowMs = if (t.id == currentId) positionMs() - 3_000 else 0
-                        val from = wanted ?: if (nowMs <= 0 || t.durationMs <= 0) 0 else (t.size * nowMs / t.durationMs / PartyWire.CHUNK).toInt()
-                        sent.nextClearBit(from.coerceIn(0, count)).takeIf { it < count } ?: sent.nextClearBit(0).takeIf { it < count }
-                    }
-                }
-            }
-            if (piece != null) return t to piece
+            pieceFor(g, t, nowMs)?.let { return t to it }
         }
         return null
+    }
+
+    /**
+     * Within one song: the piece its player waits for, then the first and last pieces (players read both before
+     * playing), then on from where the player reads (a late joiner hears it at once) up to [AHEAD_MS] past it.
+     */
+    private fun pieceFor(g: Guest, t: PartyTrack, nowMs: Long): Int? {
+        val count = pieceCount(t.size)
+        val sent = g.sentOf(t.id)
+        val wanted = g.wanted[t.id]
+        // Where the guest's player reads, else a little before where the song is now (a guess from the size; fine
+        // for constant-bitrate files, close enough for the rest).
+        val guessMs = nowMs - 3_000
+        val readAt = g.readAt[t.id] ?: if (guessMs <= 0 || t.durationMs <= 0) 0L else t.size * guessMs / t.durationMs
+        val from = (readAt / PartyWire.CHUNK).toInt().coerceIn(0, count)
+        val until = if (t.durationMs <= 0) count else minOf(count.toLong(), from + t.size * AHEAD_MS / t.durationMs / PartyWire.CHUNK + 1).toInt()
+        return synchronized(sent) {
+            fun free(i: Int) = i in 0 until count && !sent.get(i)
+            when {
+                // The guest's player is waiting for exactly this one.
+                wanted != null && free(wanted) -> wanted
+                free(0) -> 0
+                free(count - 1) -> count - 1
+                else -> sent.nextClearBit(from).takeIf { it < until }
+            }
+        }
+    }
+
+    /** The songs a guest keeps: the playing one and the next one (the rest come when it's their turn). */
+    private fun keptIds(): Set<Int> {
+        val list = queue.toList()
+        val i = list.indexOfFirst { it.id == currentId }
+        return listOfNotNull(list.getOrNull(i), list.getOrNull(i + 1)).map { it.id }.toSet()
+    }
+
+    /** Host: guests let go of songs no longer kept, so those count as not sent (Previous sends one again). */
+    private fun forgetDropped() {
+        val keep = keptIds()
+        guests.values.forEach { g ->
+            g.sent.keys.filter { it !in keep && it !in g.own }.forEach { id ->
+                g.sent.remove(id)
+                g.readAt.remove(id)
+                g.wanted.remove(id)
+            }
+        }
     }
 
     private fun pieceCount(size: Long) = ((size + PartyWire.CHUNK - 1) / PartyWire.CHUNK).toInt()
@@ -679,14 +730,6 @@ object Party {
         o.optJSONArray("queue")?.let { a ->
             val list = mutableListOf<PartyTrack>()
             for (i in 0 until a.length()) list.add(PartyTrack.fromJson(a.getJSONObject(i)))
-            // New songs get a cache to fill; songs gone from the queue lose theirs.
-            list.forEach { t ->
-                if (!tracks.containsKey(t.id)) {
-                    tracks[t.id] = TrackData.incoming(app, t.id, t.size).also { d -> d.onMissing = { piece -> want(t.id, piece) } }
-                }
-            }
-            val keep = list.map { it.id }.toSet()
-            tracks.keys.filter { it !in keep }.forEach { id -> tracks.remove(id)?.close(); localUris.remove(id) }
             queue.clear()
             queue.addAll(list)
         }
@@ -699,10 +742,39 @@ object Party {
         currentId = newCurrent
         t0HostNs = newT0
         paused = newPaused
+        // Only the playing song and the next one have a cache to fill here; the host sends a song when its turn comes.
+        val keep = keptIds()
+        queue.filter { it.id in keep && !tracks.containsKey(it.id) }.forEach { t ->
+            tracks[t.id] = TrackData.incoming(app, t.id, t.size).also { d -> d.onMissing = { piece -> want(t.id, piece) } }
+        }
         if (changed) {
             if (paused || current == null) stopAudio() else if (!localPaused) startAudio()
         }
+        // Played songs (and ones gone from the queue) let go of theirs; this phone's own added songs stay while queued.
+        val queued = queue.map { it.id }.toSet()
+        tracks.keys.filter { it !in queued || (it !in keep && !localUris.containsKey(it)) }.forEach { id ->
+            tracks.remove(id)?.close()
+            if (id !in queued) localUris.remove(id)
+        }
         playerListener?.invoke()
+    }
+
+    private var reporter: Job? = null
+
+    /** Guest → host, every 2 s: where this phone's player reads in the playing song (the host sends a few minutes past it). */
+    private fun startReporting() {
+        reporter?.cancel()
+        reporter = io.launch {
+            var last = -1L
+            while (isActive) {
+                delay(2_000)
+                val id = currentId
+                val d = tracks[id] ?: continue
+                if (role != PartyRole.GUEST || localUris.containsKey(id) || d.lastRead == last) continue
+                last = d.lastRead
+                sendToHost(PartyWire.msg("at").put("track", id).put("at", last))
+            }
+        }
     }
 
     /** Guest → host: this phone's player waits for this piece — send it first (and from there on). */
@@ -777,6 +849,7 @@ object Party {
         endTimer?.let { main.removeCallbacks(it) }
         endTimer = null
         heartbeat?.cancel()
+        reporter?.cancel()
         guests.values.forEach { it.pump?.cancel() }
         guests.clear()
         addRequests.clear()

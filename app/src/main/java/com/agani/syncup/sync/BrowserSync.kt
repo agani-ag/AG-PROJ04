@@ -47,6 +47,8 @@ enum class SyncType(val pref: String, val label: String) {
     MOOD("mood", "Mood"),
     // Tools → Everyday → Shopping.
     SHOPPING("shopping", "Shopping lists"),
+    // Tools → Channels: the channel lists the person saved.
+    CHANNELS("channels", "Channel lists"),
     ;
 
     companion object {

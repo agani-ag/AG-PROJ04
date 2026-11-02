@@ -20,6 +20,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.agani.syncup.browser.BrowserDb
+import com.agani.syncup.stationfiles.Stations
+import com.agani.syncup.stationfiles.parseStationUri
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -354,6 +356,8 @@ object Downloads {
         var free = atOnce - tasks.count { it.state == DlState.RUNNING }
         for (t in tasks.filter { it.state == DlState.QUEUED }.sortedBy { it.createdAt }) {
             if (free <= 0) break
+            // A station's files come one at a time, each in parts (see partsFor): its transfer limits are shared with everyone.
+            if (isStation(t) && tasks.any { it.state == DlState.RUNNING && isStation(it) }) continue
             if (!canDownloadNow()) {
                 t.state = if (online()) DlState.WAITING_WIFI else DlState.WAITING_NETWORK
                 persist(t)
@@ -417,7 +421,7 @@ object Downloads {
                     if (info.size > 0) t.total = info.size
                 }
             }
-            t.parts = plan(t.total, t.resumable)
+            t.parts = plan(t)
             persist(t)
         } else if (!t.resumable) {
             // The server can't continue a file from the middle: start it again.
@@ -440,14 +444,26 @@ object Downloads {
         publish(t)
     }
 
-    private fun plan(total: Long, resumable: Boolean): List<Part> {
+    private fun plan(t: DownloadTask): List<Part> = plan(t.total, t.resumable, partsFor(t))
+
+    /**
+     * A station file in parts like any download. With its radio off, AudioSync has no limits: the usual number.
+     * With the radio on air it allows 3 transfers at once and about 1 MB/s for them all, so 2 parts.
+     */
+    private fun partsFor(t: DownloadTask): Int {
+        val key = parseStationUri(t.url)?.first ?: return partsPerFile
+        return if (Stations.station(key)?.radioOnAir != false) minOf(2, partsPerFile) else partsPerFile
+    }
+
+    private fun plan(total: Long, resumable: Boolean, parts: Int): List<Part> {
         if (!resumable || total <= 0) return listOf(Part(0, -1))
-        val n = partsPerFile.coerceAtLeast(1).toLong().coerceAtMost((total / MIN_PART).coerceAtLeast(1)).toInt()
+        val n = parts.coerceAtLeast(1).toLong().coerceAtMost((total / MIN_PART).coerceAtLeast(1)).toInt()
         val size = total / n
         return (0 until n).map { i -> Part(i * size, if (i == n - 1) total - 1 else (i + 1) * size - 1) }
     }
 
     private suspend fun fetchPart(t: DownloadTask, p: Part, out: Output) {
+        if (isStation(t)) return fetchStationPart(t, p, out)
         var attempt = 0
         while (true) {
             currentCoroutineContext().ensureActive()
@@ -472,15 +488,68 @@ object Downloads {
 
     private fun kotlin.coroutines.CoroutineContext.isActiveSafe() = this[Job]?.isActive != false
 
+    private fun isStation(t: DownloadTask) = parseStationUri(t.url) != null
+
+    /** Try again straight away (signed in again, or the station moved to a new address). */
+    private class RetryNow : IOException("Again")
+
+    private fun note(t: DownloadTask, text: String?) {
+        if (t.note != text) main.post { t.note = text }
+    }
+
+    /**
+     * A station file (AudioSync). Its address changes when the station's tunnel restarts, so every try looks
+     * it up again; a break waits for the station for as long as it takes. Pause or cancel stops it.
+     */
+    private suspend fun fetchStationPart(t: DownloadTask, p: Part, out: Output) {
+        val key = parseStationUri(t.url)?.first ?: return
+        var waiting = 0
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val name = Stations.name(key)
+            try {
+                transfer(t, p, out)
+                note(t, null)
+                return
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: RestartNeeded) {
+                throw e
+            } catch (e: Stations.PinNeeded) {
+                throw e
+            } catch (e: RetryNow) {
+                delay(500)
+                continue
+            } catch (e: Stations.Refused) {
+                if (e.code != 503) throw e
+                val wait = (e.retryAfter ?: 20).coerceIn(2, 120)
+                note(t, "$name is busy · trying again in $wait s")
+                delay(wait * 1000L)
+                continue
+            } catch (e: IOException) {
+                if (!currentCoroutineContext().isActiveSafe()) throw CancellationException()
+                if (!online()) throw e // the phone is offline: waits for the network like any download
+                Stations.markStale()
+                waiting++
+                note(t, if (waiting <= 6) "Reconnecting to $name…" else "Waiting for $name to come back")
+            }
+            delay(if (waiting <= 1) 2_000L else 5_000L)
+        }
+    }
+
     /** Download one part from where it stopped, writing each block at its place in the file. */
     private fun transfer(t: DownloadTask, p: Part, out: Output) {
         val from = p.start + p.done.get()
         if (p.end >= 0 && from > p.end) return
         val ranged = t.resumable && (from > 0 || p.end >= 0)
-        val b = Request.Builder().url(t.url).header("Accept-Encoding", "identity")
+        val station = parseStationUri(t.url)
+        val target = if (station != null) Stations.resolve(t.url) else null
+        val b = Request.Builder().url(target?.url ?: t.url).header("Accept-Encoding", "identity")
         if (t.userAgent.isNotBlank()) b.header("User-Agent", t.userAgent)
         if (t.referer.isNotBlank()) b.header("Referer", t.referer)
         cookies[t.id]?.let { b.header("Cookie", it) }
+        target?.headers?.forEach { (name, value) -> b.header(name, value) }
+        if (target != null) b.header(com.agani.syncup.stationfiles.USE_HEADER, "download") // gives way to playing on the station
         if (ranged) {
             b.header("Range", "bytes=$from-" + if (p.end >= 0) "${p.end}" else "")
             (t.etag ?: t.lastModified)?.let { b.header("If-Range", it) }
@@ -489,6 +558,7 @@ object Downloads {
         calls.getOrPut(t.id) { ConcurrentHashMap.newKeySet() }.add(call)
         try {
             call.execute().use { resp ->
+                if (station != null && target != null) checkStation(station.first, target.url, resp)
                 if (ranged && resp.code == 200) throw RestartNeeded()
                 if (!resp.isSuccessful) throw HttpStatus(resp.code)
                 val src = resp.body?.byteStream() ?: throw IOException("Empty response")
@@ -508,6 +578,32 @@ object Downloads {
         } finally {
             calls[t.id]?.remove(call)
         }
+    }
+
+    /** A station's answer that isn't the file: sign in again, wait while it's busy, or follow it to a new address. */
+    private fun checkStation(key: String, usedUrl: String, resp: Response) {
+        when (resp.code) {
+            401 -> {
+                Stations.tokenRejected(key)
+                if (Stations.signInAgain(key)) throw RetryNow()
+                throw Stations.PinNeeded(key)
+            }
+            503 -> throw Stations.refused(resp)
+            502, 521, 522, 530 -> throw Stations.Gone(Stations.name(key)) // the tunnel behind this address is gone
+            404, 410 -> {
+                // The old address may now belong to nothing: only a 404 from the station's current address counts.
+                Stations.markStale()
+                if (runCatching { Stations.resolve(stationUriOf(key, usedUrl)) }.getOrNull()?.url != usedUrl) throw RetryNow()
+                throw Stations.Refused(404, "not_found", null, null)
+            }
+            416 -> throw RestartNeeded()
+        }
+    }
+
+    /** The station address [url] as the station file it is (its path with the key). */
+    private fun stationUriOf(key: String, url: String): String {
+        val path = url.substringAfter("://").substringAfter('/', "")
+        return com.agani.syncup.stationfiles.stationUri(key, "/$path")
     }
 
     /** Where the bytes go: a positional-write channel into the saved file. */
@@ -534,7 +630,7 @@ object Downloads {
             val existing = t.contentUri?.let(Uri::parse)?.takeIf { u ->
                 runCatching { resolver.query(u, null, null, null, null)?.use { it.count > 0 } }.getOrNull() == true
             }
-            val uri = existing ?: createPending(t).also { if (t.parts.any { p -> p.done.get() > 0 }) t.parts = plan(t.total, t.resumable) }
+            val uri = existing ?: createPending(t).also { if (t.parts.any { p -> p.done.get() > 0 }) t.parts = plan(t) }
             val pfd = resolver.openFileDescriptor(uri, "rw") ?: throw IOException("Can't open the file")
             val fos = FileOutputStream(pfd.fileDescriptor)
             return Output(fos.channel) {
@@ -550,7 +646,7 @@ object Downloads {
             unusedFile(dir, t.fileName).also { f ->
                 t.contentUri = f.absolutePath
                 t.fileName = f.name
-                if (t.parts.any { p -> p.done.get() > 0 }) t.parts = plan(t.total, t.resumable)
+                if (t.parts.any { p -> p.done.get() > 0 }) t.parts = plan(t)
                 persist(t)
             }
         }
@@ -631,7 +727,11 @@ object Downloads {
             t.error = null
         } else {
             t.state = DlState.FAILED
+            t.note = null
             t.error = when {
+                e is Stations.PinNeeded -> "${Stations.name(e.key)} wants its PIN. Enter it in Radio → Files, then tap retry."
+                e is Stations.Refused && e.code == 404 -> "This file isn't on the station any more."
+                e is Stations.Refused -> "The station answered with an error (${e.code})."
                 e is HttpStatus && (e.code == 401 || e.code == 403) -> "The site refused the download (${e.code}). Open the page again and retry."
                 e is HttpStatus && e.code == 404 -> "The file isn't on the site any more (404)."
                 e is HttpStatus && e.code == 410 -> "The link has expired (410). Open the page again and retry."

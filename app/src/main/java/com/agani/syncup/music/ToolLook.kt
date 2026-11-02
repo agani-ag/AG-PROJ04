@@ -93,13 +93,25 @@ fun ToolTile(icon: ImageVector, tint: ToolTint, size: Dp = 42.dp, iconSize: Dp =
 
 /** Top bar of an inner page: back arrow, a 20 sp title (and an optional line under it), actions on the right. */
 @Composable
-fun ToolTopBar(title: String, onBack: () -> Unit, subtitle: String? = null, actions: @Composable RowScope.() -> Unit = {}) {
+fun ToolTopBar(
+    title: String,
+    onBack: () -> Unit,
+    subtitle: String? = null,
+    /** A small tag after the subtitle. */
+    tag: (@Composable () -> Unit)? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
     val cs = MaterialTheme.colorScheme
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 60.dp).padding(horizontal = 4.dp, vertical = 2.dp)) {
         BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
         Column(Modifier.weight(1f).padding(start = 4.dp)) {
             Text(title, fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (!subtitle.isNullOrBlank()) Text(subtitle, fontSize = 13.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (!subtitle.isNullOrBlank()) {
+                    Text(subtitle, fontSize = 13.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                }
+                tag?.invoke()
+            }
         }
         actions()
     }

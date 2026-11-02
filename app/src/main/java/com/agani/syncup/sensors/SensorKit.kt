@@ -151,6 +151,7 @@ enum class SensorTool(
     COLOUR("Colour picker", "Name any colour", SensorGroup.FIND, listOf(Part.CAMERA), missingWhy = "it can't see colours"),
     EARBUDS("Find my earbuds", "Hot / cold finder", SensorGroup.FIND, listOf(Part.BLUETOOTH), missingWhy = "it can't look for Bluetooth things"),
     WIFI("Wi-Fi finder", "Best signal spot", SensorGroup.FIND, listOf(Part.WIFI), missingWhy = "it can't measure Wi-Fi"),
+    NETWORK("Network test", "Speed, latency, signal", SensorGroup.FIND, emptyList()),
     FLASHLIGHT("Flashlight", "Torch & screen light", SensorGroup.FIND, emptyList()),
     WAVE("Wave to control", "Pause music with a wave", SensorGroup.HANDY, listOf(Part.PROXIMITY), missingWhy = "it can't see your hand"),
     SPEAKER("Speaker clean", "Water out, tones", SensorGroup.HANDY, emptyList()),

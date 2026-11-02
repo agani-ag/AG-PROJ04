@@ -27,6 +27,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.material.icons.rounded.Spa
 import androidx.compose.material.icons.automirrored.rounded.HelpOutline
@@ -359,6 +360,7 @@ fun ProfileScreen(
                                         SyncType.SETTINGS -> Icons.Rounded.Tune
                                         SyncType.CALENDAR -> Icons.Rounded.CalendarMonth
                                         SyncType.SHOPPING -> Icons.Rounded.ShoppingCart
+                                        SyncType.CHANNELS -> Icons.Rounded.LiveTv
                                         else -> Icons.Rounded.Spa
                                     },
                                     title = t.label,
@@ -369,6 +371,7 @@ fun ProfileScreen(
                                         SyncType.SETTINGS -> "Search engine, pop-ups, theme"
                                         SyncType.CALENDAR -> "To-dos and lists — their reminders on every phone"
                                         SyncType.SHOPPING -> "Your lists and what's on them"
+                                        SyncType.CHANNELS -> "The lists you saved in Channels"
                                         else -> ""
                                     },
                                     checked = BrowserSync.isOn(t),

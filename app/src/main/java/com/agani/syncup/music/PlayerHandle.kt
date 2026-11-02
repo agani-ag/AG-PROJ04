@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
+import android.os.Bundle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
@@ -26,17 +27,27 @@ import androidx.media3.session.SessionToken
 import com.agani.syncup.data.RadioChannel
 import kotlin.random.Random
 
-/** Media ids tell songs from radio stations. */
+/** Media ids tell songs from radio stations. A station's shared song (Radio → Files) is a song too. */
 internal const val SONG_ID = "song:"
 internal const val RADIO_ID = "radio:"
+internal const val FILE_ID = "file:"
+
+/** A station item's live socket address, in its metadata extras (RadioChannel.wsUrl). */
+internal const val EXTRA_WS_URL = "com.agani.syncup.music.WS_URL"
+
+/** A station item's audio address, in its metadata extras: a station that left the list and came back keeps it. */
+internal const val EXTRA_STREAM_URL = "com.agani.syncup.music.STREAM_URL"
 
 /** Where the shuffle / repeat choices are kept (written by the app and by the player service). */
 internal const val MUSIC_PREFS = "music"
 internal const val PREF_SHUFFLE = "shuffle"
 internal const val PREF_REPEAT = "repeat"
 
-/** True while the player is on one of the phone's songs (not a station, not empty). */
-internal fun Player.isSong(): Boolean = mediaItemCount > 0 && currentMediaItem?.mediaId?.startsWith(SONG_ID) == true
+/** True while the player is on a song: the phone's own, or one from a station's files (not a station, not empty). */
+internal fun Player.isSong(): Boolean = mediaItemCount > 0 && currentMediaItem?.mediaId?.let { it.startsWith(SONG_ID) || it.startsWith(FILE_ID) } == true
+
+/** True while the player is on a song from a station's files. */
+internal fun Player.isStationFile(): Boolean = currentMediaItem?.mediaId?.startsWith(FILE_ID) == true
 
 /** Off → all → one → off. */
 internal fun nextRepeatMode(mode: Int): Int = when (mode) {
@@ -79,7 +90,14 @@ class PlayerHandle internal constructor(private val prefs: SharedPreferences) {
     val title: String
         get() = (if (isRadio) meta.station ?: meta.title else meta.title)?.toString().orEmpty()
 
-    /** Artist, or what the station is playing now (its stream title when it sends one). */
+    /** This list row is the station being played: a paused station comes back with a new id but the same audio address. */
+    fun isOn(station: RadioChannel): Boolean =
+        isRadio && (station.id == stationId || station.streamUrl == item?.mediaMetadata?.extras?.getString(EXTRA_STREAM_URL))
+
+    /** The station on air has its live socket open (RadioLive): the player's WS mark, else HTTP. */
+    val liveSocketOn: Boolean get() = isRadio && RadioLive.stationId != null && RadioLive.stationId == stationId
+
+    /** Artist, or what the station is playing now (its stream title when it sends one; the live socket updates the artist). */
     val subtitle: String
         get() = if (isRadio) {
             val streamTitle = meta.title?.toString()?.takeIf { it.isNotBlank() && it != meta.station?.toString() }
@@ -109,7 +127,11 @@ class PlayerHandle internal constructor(private val prefs: SharedPreferences) {
     }
 
     internal fun failed(e: PlaybackException) {
-        error = if (isRadio) "This station went off air." else "Couldn't play this song."
+        error = when {
+            isRadio -> "This station went off air."
+            item?.mediaId?.startsWith(FILE_ID) == true -> "Couldn't reach ${meta.artist ?: "the station"}. Press play to try again."
+            else -> "Couldn't play this song."
+        }
     }
 
     /** The songs last given to [playSongs], in their list order (for "Play at a party"). */
@@ -134,6 +156,23 @@ class PlayerHandle internal constructor(private val prefs: SharedPreferences) {
         c.shuffleModeEnabled = shuffle
         c.repeatMode = repeat
         c.setMediaItems(songs.map { it.toMediaItem() }, if (shuffled) Random.nextInt(songs.size) else start, 0L)
+        c.prepare()
+        c.play()
+    }
+
+    /**
+     * Songs from a station's files ([MediaItem]s from [com.agani.syncup.stationfiles]) from [start]; [shuffled]
+     * turns shuffle on and starts anywhere. Like the phone's songs: seek, shuffle, repeat, lock screen.
+     */
+    fun playStationSongs(items: List<MediaItem>, start: Int, shuffled: Boolean = false) {
+        val c = controller ?: return
+        if (items.isEmpty()) return
+        error = null
+        queue = emptyList()
+        if (shuffled) updateShuffle(true)
+        c.shuffleModeEnabled = shuffle
+        c.repeatMode = repeat
+        c.setMediaItems(items, if (shuffled) Random.nextInt(items.size) else start.coerceIn(0, items.lastIndex), 0L)
         c.prepare()
         c.play()
     }
@@ -280,6 +319,12 @@ internal fun RadioChannel.toMediaItem(): MediaItem = MediaItem.Builder()
             .setIsPlayable(true)
             .setIsBrowsable(false)
             .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION)
+            .setExtras(
+                Bundle().apply {
+                    putString(EXTRA_STREAM_URL, streamUrl)
+                    wsUrl?.takeIf { it.isNotBlank() }?.let { putString(EXTRA_WS_URL, it) }
+                },
+            )
             .build(),
     )
     .build()

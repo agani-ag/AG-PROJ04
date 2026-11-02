@@ -231,6 +231,11 @@
             android:name=".downloads.DownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <!-- Uploads to a station's shared folder (Radio → Files), in pieces; same data-sync type as downloads. -->
+        <service
+            android:name=".stationfiles.UploadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- "Share → Download with SyncUp": takes a shared link to the Download Manager -->
         <activity

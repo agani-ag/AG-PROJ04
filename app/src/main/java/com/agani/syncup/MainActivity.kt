@@ -89,8 +89,11 @@ class MainActivity : FragmentActivity() {
     // A link a notification/reminder tap wants opened — honored once unlocked (and, for a Work
     // link, logged in). Broadcast links open in a Normal tab, signed in or not.
     // fromOtherApp: a link tapped in another app (SyncUp as its browser) — Back on its first page goes back there.
-    private data class PendingLink(val url: String, val title: String, val normal: Boolean = false, val fromOtherApp: Boolean = false)
+    private data class PendingLink(val url: String, val title: String, val normal: Boolean = false, val fromOtherApp: Boolean = false, val channels: Boolean = false)
     private val pendingLink = mutableStateOf<PendingLink?>(null)
+
+    // A channel list was pushed and tapped: Channels opens with it filled in.
+    private val channelPrefill = mutableStateOf<com.agani.syncup.video.ChannelPrefill?>(null)
 
     // Set when a chat entry point (button / bubble / push tap) asks us to open the chat screen.
     private val openChatRequest = mutableStateOf(false)
@@ -152,6 +155,8 @@ class MainActivity : FragmentActivity() {
         lockedState.value = security.hasPin() // lock on cold start if a PIN is set
         com.agani.syncup.browser.BrowserSettings.init(this)
         com.agani.syncup.downloads.Downloads.init(this) // carries on downloads the app was closed in the middle of
+        com.agani.syncup.stationfiles.Stations.init(this)
+        com.agani.syncup.stationfiles.StationUploads.init(this) // and uploads to stations
         com.agani.syncup.quickshare.QuickShare.init(this)
         com.agani.syncup.party.Party.init(this)
         com.agani.syncup.walkie.Walkie.init(this)
@@ -164,6 +169,8 @@ class MainActivity : FragmentActivity() {
         com.agani.syncup.wellbeing.Wellbeing.init(this)
         // Tools → Shopping: its lists (and their sync with the account).
         com.agani.syncup.shopping.ShoppingStore.init(this)
+        // Tools → Channels: the saved lists (and their sync with the account).
+        com.agani.syncup.video.SavedPlaylists.init(this)
         com.agani.syncup.browser.SitePermissions.init(this)
         com.agani.syncup.browser.AdBlocker.init(this) // loads the filter lists; refreshes them weekly
         // The home page's shortcut catalogue (backend; refreshed once the server address is known) and the sites' icons.
@@ -308,9 +315,13 @@ class MainActivity : FragmentActivity() {
         super.onDestroy()
     }
 
-    /** Walkie Talkie's volume-key talk (hold a volume key to talk) gets the volume keys first. */
+    /**
+     * Walkie Talkie's volume-key talk (hold a volume key to talk) gets the volume keys first; then the Music pages,
+     * where they go on past full volume into the Music player's boost.
+     */
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean =
-        com.agani.syncup.walkie.Walkie.onVolumeKey(event) || com.agani.syncup.group.GroupWalkie.onVolumeKey(event) || super.dispatchKeyEvent(event)
+        com.agani.syncup.walkie.Walkie.onVolumeKey(event) || com.agani.syncup.group.GroupWalkie.onVolumeKey(event) ||
+            com.agani.syncup.music.MusicBoost.onVolumeKey(this, event) || super.dispatchKeyEvent(event)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -329,8 +340,8 @@ class MainActivity : FragmentActivity() {
         val url = intent?.getStringExtra(ReminderContract.EXTRA_LINK_URL)
         if (!url.isNullOrBlank()) {
             // "open_in" = our own extra, or the FCM data key when the system tray showed the push.
-            val normal = intent.getStringExtra(EXTRA_OPEN_IN) == "normal"
-            pendingLink.value = PendingLink(url, intent.getStringExtra(ReminderContract.EXTRA_LINK_TITLE) ?: "", normal)
+            val openIn = intent.getStringExtra(EXTRA_OPEN_IN)
+            pendingLink.value = PendingLink(url, intent.getStringExtra(ReminderContract.EXTRA_LINK_TITLE) ?: "", openIn == "normal", channels = openIn == "channels")
             // Consume it so a config change / re-onStart doesn't reopen the link.
             intent.removeExtra(ReminderContract.EXTRA_LINK_URL)
             intent.removeExtra(ReminderContract.EXTRA_LINK_TITLE)
@@ -597,7 +608,18 @@ class MainActivity : FragmentActivity() {
         // composes when unlocked) and logged in.
         LaunchedEffect(pendingLink.value, state.isLoggedIn, state.user) {
             val link = pendingLink.value
-            if (link != null && (link.normal || !state.isLoggedIn)) {
+            if (link != null && !link.fromOtherApp && (link.channels || com.agani.syncup.video.M3uPlaylist.isChannelLink(link.url))) {
+                // A channel list: Channels opens with its name and link filled in, for the person to save.
+                pendingLink.value = null
+                showProfile = false
+                showMusic = false
+                showRadio = false
+                showPartners = false
+                showNotifications = false
+                libraryPage = null
+                channelPrefill.value = com.agani.syncup.video.ChannelPrefill(link.url, link.title)
+                toolsPage = com.agani.syncup.tools.ToolsPage.CHANNELS
+            } else if (link != null && (link.normal || !state.isLoggedIn)) {
                 // A broadcast link: a Normal tab, for everyone. Signed out, any link does (a website's
                 // push to this phone) — SyncUp tabs need sign-in. (The session is restored before this runs.)
                 pendingLink.value = null
@@ -639,6 +661,7 @@ class MainActivity : FragmentActivity() {
         LaunchedEffect(state.isLoggedIn) {
             if (state.isLoggedIn) {
                 showLogin = false
+                authForm.clear()
                 com.agani.syncup.home.HomePrefs.welcomeDone()
             }
         }
@@ -1088,7 +1111,7 @@ class MainActivity : FragmentActivity() {
                                 // What the push opens: a broadcast link in a Normal tab; a link pushed to
                                 // this user in a SyncUp tab, as when the push itself is tapped.
                                 !url.isNullOrBlank() -> pendingLink.value =
-                                    PendingLink(url, item.linkTitle.orEmpty(), normal = item.openIn == "normal" || !loggedIn)
+                                    PendingLink(url, item.linkTitle.orEmpty(), normal = item.openIn == "normal" || !loggedIn, channels = item.openIn == "channels")
                             }
                         },
                     )
@@ -1273,6 +1296,8 @@ class MainActivity : FragmentActivity() {
                         )
                         com.agani.syncup.tools.ToolsPage.CHANNELS -> com.agani.syncup.video.ChannelsHomeScreen(
                             onBack = { toolsPage = null },
+                            prefill = channelPrefill.value,
+                            onPrefillUsed = { channelPrefill.value = null },
                         )
                         com.agani.syncup.tools.ToolsPage.GROUP -> com.agani.syncup.group.GroupModeScreen(
                             onBack = { toolsPage = null },

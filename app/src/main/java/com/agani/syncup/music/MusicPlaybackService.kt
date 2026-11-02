@@ -6,6 +6,9 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -14,7 +17,14 @@ import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.util.BitmapLoader
 import androidx.media3.datasource.DataSourceBitmapLoader
+import androidx.media3.datasource.DefaultDataSource
+import com.agani.syncup.stationfiles.Stations
+import com.agani.syncup.stationfiles.stationDataSourceFactory
+import com.agani.syncup.stationfiles.stationFileRetryDelay
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -41,11 +51,28 @@ class MusicPlaybackService : MediaSessionService() {
 
     private var session: MediaSession? = null
     private val artIo: ListeningExecutorService = MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor())
+    private val main = Handler(Looper.getMainLooper())
+    private val stationRetries = StationRetries { main.post { session?.player?.let { unstick(it) } } }
+    private val boostEffect = BoostEffect()
+    private var closedSince = 0L
+    private var lastClosedAt = 0L
+    private var quickCloses = 0
+    private val reconnect = Runnable {
+        val p = session?.player ?: return@Runnable
+        if (p.playWhenReady && (p.playbackState == Player.STATE_ENDED || p.playbackState == Player.STATE_BUFFERING)) {
+            p.stop()
+            p.seekToDefaultPosition() // from the old position it would open a connection, seek, then open another
+            p.prepare()
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         // WavesRenderersFactory: Now playing's waves read the sound on its way out (SoundWaves).
+        // Station files (Radio → Files) are reached by the station's key: looked up again on every connection.
+        val sources = stationDataSourceFactory(DefaultDataSource.Factory(this))
         val player = ExoPlayer.Builder(this, WavesRenderersFactory(this))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(sources).setLoadErrorHandlingPolicy(stationRetries))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -56,9 +83,11 @@ class MusicPlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true) // pause when headphones are unplugged
             .build()
         player.addListener(object : Player.Listener {
-            // A song that won't play (damaged / removed file) is skipped rather than ending the queue.
+            // A song that won't play (damaged / removed file) is skipped rather than ending the queue. A station's
+            // song that lost its station waits paused instead: the next one would fail the same way.
             override fun onPlayerError(error: PlaybackException) {
-                if (player.isSong() && player.hasNextMediaItem()) {
+                val stationGone = player.isStationFile() && error.errorCode in 2000..2999
+                if (player.isSong() && !stationGone && player.hasNextMediaItem()) {
                     player.seekToNextMediaItem()
                     player.prepare()
                     player.play()
@@ -71,9 +100,42 @@ class MusicPlaybackService : MediaSessionService() {
             override fun onRepeatModeChanged(repeatMode: Int) = modesChanged(player)
 
             // Songs ⇄ a station: the shuffle / repeat buttons come and go with it.
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = refreshModeButtons()
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                refreshModeButtons()
+                followStation(player)
+            }
+
             override fun onTimelineChanged(timeline: Timeline, reason: Int) = refreshModeButtons()
+
+            // A station's live socket stays open while it plays, and only then.
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                followStation(player)
+                if (playWhenReady) {
+                    unstick(player)
+                } else {
+                    main.removeCallbacks(reconnect)
+                    closedSince = 0L
+                }
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                followStation(player)
+                if (playbackState == Player.STATE_ENDED) stationClosed(player)
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) {
+                    main.removeCallbacks(reconnect)
+                    closedSince = 0L
+                }
+            }
+
+            override fun onAudioSessionIdChanged(audioSessionId: Int) = boostEffect.apply(audioSessionId, MusicBoost.boost)
         })
+        // Now playing's Boost (100 / 200 / 300%).
+        MusicBoost.init(this)
+        boostEffect.apply(player.audioSessionId, MusicBoost.boost)
+        MusicBoost.onChange = { boostEffect.apply(player.audioSessionId, MusicBoost.boost) }
         // Tapping the media notification opens the in-app Music player.
         val openMusic = PendingIntent.getActivity(
             this, 0,
@@ -92,6 +154,65 @@ class MusicPlaybackService : MediaSessionService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+
+    /**
+     * A live stream doesn't end: its connection was closed, cleanly. Connect again straight away; if it keeps
+     * closing, wait 3, 6, 12, then 15 s between tries, until [RECONNECT_WINDOW_MS] has passed with nothing playing.
+     */
+    private fun stationClosed(p: Player) {
+        if (!p.playWhenReady || p.currentMediaItem?.mediaId?.startsWith(RADIO_ID) != true) return
+        val time = SystemClock.elapsedRealtime()
+        if (closedSince == 0L) closedSince = time
+        if (time - closedSince > RECONNECT_WINDOW_MS) {
+            p.pause() // gone for good: Play tries again
+            return
+        }
+        quickCloses = if (time - lastClosedAt < RECONNECT_QUICK_MS) quickCloses + 1 else 0
+        lastClosedAt = time
+        val wait = if (quickCloses == 0) 0L else minOf(3_000L shl (quickCloses - 1).coerceAtMost(3), 15_000L)
+        main.removeCallbacks(reconnect)
+        main.postDelayed(reconnect, wait)
+    }
+
+    /**
+     * ExoPlayer retries a broken live stream only after playing what it holds, and after a stall it won't play
+     * until it holds 5 s (2.5 s at the start). A connection lost with less than that would leave both waiting
+     * for ever, so connect again.
+     */
+    private fun unstick(p: Player) {
+        if (p.playbackState == Player.STATE_BUFFERING && p.bufferedPosition > p.currentPosition) stationClosed(p)
+    }
+
+    /** Keep the live socket on the station being played; closed for songs, when stopped or after an error. */
+    private fun followStation(p: Player) {
+        val item = p.currentMediaItem
+        val id = item?.mediaId?.takeIf { it.startsWith(RADIO_ID) }?.removePrefix(RADIO_ID)
+        stationRetries.stationOn = id != null
+        stationRetries.fileOn = p.isStationFile()
+        if (id == null) main.removeCallbacks(reconnect)
+        val playing = id != null && p.playWhenReady && p.playbackState != Player.STATE_IDLE && p.playbackState != Player.STATE_ENDED
+        val url = if (playing) {
+            liveSocketUrl(item?.localConfiguration?.uri?.toString().orEmpty(), item?.mediaMetadata?.extras?.getString(EXTRA_WS_URL))
+        } else {
+            null
+        }
+        RadioLive.follow(id, url) { live -> showSong(p, id.orEmpty(), live) }
+    }
+
+    /**
+     * The station's new song on the lock screen, the notification and in the app. Only the item's details
+     * change (same address), so the player carries on without touching the sound.
+     */
+    private fun showSong(p: Player, id: String, live: StationLive) {
+        val item = p.currentMediaItem ?: return
+        if (item.mediaId != RADIO_ID + id) return
+        val song = live.title.ifBlank { "Live radio" }
+        if (item.mediaMetadata.artist?.toString() == song) return
+        p.replaceMediaItem(
+            p.currentMediaItemIndex,
+            item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setArtist(song).build()).build(),
+        )
+    }
 
     /** Shuffle + repeat on the lock screen and the notification — only while songs play. */
     private fun modeButtons(p: Player): List<CommandButton> {
@@ -174,6 +295,10 @@ class MusicPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        main.removeCallbacks(reconnect)
+        RadioLive.stop()
+        MusicBoost.onChange = null
+        boostEffect.release()
         session?.run {
             player.release()
             release()
@@ -184,6 +309,35 @@ class MusicPlaybackService : MediaSessionService() {
         super.onDestroy()
     }
 }
+
+/**
+ * While a station plays, a dropped stream keeps retrying (1, 2, 4, 8, then every 15 s, about 5 minutes in
+ * all). The player stays in "connecting" meanwhile, so the service stays in the foreground with the
+ * screen off and the sound comes back by itself. Songs fail as usual.
+ */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+private class StationRetries(private val onLoadError: () -> Unit) : DefaultLoadErrorHandlingPolicy() {
+    @Volatile var stationOn = false
+    /** A song from a station's files: waits about 3 minutes for its station (see stationFileRetryDelay). */
+    @Volatile var fileOn = false
+
+    override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+        stationFileRetryDelay(loadErrorInfo)?.let { return it }
+        if (!stationOn) return super.getRetryDelayMsFor(loadErrorInfo)
+        Stations.forgetDirect() // it may have been on the station's Wi-Fi: check that again, else the public address
+        onLoadError()
+        val tries = loadErrorInfo.errorCount
+        if (tries > STATION_RETRIES) return C.TIME_UNSET
+        return minOf(1_000L shl (tries - 1).coerceIn(0, 4), 15_000L)
+    }
+
+    override fun getMinimumLoadableRetryCount(dataType: Int): Int =
+        if (stationOn || fileOn) Int.MAX_VALUE else super.getMinimumLoadableRetryCount(dataType)
+}
+
+private const val STATION_RETRIES = 23
+private const val RECONNECT_WINDOW_MS = 300_000L
+private const val RECONNECT_QUICK_MS = 30_000L
 
 /** Notification / lock-screen cover art: songs' art from MediaStore, anything else the default way. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)

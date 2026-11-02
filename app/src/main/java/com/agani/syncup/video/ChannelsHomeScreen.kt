@@ -33,6 +33,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,13 +57,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** A channel list pushed to this phone: Channels opens with its link and name filled in, for the person to save. */
+data class ChannelPrefill(val url: String, val name: String)
+
 /**
  * Tools → Channels: every M3U/M3U8 playlist link the user has added, added and managed entirely here.
  * The Video player's paste box plays a direct video link only — a playlist link belongs here instead
  * (the user's explicit call: no M3U/M3U8 handling in the Video player's add-link flow any more).
  */
 @Composable
-fun ChannelsHomeScreen(onBack: () -> Unit) {
+fun ChannelsHomeScreen(onBack: () -> Unit, prefill: ChannelPrefill? = null, onPrefillUsed: () -> Unit = {}) {
     val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
@@ -71,20 +75,34 @@ fun ChannelsHomeScreen(onBack: () -> Unit) {
     var openEntry by remember { mutableStateOf<SavedPlaylistEntry?>(null) }
     var openCategories by remember { mutableStateOf<List<TvCategoryGroup>?>(null) }
     var openingUrl by remember { mutableStateOf<String?>(null) }
+    var addPrefill by remember { mutableStateOf<ChannelPrefill?>(null) }
 
     fun refresh() { entries = SavedPlaylists.all(context) }
+
+    // What sync brings in shows at once, and opening the page asks for it.
+    LaunchedEffect(SavedPlaylists.version) { refresh() }
+    LaunchedEffect(Unit) { ChannelListSync.syncNow() }
+    LaunchedEffect(prefill) {
+        if (prefill != null) {
+            openCategories = null
+            openEntry = null
+            addPrefill = prefill
+            showAdd = true
+            onPrefillUsed()
+        }
+    }
 
     fun openList(entry: SavedPlaylistEntry) {
         openingUrl = entry.url
         scope.launch {
-            when (val result = withContext(Dispatchers.IO) { M3uPlaylist.inspect(entry.url) }) {
-                is M3uResult.ChannelList -> {
-                    SavedPlaylists.upsert(context, entry.url, entry.title, result.categories.sumOf { it.channels.size })
-                    refresh()
-                    openEntry = entry
-                    openCategories = result.categories
-                }
-                else -> android.widget.Toast.makeText(context, "Couldn't load “${entry.title}” — check your connection.", android.widget.Toast.LENGTH_LONG).show()
+            val groups = withContext(Dispatchers.IO) { M3uPlaylist.channelGroups(M3uPlaylist.inspect(entry.url), entry.title) }
+            if (groups != null) {
+                SavedPlaylists.upsert(context, entry.url, entry.title, groups.sumOf { it.channels.size })
+                refresh()
+                openEntry = entry
+                openCategories = groups
+            } else {
+                android.widget.Toast.makeText(context, "Couldn't load “${entry.title}” — check your connection.", android.widget.Toast.LENGTH_LONG).show()
             }
             openingUrl = null
         }
@@ -110,7 +128,10 @@ fun ChannelsHomeScreen(onBack: () -> Unit) {
                 openCategories = null
                 openEntry = null
             },
-            onPlay = { ch -> context.startActivity(VideoPlayerActivity.intent(context, ch.url, ch.title, "Live TV · ${ch.category}")) },
+            onPlay = { ch, shown ->
+                ChannelQueue.start(shown, ch)
+                context.startActivity(VideoPlayerActivity.intent(context, ch.url, ch.title, ch.playerSource, channels = true))
+            },
             onBack = { openCategories = null; openEntry = null },
         )
         return
@@ -144,8 +165,14 @@ fun ChannelsHomeScreen(onBack: () -> Unit) {
 
     if (showAdd) {
         AddPlaylistDialog(
-            onDismiss = { showAdd = false },
+            initialUrl = addPrefill?.url.orEmpty(),
+            initialName = addPrefill?.name.orEmpty(),
+            onDismiss = {
+                showAdd = false
+                addPrefill = null
+            },
             onAdded = { url, title, cats ->
+                addPrefill = null
                 SavedPlaylists.upsert(context, url, title, cats.sumOf { it.channels.size })
                 refresh()
                 showAdd = false
@@ -176,7 +203,7 @@ private fun PlaylistRow(entry: SavedPlaylistEntry, loading: Boolean, first: Bool
         Column(Modifier.weight(1f)) {
             Text(entry.title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                if (entry.channelCount > 0) "${entry.channelCount} channels · ${entry.url}" else entry.url,
+                if (entry.channelCount > 0) "${channelCountText(entry.channelCount)} · ${entry.url}" else entry.url,
                 fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
@@ -190,11 +217,11 @@ private fun PlaylistRow(entry: SavedPlaylistEntry, loading: Boolean, first: Bool
 }
 
 @Composable
-private fun AddPlaylistDialog(onDismiss: () -> Unit, onAdded: (url: String, title: String, categories: List<TvCategoryGroup>) -> Unit) {
+private fun AddPlaylistDialog(initialUrl: String, initialName: String, onDismiss: () -> Unit, onAdded: (url: String, title: String, categories: List<TvCategoryGroup>) -> Unit) {
     val cs = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
-    var url by remember { mutableStateOf("") }
-    var name by remember { mutableStateOf("") }
+    var url by remember(initialUrl) { mutableStateOf(initialUrl) }
+    var name by remember(initialName) { mutableStateOf(initialName) }
     var checking by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -227,19 +254,16 @@ private fun AddPlaylistDialog(onDismiss: () -> Unit, onAdded: (url: String, titl
                     checking = true
                     error = null
                     scope.launch {
-                        when (val result = withContext(Dispatchers.IO) { M3uPlaylist.inspect(raw) }) {
-                            is M3uResult.ChannelList -> {
-                                val title = name.trim().ifBlank { runCatching { java.net.URL(raw).host }.getOrDefault(raw) }
-                                onAdded(raw, title, result.categories)
-                            }
-                            else -> error = "That link doesn't look like a channel list. For a single video, use Tools → Video player instead."
-                        }
+                        val title = name.trim().ifBlank { runCatching { java.net.URL(raw).host }.getOrDefault(raw) }
+                        val groups = withContext(Dispatchers.IO) { M3uPlaylist.channelGroups(M3uPlaylist.inspect(raw), title) }
+                        if (groups != null) onAdded(raw, title, groups)
+                        else error = "That link doesn't look like a channel list. For a single video, use Tools → Video player instead."
                         checking = false
                     }
                 },
             ) {
                 if (checking) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                else Text("Add")
+                else Text("Save")
             }
         },
         dismissButton = { TextButton(enabled = !checking, onClick = onDismiss) { Text("Cancel") } },

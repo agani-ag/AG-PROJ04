@@ -5,6 +5,8 @@
 
 # ---- App data models (Gson (de)serialization) ----
 -keep class com.agani.syncup.data.** { *; }
+# Station files: AudioSync's replies and the saved recents / uploads, read with Gson.
+-keep class com.agani.syncup.stationfiles.** { *; }
 -keepattributes Signature, RuntimeVisibleAnnotations, AnnotationDefault, EnclosingMethod, InnerClasses
 
 # ---- Gson ----

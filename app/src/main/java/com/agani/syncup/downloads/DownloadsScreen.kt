@@ -321,9 +321,14 @@ private fun ActiveCard(t: DownloadTask) {
         Row(Modifier.padding(end = 6.dp)) {
             when (t.state) {
                 DlState.RUNNING -> {
-                    Text(if (t.speed > 0) "${Files.size(t.speed)}/s" else "Connecting…", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = cs.primary, modifier = Modifier.weight(1f))
-                    val left = Downloads.secondsLeft(t)
-                    if (left >= 0) Text("${Files.duration(left)} left", fontSize = 12.sp, color = cs.onSurfaceVariant)
+                    val note = t.note
+                    if (note != null) {
+                        StatusText(note)
+                    } else {
+                        Text(if (t.speed > 0) "${Files.size(t.speed)}/s" else "Connecting…", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = cs.primary, modifier = Modifier.weight(1f))
+                        val left = Downloads.secondsLeft(t)
+                        if (left >= 0) Text("${Files.duration(left)} left", fontSize = 12.sp, color = cs.onSurfaceVariant)
+                    }
                 }
                 DlState.QUEUED -> StatusText("Waiting · ${Downloads.atOnce} download${if (Downloads.atOnce == 1) "" else "s"} at a time")
                 DlState.WAITING_NETWORK -> StatusText("Waiting for network — resumes on its own")

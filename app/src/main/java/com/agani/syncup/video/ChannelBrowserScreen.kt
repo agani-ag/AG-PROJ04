@@ -98,7 +98,7 @@ fun ChannelBrowserScreen(
     playlistUrl: String,
     onPlaylistUpdated: (newUrl: String, newCategories: List<TvCategoryGroup>) -> Unit,
     onRemoved: () -> Unit,
-    onPlay: (TvChannel) -> Unit,
+    onPlay: (TvChannel, shown: List<TvChannel>) -> Unit,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -144,7 +144,7 @@ fun ChannelBrowserScreen(
 
     Box(Modifier.fillMaxSize().background(cs.background).windowInsetsPadding(WindowInsets.safeDrawing)) {
         Column(Modifier.fillMaxSize()) {
-            ToolTopBar(title.ifBlank { "Channels" }, onBack, subtitle = "$totalCount channels") {
+            ToolTopBar(title.ifBlank { "Channels" }, onBack, subtitle = channelCountText(totalCount)) {
                 Box {
                     BarIcon(Icons.Rounded.MoreVert, "More", tint = cs.onSurface) { showMenu = true }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
@@ -225,7 +225,7 @@ fun ChannelBrowserScreen(
                     modifier = Modifier.weight(1f),
                 ) {
                     gridItems(shown, key = { it.id }) { ch ->
-                        TvChannelCard(ch, isFavorite = ch.url in favoriteUrls, onToggleFavorite = { toggleFavorite(ch.url) }) { onPlay(ch) }
+                        TvChannelCard(ch, isFavorite = ch.url in favoriteUrls, onToggleFavorite = { toggleFavorite(ch.url) }) { onPlay(ch, shown) }
                     }
                 }
             }
@@ -258,12 +258,12 @@ fun ChannelBrowserScreen(
                             updating = true
                             updateError = null
                             scope.launch {
-                                when (val result = withContext(Dispatchers.IO) { M3uPlaylist.inspect(url) }) {
-                                    is M3uResult.ChannelList -> {
-                                        showUpdateDialog = false
-                                        onPlaylistUpdated(url, result.categories)
-                                    }
-                                    else -> updateError = "That link isn't a channel list — nothing changed."
+                                val groups = withContext(Dispatchers.IO) { M3uPlaylist.channelGroups(M3uPlaylist.inspect(url), title) }
+                                if (groups != null) {
+                                    showUpdateDialog = false
+                                    onPlaylistUpdated(url, groups)
+                                } else {
+                                    updateError = "That link isn't a channel list — nothing changed."
                                 }
                                 updating = false
                             }

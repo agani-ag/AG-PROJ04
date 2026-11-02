@@ -10,8 +10,10 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Rational
+import android.view.KeyEvent
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -24,6 +26,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +39,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -53,7 +58,6 @@ import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Theaters
-import androidx.compose.material.icons.rounded.BrightnessMedium
 import androidx.compose.material.icons.rounded.ClosedCaption
 import androidx.compose.material.icons.rounded.Forward10
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -65,6 +69,8 @@ import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.ScreenRotation
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material3.AlertDialog
@@ -90,6 +96,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -117,15 +124,18 @@ import androidx.media3.ui.PlayerView
 import com.agani.syncup.MainActivity
 import com.agani.syncup.downloads.Downloads
 import com.agani.syncup.music.playAudioOnly
+import com.agani.syncup.stationfiles.StationFileRetries
+import com.agani.syncup.stationfiles.parseStationUri
+import com.agani.syncup.stationfiles.stationDataSourceFactory
 import kotlinx.coroutines.delay
 import kotlin.math.abs
-import kotlin.math.roundToInt
 
 /**
  * The video player: a phone video, a SyncUp download or a video link (mp4, m3u8 …). Tap for the
  * controls; double-tap a side to skip 10 s; slide the left side for brightness and the right side for
- * volume (and on past full volume into the booster); pinch to fill the screen. Speed, subtitles (the
- * video's own or a .srt), audio track, lock, rotate and picture-in-picture; Sound & booster (100–200%
+ * volume (and on past full volume into the booster), each with its bar at that side; the volume keys do
+ * the same. Pinch to fill the screen. Speed, subtitles (the
+ * video's own or a .srt), audio track, lock, rotate and picture-in-picture; Sound & booster (100–300%
  * and a sound style), sleep timer, play audio only, play with another app, watch together. Picks up
  * where each video stopped.
  */
@@ -135,9 +145,15 @@ class VideoPlayerActivity : ComponentActivity() {
     private var player: ExoPlayer? = null
     private var effects: SoundEffects? = null
     private var inPip by mutableStateOf(false)
-    private var uri = ""
+    private var volumeKeyAt by mutableLongStateOf(0L)
+    private var uri by mutableStateOf("")
     private var title by mutableStateOf("")
     private var source = ""
+    /** Opened from a channel list: Next, Previous and the swipes go through [ChannelQueue]. */
+    private var canChangeChannel by mutableStateOf(false)
+    /** A station's converted copy (H.264 HLS), for a video this phone can't decode; and whether it's playing that. */
+    private var fallback: String? = null
+    private var onFallback = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -155,6 +171,20 @@ class VideoPlayerActivity : ComponentActivity() {
         exo.setAudioSessionId(session)
         val fx = SoundEffects(session)
         effects = fx
+        // This phone can't decode the video (a 10-bit HEVC film, say): the station converts it, from the same spot.
+        exo.addListener(object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                val other = fallback
+                if (error.errorCode in 4000..4999 && other != null && !onFallback) {
+                    onFallback = true
+                    val at = exo.currentPosition
+                    load(exo, other)
+                    if (at > 0) exo.seekTo(at)
+                    exo.playWhenReady = true
+                    Toast.makeText(this@VideoPlayerActivity, "This phone can't play this video's format, so ${source.ifBlank { "the station" }} is converting it.", Toast.LENGTH_LONG).show()
+                }
+            }
+        })
         open(intent, exo)
         setContent {
             MaterialTheme(colorScheme = playerScheme(SeekRed)) {
@@ -169,9 +199,10 @@ class VideoPlayerActivity : ComponentActivity() {
                     }
                 }
                 PlayerScreen(
-                    exo, title, uri, inPip,
+                    exo, title, uri, inPip, volumeKeyAt,
                     onBack = { finish() }, onPip = { enterPip() },
                     onAudioOnly = { audioOnly() }, onWatchTogether = { watchTogether() },
+                    canChangeChannel = canChangeChannel, onChangeChannel = { changeChannel(it) },
                 )
             }
         }
@@ -188,6 +219,32 @@ class VideoPlayerActivity : ComponentActivity() {
         uri = intent.getStringExtra(EXTRA_URI).orEmpty()
         title = intent.getStringExtra(EXTRA_TITLE)?.takeIf { it.isNotBlank() } ?: Uri.parse(uri).lastPathSegment.orEmpty()
         source = intent.getStringExtra(EXTRA_SOURCE).orEmpty()
+        fallback = intent.getStringExtra(EXTRA_FALLBACK)?.takeIf { it.isNotBlank() }
+        onFallback = false
+        canChangeChannel = intent.getBooleanExtra(EXTRA_CHANNELS, false) && ChannelQueue.canStep
+        load(exo, uri)
+        val resume = WatchHistory.positionOf(this, uri)
+        if (resume > 0) exo.seekTo(resume)
+        exo.playWhenReady = true
+    }
+
+    /** Next / Previous on a channel ([step] = 1 or -1): what to call where it landed, null if there's nowhere to go. */
+    private fun changeChannel(step: Int): String? {
+        val exo = player ?: return null
+        val channel = ChannelQueue.step(step) ?: return null
+        // Not saved here: "Continue watching" gets the channel the user stays on, not every one passed through.
+        uri = channel.url
+        title = channel.title
+        source = channel.playerSource
+        // A fresh decoder for each channel: one reused from a bigger picture drew the next channel small, over the old one.
+        exo.stop()
+        load(exo, uri)
+        exo.playWhenReady = true
+        return "${channel.title} · ${ChannelQueue.position}"
+    }
+
+    /** Put [address] in the player (the video, or its converted copy). */
+    private fun load(exo: ExoPlayer, address: String) {
         val http = DefaultHttpDataSource.Factory()
             .setUserAgent(intent.getStringExtra(EXTRA_UA)?.takeIf { it.isNotBlank() } ?: Downloads.defaultUserAgent.ifBlank { null })
             .setAllowCrossProtocolRedirects(true)
@@ -197,15 +254,19 @@ class VideoPlayerActivity : ComponentActivity() {
                     intent.getStringExtra(EXTRA_COOKIES)?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
                 },
             )
-        val factory = DefaultMediaSourceFactory(DefaultDataSource.Factory(this, http))
-        val item = MediaItem.Builder().setUri(uri).apply {
-            if (uri.substringBefore('?').endsWith(".m3u8", ignoreCase = true)) setMimeType(MimeTypes.APPLICATION_M3U8)
+        val upstream = DefaultDataSource.Factory(this, http)
+        // A station's video (Radio → Files): found by the station's key on every connection, so it carries on
+        // after the station gets a new address, and waits a few minutes for a station that's coming back.
+        val factory = if (parseStationUri(address) != null) {
+            DefaultMediaSourceFactory(stationDataSourceFactory(upstream)).setLoadErrorHandlingPolicy(StationFileRetries())
+        } else {
+            DefaultMediaSourceFactory(upstream)
+        }
+        val item = MediaItem.Builder().setUri(address).apply {
+            if (address.substringBefore('?').endsWith(".m3u8", ignoreCase = true)) setMimeType(MimeTypes.APPLICATION_M3U8)
         }.build()
         exo.setMediaSource(factory.createMediaSource(item))
         exo.prepare()
-        val resume = WatchHistory.positionOf(this, uri)
-        if (resume > 0) exo.seekTo(resume)
-        exo.playWhenReady = true
     }
 
     override fun onUserLeaveHint() {
@@ -233,6 +294,17 @@ class VideoPlayerActivity : ComponentActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         inPip = isInPictureInPictureMode
+    }
+
+    // The volume keys: the phone's volume, then the booster past full volume, shown on the player's own bar.
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val up = event.keyCode == KeyEvent.KEYCODE_VOLUME_UP
+        if (inPip || !up && event.keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) return super.dispatchKeyEvent(event)
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            SoundLevel.key(this, up)
+            volumeKeyAt = SystemClock.uptimeMillis()
+        }
+        return true
     }
 
     override fun onPause() {
@@ -300,8 +372,14 @@ class VideoPlayerActivity : ComponentActivity() {
         private const val EXTRA_UA = "ua"
         private const val EXTRA_REFERER = "referer"
         private const val EXTRA_COOKIES = "cookies"
+        private const val EXTRA_FALLBACK = "fallback"
+        private const val EXTRA_CHANNELS = "channels"
 
-        /** Play [uri] (content://, file:// or http(s)://). [source] is shown under "Continue watching". */
+        /**
+         * Play [uri] (content://, file:// or http(s)://). [source] is shown under "Continue watching". [fallback]:
+         * a converted copy to switch to if this phone can't decode the video (a station's HLS conversion).
+         * [channels]: a channel from a list, with [ChannelQueue] already started on it.
+         */
         fun intent(
             context: Context,
             uri: String,
@@ -310,9 +388,12 @@ class VideoPlayerActivity : ComponentActivity() {
             userAgent: String? = null,
             referer: String? = null,
             cookies: String? = null,
+            fallback: String? = null,
+            channels: Boolean = false,
         ): Intent = Intent(context, VideoPlayerActivity::class.java)
             .putExtra(EXTRA_URI, uri).putExtra(EXTRA_TITLE, title).putExtra(EXTRA_SOURCE, source)
             .putExtra(EXTRA_UA, userAgent).putExtra(EXTRA_REFERER, referer).putExtra(EXTRA_COOKIES, cookies)
+            .putExtra(EXTRA_FALLBACK, fallback).putExtra(EXTRA_CHANNELS, channels)
     }
 }
 
@@ -323,10 +404,13 @@ private fun PlayerScreen(
     title: String,
     uri: String,
     inPip: Boolean,
+    volumeKeyAt: Long,
     onBack: () -> Unit,
     onPip: () -> Unit,
     onAudioOnly: () -> Unit,
     onWatchTogether: () -> Unit,
+    canChangeChannel: Boolean,
+    onChangeChannel: (Int) -> String?,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val activity = context as ComponentActivity
@@ -343,6 +427,7 @@ private fun PlayerScreen(
     var seeking by remember { mutableStateOf<Float?>(null) }
     var hint by remember { mutableStateOf<Pair<ImageVector, String>?>(null) }
     var hintAt by remember { mutableLongStateOf(0L) }
+    var hintFor by remember { mutableLongStateOf(900L) }
     var lastTouch by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var menu by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<String?>(null) }
@@ -372,7 +457,10 @@ private fun PlayerScreen(
                 if (state == Player.STATE_READY) { duration = exo.duration.coerceAtLeast(0); error = null }
                 if (state == Player.STATE_ENDED) showControls = true
             }
-            override fun onPlayerError(e: PlaybackException) { error = "Can't play this video (${e.errorCodeName.removePrefix("ERROR_CODE_").lowercase().replace('_', ' ')})" }
+            override fun onPlayerError(e: PlaybackException) {
+                if (exo.playerError == null) return // already trying the station's converted copy
+                error = "Can't play this video (${e.errorCodeName.removePrefix("ERROR_CODE_").lowercase().replace('_', ' ')})"
+            }
             override fun onTracksChanged(t: Tracks) { tracks = t }
             override fun onVideoSizeChanged(size: VideoSize) {
                 // A wide video turns the screen sideways by itself (once; Rotate overrides it).
@@ -401,8 +489,10 @@ private fun PlayerScreen(
         }
     }
     LaunchedEffect(hintAt) {
-        if (hint != null) { delay(900); hint = null }
+        if (hint != null) { delay(hintFor); hint = null }
     }
+    // Another channel: its own message and times, not the last one's.
+    LaunchedEffect(uri) { error = null; position = 0; duration = 0 }
 
     val audio = remember { context.getSystemService(AudioManager::class.java) }
     val maxVol = remember { audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1) }
@@ -413,7 +503,25 @@ private fun PlayerScreen(
                 ?: (runCatching { Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS) }.getOrDefault(128) / 255f),
         )
     }
-    fun show(icon: ImageVector, text: String) { hint = icon to text; hintAt = System.currentTimeMillis() }
+    fun show(icon: ImageVector, text: String, forMs: Long = 900) { hint = icon to text; hintFor = forMs; hintAt = System.currentTimeMillis() }
+    // Says where it landed, longer than other hints: after a swipe the controls are usually hidden.
+    fun changeChannel(step: Int) {
+        val label = onChangeChannel(step) ?: return
+        show(if (step > 0) Icons.Rounded.SkipNext else Icons.Rounded.SkipPrevious, label, 2_500)
+    }
+    // The bar at the side while sliding or pressing a volume key (the controls step aside for it).
+    var bar by remember { mutableStateOf<PlayerBar?>(null) }
+    var barAt by remember { mutableLongStateOf(0L) }
+    fun showBar(b: PlayerBar) { bar = b; barAt = System.currentTimeMillis(); showControls = false }
+    LaunchedEffect(barAt) {
+        if (bar != null) { delay(1_000); bar = null }
+    }
+    LaunchedEffect(volumeKeyAt) {
+        if (volumeKeyAt > 0) {
+            volume = audio.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVol
+            showBar(PlayerBar.VOLUME)
+        }
+    }
 
     val subtitleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { picked ->
         if (picked != null) {
@@ -438,7 +546,11 @@ private fun PlayerScreen(
                     setKeepContentOnPlayerReset(true)
                 }
             },
-            update = { it.resizeMode = if (zoom) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT },
+            update = {
+                it.resizeMode = if (zoom) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT
+                // Changing channel: black until the new picture, so a dead channel doesn't show the last one's.
+                it.setKeepContentOnPlayerReset(!canChangeChannel)
+            },
             modifier = Modifier.fillMaxSize(),
         )
         if (inPip) return@Box
@@ -460,7 +572,7 @@ private fun PlayerScreen(
                 .pointerInput(locked) {
                     if (locked) return@pointerInput
                     var scale = 1f
-                    // The right-side slide: 0..1 = volume, 1..2 = boost, kept unrounded while sliding.
+                    // The right-side slide: 0..1 = volume, 1..3 = boost, kept unrounded while sliding.
                     var level = -1f
                     var levelAt = 0L
                     detectTransformGestures { centroid, pan, gestureZoom, _ ->
@@ -473,30 +585,55 @@ private fun PlayerScreen(
                             if (centroid.x < size.width / 2) {
                                 brightness = (brightness + delta).coerceIn(0.01f, 1f)
                                 activity.window.attributes = activity.window.attributes.apply { screenBrightness = brightness }
-                                show(Icons.Rounded.BrightnessMedium, "Brightness ${(brightness * 100).toInt()}%")
+                                showBar(PlayerBar.BRIGHTNESS)
                             } else {
-                                // 0..1 = the phone's volume, 1..2 = the booster on top (100–200%).
+                                // 0..1 = the phone's volume, 1..3 = the booster on top (100–300%).
                                 val now = System.currentTimeMillis()
-                                if (level < 0f || now - levelAt > 400) {
-                                    level = if (VideoSound.boost > 100) 1f + (VideoSound.boost - 100) / 100f else volume
-                                }
+                                if (level < 0f || now - levelAt > 400) level = SoundLevel.of(volume, VideoSound.boost)
                                 levelAt = now
-                                level = (level + delta).coerceIn(0f, 2f)
+                                level = (level + delta).coerceIn(0f, SoundLevel.MAX)
                                 volume = level.coerceAtMost(1f)
                                 audio.setStreamVolume(AudioManager.STREAM_MUSIC, (volume * maxVol).toInt(), 0)
-                                VideoSound.changeBoost(context, 100 + (((level - 1f).coerceAtLeast(0f) * 100f) / 5f).roundToInt() * 5)
-                                if (VideoSound.boost > 100) show(Icons.AutoMirrored.Rounded.VolumeUp, "Boost ${VideoSound.boost}%")
-                                else show(Icons.AutoMirrored.Rounded.VolumeUp, "Volume ${(volume * 100).toInt()}%")
+                                VideoSound.changeBoost(context, SoundLevel.boostAt(level))
+                                showBar(PlayerBar.VOLUME)
                             }
                         }
                     }
+                }
+                // A channel: one finger sideways, left for next, right for previous. It only watches, so the
+                // slides and pinches above carry on as they are.
+                .pointerInput(locked, canChangeChannel) {
+                    if (locked || !canChangeChannel) return@pointerInput
+                    val far = 72.dp.toPx()
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        var across = 0f
+                        var upDown = 0f
+                        var fingers = 1
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            fingers = maxOf(fingers, event.changes.size)
+                            val finger = event.changes.firstOrNull { it.id == down.id } ?: break
+                            across = finger.position.x - down.position.x
+                            upDown = maxOf(upDown, abs(finger.position.y - down.position.y))
+                            if (event.changes.none { it.pressed }) break
+                        }
+                        if (fingers == 1 && abs(across) > far && abs(across) > upDown * 2) changeChannel(if (across < 0) 1 else -1)
+                    }
                 },
         )
+        // Brightness on the left, volume (and the booster above it) on the right.
+        when (bar) {
+            PlayerBar.BRIGHTNESS -> BrightnessBar(brightness, Modifier.align(Alignment.CenterStart).windowInsetsPadding(WindowInsets.safeDrawing).padding(start = 28.dp))
+            PlayerBar.VOLUME -> VolumeBar(volume, VideoSound.boost, Modifier.align(Alignment.CenterEnd).windowInsetsPadding(WindowInsets.safeDrawing).padding(end = 28.dp))
+            null -> Unit
+        }
 
-        hint?.let { (icon, text) ->
+        // With the controls up on a video that failed, the top bar names it and the message below needs this space.
+        hint?.takeUnless { error != null && showControls }?.let { (icon, text) ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp).clip(RoundedCornerShape(14.dp))
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp, start = 24.dp, end = 24.dp).clip(RoundedCornerShape(14.dp))
                     .background(Color.Black.copy(alpha = .6f)).padding(horizontal = 14.dp, vertical = 8.dp),
             ) {
                 Icon(icon, null, tint = Color.White, modifier = Modifier.size(20.dp))
@@ -507,8 +644,9 @@ private fun PlayerScreen(
         if (buffering && error == null) CircularProgressIndicator(color = Color.White, modifier = Modifier.align(Alignment.Center).size(48.dp))
         error?.let {
             Text(
-                it, color = Color.White, fontSize = 14.sp,
-                modifier = Modifier.align(Alignment.Center).clip(RoundedCornerShape(12.dp)).background(Color.Black.copy(alpha = .7f)).padding(16.dp),
+                if (canChangeChannel) "$it\nSwipe for another channel" else it, color = Color.White, fontSize = 14.sp,
+                // Above the play button when the controls are up, not underneath it.
+                modifier = Modifier.align(Alignment.Center).offset(y = if (showControls) (-84).dp else 0.dp).clip(RoundedCornerShape(12.dp)).background(Color.Black.copy(alpha = .7f)).padding(16.dp),
             )
         }
 
@@ -577,9 +715,10 @@ private fun PlayerScreen(
                         }
                     }
                 }
-                // Middle: back 10 s, play / pause, forward 10 s.
+                // Middle: back 10 s, play / pause, forward 10 s; on a channel, previous and next instead.
                 Row(horizontalArrangement = Arrangement.spacedBy(36.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.align(Alignment.Center)) {
-                    IconBtn(Icons.Rounded.Replay10, "Back 10 seconds", size = 40) { exo.seekTo((exo.currentPosition - 10_000).coerceAtLeast(0)); lastTouch = System.currentTimeMillis() }
+                    if (canChangeChannel) IconBtn(Icons.Rounded.SkipPrevious, "Previous channel", size = 40) { changeChannel(-1); lastTouch = System.currentTimeMillis() }
+                    else IconBtn(Icons.Rounded.Replay10, "Back 10 seconds", size = 40) { exo.seekTo((exo.currentPosition - 10_000).coerceAtLeast(0)); lastTouch = System.currentTimeMillis() }
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier.size(72.dp).clip(CircleShape).background(Color.White.copy(alpha = .18f)).clickable {
@@ -588,7 +727,8 @@ private fun PlayerScreen(
                             lastTouch = System.currentTimeMillis()
                         },
                     ) { Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "Pause" else "Play", tint = Color.White, modifier = Modifier.size(44.dp)) }
-                    IconBtn(Icons.Rounded.Forward10, "Forward 10 seconds", size = 40) { exo.seekTo((exo.currentPosition + 10_000).coerceAtMost(exo.duration.coerceAtLeast(0))); lastTouch = System.currentTimeMillis() }
+                    if (canChangeChannel) IconBtn(Icons.Rounded.SkipNext, "Next channel", size = 40) { changeChannel(1); lastTouch = System.currentTimeMillis() }
+                    else IconBtn(Icons.Rounded.Forward10, "Forward 10 seconds", size = 40) { exo.seekTo((exo.currentPosition + 10_000).coerceAtMost(exo.duration.coerceAtLeast(0))); lastTouch = System.currentTimeMillis() }
                 }
                 // Bottom: seek bar, times, quick buttons.
                 Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 10.dp)) {

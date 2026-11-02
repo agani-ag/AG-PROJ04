@@ -15,6 +15,8 @@ class SyncUpApp : Application() {
         CrashReporter.install(this)
         createVerificationChannel()
         com.agani.syncup.notifications.Inbox.attach(this)
+        // The player service and downloads can reach a station's files before any screen opens.
+        com.agani.syncup.stationfiles.Stations.init(this)
         // Debug builds only: pages can be inspected from Chrome (chrome://inspect) when testing.
         if (BuildConfig.DEBUG) android.webkit.WebView.setWebContentsDebuggingEnabled(true)
 

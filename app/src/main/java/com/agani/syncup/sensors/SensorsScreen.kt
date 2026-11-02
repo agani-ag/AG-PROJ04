@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.FlashlightOn
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.NetworkCheck
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.SatelliteAlt
 import androidx.compose.material.icons.rounded.Speed
@@ -82,7 +83,8 @@ import com.agani.syncup.ui.theme.isLight
 /**
  * Tools → Sensors: every tool the phone's sensors and parts make possible, in five groups. A tool the
  * phone can't do stays on the page, greyed — tapping it says which part is missing. Each tool reads
- * its sensors only while it's open and SyncUp is on screen; nothing leaves the phone.
+ * its sensors only while it's open and SyncUp is on screen; nothing leaves the phone, apart from the
+ * test data Network test sends to measure the connection.
  */
 @Composable
 fun SensorsScreen(onBack: () -> Unit) {
@@ -103,6 +105,7 @@ fun SensorsScreen(onBack: () -> Unit) {
 @Composable
 private fun ToolScreen(tool: SensorTool, onBack: () -> Unit, onOpen: (SensorTool) -> Unit) {
     when (tool) {
+        SensorTool.NETWORK -> NetworkTool(onBack)
         SensorTool.COMPASS -> CompassTool(onBack)
         SensorTool.SPEEDOMETER -> SpeedometerTool(onBack)
         SensorTool.HEIGHT -> HeightTool(onBack)
@@ -191,7 +194,7 @@ private fun SensorsHome(list: LazyListState, onBack: () -> Unit, onOpen: (Sensor
             }
             item(key = "about") {
                 Text(
-                    "Each tool uses its sensors only while it's open. Nothing leaves the phone. Readings are a guide, not certified measurements.",
+                    "Each tool uses its sensors only while it's open. Nothing leaves the phone, apart from the test data Network test sends. Readings are a guide, not certified measurements.",
                     fontSize = 12.5.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
                 )
@@ -327,6 +330,7 @@ private fun NotInPhone(tool: SensorTool, onAllSensors: () -> Unit, onOk: () -> U
 // ============================================================================ icons
 val SensorTool.icon: ImageVector
     get() = when (this) {
+        SensorTool.NETWORK -> Icons.Rounded.NetworkCheck
         SensorTool.COMPASS -> Icons.Rounded.Explore
         SensorTool.SPEEDOMETER -> Icons.Rounded.Speed
         SensorTool.HEIGHT -> Icons.Rounded.Terrain

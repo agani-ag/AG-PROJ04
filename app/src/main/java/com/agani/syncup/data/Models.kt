@@ -249,13 +249,37 @@ data class RadioChannel(
     val id: String = "",
     val name: String = "",
     @SerializedName("stream_url") val streamUrl: String = "",
+    // The station's live socket for now-playing and listeners (v8). Blank or missing = keep polling.
+    @SerializedName("ws_url") val wsUrl: String? = null,
     @SerializedName("now_playing") val nowPlaying: String = "",
     val listeners: Int = 0,
+    // Station files (v8), in the "stations" list only. The key stays the same when AudioSync restarts or gets
+    // a new address, so a download or song can carry on; the address itself changes.
+    val key: String = "",
+    @SerializedName("radio_on_air") val radioOnAir: Boolean = true,
+    @SerializedName("files_enabled") val filesEnabled: Boolean = false,
+    @SerializedName("files_protected") val filesProtected: Boolean = false,
+    @SerializedName("files_url") val filesUrl: String = "",
+    // The station on its own Wi-Fi (v8): a faster way there for a phone on that Wi-Fi, used only after the PC at
+    // that address answers with this ID. Blank = none.
+    @SerializedName("station_id") val stationId: String = "",
+    @SerializedName("lan_url") val lanUrl: String = "",
+)
+
+/** One message from a station's live socket (see music/RadioLive.kt). */
+data class StationLiveMessage(
+    val type: String? = null,
+    val title: String? = null,
+    val listeners: Int? = null,
+    val playing: Boolean? = null,
 )
 
 data class RadioChannelsResponse(
     val enabled: Boolean = false,
+    /** Stations with the radio on air (what apps up to 7.1 list). */
     val channels: List<RadioChannel> = emptyList(),
+    /** Everything on offer now, including stations sharing files with the radio off (v8). */
+    val stations: List<RadioChannel> = emptyList(),
 )
 
 /** Delivery receipt the app sends back: event is "synced" (downloaded) or "fired" (shown). */

@@ -361,7 +361,7 @@ private fun channelOf(mhz: Int): Int = when {
     else -> 0
 }
 
-private fun bandOf(mhz: Int): String = when {
+internal fun bandOf(mhz: Int): String = when {
     mhz < 3000 -> "2.4 GHz"
     mhz < 5925 -> "5 GHz"
     else -> "6 GHz"

@@ -681,6 +681,7 @@ object GroupLink {
                     }
                 }
                 Payload.Type.FILE -> channels[GroupMode.SHARE]?.onFile(endpointId, payload)
+                Payload.Type.STREAM -> readStream(endpointId, payload)
                 else -> Unit
             }
         }
@@ -790,6 +791,29 @@ object GroupLink {
     // ================================================================== for the modes
     /** A message on [mode]'s channel, ready to send. BYTES payloads are 32 KB at most (one byte goes to the channel). */
     internal fun payload(mode: GroupMode, body: ByteArray): Payload = framed(channelByte(mode), body)
+
+    /**
+     * A big piece (a video's 1 MB) on [mode]'s channel as a Nearby stream: far quicker than 32 KB messages. It
+     * arrives at [GroupChannel.onReceive] like a message, once all of it is here.
+     */
+    internal fun streamPayload(mode: GroupMode, body: ByteArray): Payload {
+        val framed = ByteArray(body.size + 1).also {
+            it[0] = channelByte(mode)
+            System.arraycopy(body, 0, it, 1, body.size)
+        }
+        return Payload.fromStream(java.io.ByteArrayInputStream(framed))
+    }
+
+    /** A stream comes in as it's sent: read it off the main thread, then hand it to its mode on the main thread. */
+    private fun readStream(endpointId: String, payload: Payload) {
+        val input = payload.asStream()?.asInputStream() ?: return
+        io.launch {
+            val bytes = runCatching { input.use { it.readBytes() } }.getOrNull() ?: return@launch
+            if (bytes.size < 2) return@launch
+            val body = bytes.copyOfRange(1, bytes.size)
+            main.post { modeOf(bytes[0])?.let { channels[it] }?.onReceive(endpointId, body, System.nanoTime()) }
+        }
+    }
 
     private fun groupPayload(o: JSONObject): Payload = framed(CH_GROUP, o.toString().toByteArray(Charsets.UTF_8))
 

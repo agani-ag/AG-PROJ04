@@ -24,6 +24,8 @@ data class Song(
     val albumId: Long,
     val durationMs: Long,
     val uri: Uri,
+    /** The folder it's in, from the storage's top ("Music/Tamil"); empty when the phone doesn't say. */
+    val folder: String = "",
 ) {
     /** Where the list, the player and its notification load the cover art from (see [Artwork]). */
     val artUri: Uri get() = Artwork.uriFor(uri, albumId)
@@ -57,6 +59,9 @@ object LocalSongs {
                 append(" AND ($path IS NULL OR ($path NOT LIKE '%Voice Notes%' AND $path NOT LIKE '%Call%record%'))")
             }
         }
+        // The folder: Android 10+ gives it from the storage's top; older versions only the whole file path.
+        @Suppress("DEPRECATION")
+        val folderColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) MediaStore.Audio.Media.RELATIVE_PATH else MediaStore.Audio.Media.DATA
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.TITLE,
@@ -64,6 +69,7 @@ object LocalSongs {
             MediaStore.Audio.Media.ALBUM,
             MediaStore.Audio.Media.ALBUM_ID,
             MediaStore.Audio.Media.DURATION,
+            folderColumn,
         )
         val songs = ArrayList<Song>()
         context.contentResolver.query(collection, projection, selection, null, null)?.use { c ->
@@ -73,6 +79,7 @@ object LocalSongs {
             val album = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
             val albumId = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
             val duration = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+            val folder = c.getColumnIndex(folderColumn)
             while (c.moveToNext()) {
                 val songId = c.getLong(id)
                 songs += Song(
@@ -83,10 +90,19 @@ object LocalSongs {
                     albumId = c.getLong(albumId),
                     durationMs = c.getLong(duration),
                     uri = ContentUris.withAppendedId(collection, songId),
+                    folder = if (folder < 0) "" else folderOf(c.getString(folder)),
                 )
             }
         }
         return songs.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+    }
+
+    /** "Music/Tamil/" (Android 10+) or "/storage/emulated/0/Music/Tamil/song.mp3" (older) → "Music/Tamil". */
+    internal fun folderOf(value: String?): String {
+        val v = value?.trim().orEmpty()
+        if (v.isEmpty()) return ""
+        val dir = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) v else v.substringBeforeLast('/', "")
+        return dir.removePrefix("/storage/emulated/0/").removePrefix("/sdcard/").trim('/')
     }
 
     // MediaStore fills missing tags with "<unknown>".

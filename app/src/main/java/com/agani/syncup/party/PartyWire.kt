@@ -9,7 +9,7 @@ import java.nio.ByteBuffer
  *
  * Control messages ("t" = type):
  *   guest → host  hello {token, name, have{track: pieces (BitSet, base64)}}   ping {id, a}
- *                 add {req, title, artist, ms, size, mime}   bye
+ *                 add {req, title, artist, ms, size, mime}   want {track, piece}   at {track, at (bytes read)}   bye
  *   host → guest  state {…room, queue, current, t0, paused, pos}   pong {id, a, b, c}
  *                 addok {req, track}   addno {req}   end
  */
