@@ -1,22 +1,27 @@
 package com.agani.syncup.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Chat
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Logout
@@ -31,9 +36,8 @@ import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationManagerCompat
 import com.agani.syncup.browser.BrowserSettings
+import com.agani.syncup.browser.ui.BarIcon
 import com.agani.syncup.browser.ui.BadgeTextStyle
 import com.agani.syncup.data.AppPrefs
 import com.agani.syncup.data.SecurityStore
@@ -62,13 +67,14 @@ import com.agani.syncup.ui.theme.CardShape
 import com.agani.syncup.ui.theme.appCard
 
 /**
- * The picture on the main page (or Settings in the browser's ⋮) opens this sheet (not a page): the account and
- * Partners, then the settings groups (Chat among them) — each opens its own page with everything in it — and Sign out. Signed out: Sign in,
- * then the settings.
+ * Settings, a page of its own (user, 17 Nov 2026: "a page with a proper back button, not a pop-up"): opened from
+ * the picture on the main page or Settings in the browser's ⋮. The account and Partners, then the settings
+ * groups (Chat among them) — each opens its own page, and Back from there comes back here — and Sign out.
+ * Signed out: Sign in, then the settings. Back (the arrow or the phone's) returns to where it was opened from.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AccountSheet(
+fun SettingsHome(
     user: User?,
     themeMode: ThemeMode,
     appVersion: String,
@@ -76,7 +82,7 @@ fun AccountSheet(
     chatUnread: Int,
     hasPartners: Boolean,
     partnersWaiting: Int,
-    onDismiss: () -> Unit,
+    onBack: () -> Unit,
     onSignIn: () -> Unit,
     onPage: (String) -> Unit,
     onSignOut: () -> Unit,
@@ -84,12 +90,25 @@ fun AccountSheet(
     val cs = MaterialTheme.colorScheme
     val context = LocalContext.current
     var confirmSignOut by remember { mutableStateOf(false) }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = cs.surface,
-    ) {
-        Column(Modifier.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+    BackHandler(onBack = onBack)
+    // Nothing scrolls under the phone's navigation bar: the page stops above it.
+    Column(Modifier.fillMaxSize().background(cs.surface).navigationBarsPadding()) {
+        // The same top bar as each settings group's page.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().windowInsetsPadding(TopAppBarDefaults.windowInsets).heightIn(min = 60.dp)
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+        ) {
+            BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
+            Text(
+                "Settings", fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Medium, color = cs.onSurface,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+        }
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+        ) {
             if (user != null) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -109,13 +128,7 @@ fun AccountSheet(
                     }
                     Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = cs.onSurfaceVariant)
                 }
-                // Chat sits in the Settings list below (user, 16 Nov 2026); Partners keeps its own card.
-                if (hasPartners) {
-                    Spacer(Modifier.height(12.dp))
-                    Column(Modifier.fillMaxWidth().appCard(CardShape)) {
-                        SheetRow(Icons.Rounded.Handshake, "Partners", badge = partnersWaiting.takeIf { it > 0 }?.let { "$it new" }) { onPage(SettingsPage.PARTNERS) }
-                    }
-                }
+                // Partners and Chat with admin sit in the settings list below (user, 16–17 Nov 2026).
             } else {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -136,10 +149,7 @@ fun AccountSheet(
                 }
             }
 
-            Text(
-                "Settings", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant,
-                modifier = Modifier.padding(start = 6.dp, top = 20.dp, bottom = 10.dp),
-            )
+            Spacer(Modifier.height(16.dp))
             val hasPin = remember { SecurityStore(context).hasPin() }
             val fingerprint = remember { AppPrefs(context).biometricEnabled() }
             val updatesOn = remember { DeviceRegistrar.updatesEnabled(context) }
@@ -169,6 +179,15 @@ fun AccountSheet(
                     "SyncUp updates ${if (updatesOn) "on" else "off"}${if (allowed) "" else " · blocked"}",
                 ) { onPage(SettingsPage.NOTIFICATIONS) }
                 Line()
+                // Partners, just above Chat with admin, in the same list (user, 17 Nov 2026).
+                if (user != null && hasPartners) {
+                    GroupRow(
+                        Icons.Rounded.Handshake, "Partners",
+                        if (partnersWaiting > 0) "$partnersWaiting waiting for their password" else "Services connected to your account",
+                        badge = partnersWaiting.takeIf { it > 0 }?.let { "$it new" },
+                    ) { onPage(SettingsPage.PARTNERS) }
+                    Line()
+                }
                 if (user != null && chatEnabled) {
                     GroupRow(
                         Icons.AutoMirrored.Rounded.Chat, "Chat with admin",
@@ -207,27 +226,6 @@ fun AccountSheet(
 @Composable
 private fun Line() {
     Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
-}
-
-/** Chat / Partners: an icon, the name, a red badge, a chevron. */
-@Composable
-private fun SheetRow(icon: ImageVector, title: String, badge: String? = null, onClick: () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 60.dp).padding(horizontal = 16.dp, vertical = 10.dp),
-    ) {
-        Icon(icon, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(24.dp))
-        Spacer(Modifier.width(16.dp))
-        Text(title, fontSize = 16.sp, color = cs.onSurface, modifier = Modifier.weight(1f))
-        if (badge != null) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.padding(start = 8.dp, end = 6.dp).heightIn(min = 22.dp).clip(RoundedCornerShape(50)).background(cs.error).padding(horizontal = 8.dp),
-            ) { Text(badge, style = BadgeTextStyle, fontSize = 12.sp, lineHeight = 14.sp, fontWeight = FontWeight.Bold, color = cs.onError) }
-        }
-        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = cs.onSurfaceVariant)
-    }
 }
 
 /** A settings group: its tile, name and what's set now in one line (and a red [badge]); opens the group's page. */

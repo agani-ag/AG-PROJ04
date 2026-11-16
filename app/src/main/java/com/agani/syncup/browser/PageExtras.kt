@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.AddBox
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Image
+import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Link
@@ -96,7 +97,7 @@ fun PullIndicator(tab: BrowserTab, modifier: Modifier = Modifier) {
 }
 
 // ============================================================================ long-press menu
-enum class PressAction { OPEN_NEW, OPEN_INCOGNITO, COPY_LINK, SHARE_LINK, DOWNLOAD_LINK, DOWNLOAD_IMAGE, SHARE_IMAGE, OPEN_IMAGE, COPY_IMAGE_LINK }
+enum class PressAction { OPEN_NEW, OPEN_IN_GROUP, OPEN_INCOGNITO, COPY_LINK, SHARE_LINK, DOWNLOAD_LINK, DOWNLOAD_IMAGE, SHARE_IMAGE, OPEN_IMAGE, COPY_IMAGE_LINK }
 
 /**
  * Long-press on a link or an image. On a SyncUp page the address stays hidden: no Copy / Share /
@@ -132,7 +133,9 @@ fun PressMenuSheet(target: PressTarget, tab: BrowserTab, onAction: (PressAction)
             SheetDivider()
             if (link != null) {
                 if (web(link)) {
+                    // A tab of its own, or a page in this page's tab group (user, 17 Nov 2026).
                     MenuRow(Icons.Rounded.AddBox, "Open in new tab") { onAction(PressAction.OPEN_NEW) }
+                    MenuRow(Icons.Rounded.Layers, "Open in this tab group") { onAction(PressAction.OPEN_IN_GROUP) }
                     if (!hideAddress && tab.section != Section.INCOGNITO) {
                         MenuRow(Icons.Rounded.VisibilityOff, "Open in Incognito tab") { onAction(PressAction.OPEN_INCOGNITO) }
                     }

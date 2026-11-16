@@ -246,6 +246,7 @@ class WebPlatform(private val activity: ComponentActivity) {
      * thrown away. Shares [tab]'s profile, as a window it opens must.
      */
     private fun urlCatcher(tab: BrowserTab, onUrl: (String) -> Unit): WebView {
+        freshIncognito(tab.section)
         val catcher = WebView(activity)
         if (tab.section != Section.NORMAL && MULTI_PROFILE) {
             runCatching { WebViewCompat.setProfile(catcher, profileName(tab.section)) }
@@ -312,6 +313,7 @@ class WebPlatform(private val activity: ComponentActivity) {
         webView.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         // The profile must be set before the WebView is used for anything else.
         if (tab.section != Section.NORMAL && MULTI_PROFILE) {
+            freshIncognito(tab.section)
             runCatching { WebViewCompat.setProfile(webView, profileName(tab.section)) }
         }
         webView.settings.apply {
@@ -893,9 +895,57 @@ class WebPlatform(private val activity: ComponentActivity) {
             CookieManager.getInstance()
         }
 
-    /** Wipe a section's cookies + site storage (sign-out for Work; closing Incognito). */
+    /** True once Incognito has been wiped clean on this screen, before its first Incognito page. */
+    private var incognitoFresh = false
+
+    /** Before the first Incognito page of this app run: start from nothing (see [wipeIncognito]). */
+    private fun freshIncognito(section: Section) {
+        if (section != Section.INCOGNITO || incognitoFresh) return
+        incognitoFresh = true
+        wipeIncognito()
+    }
+
+    /**
+     * Incognito forgets everything (user, 17 Nov 2026: a site still knew the videos watched in Incognito after the
+     * app was closed and opened again). The whole Incognito profile is deleted — cookies, site storage (local
+     * storage, IndexedDB, caches), the HTTP cache, service workers, sign-ins and site permissions — before the
+     * first Incognito page of every app run (so closing the app with Incognito tabs open still forgets them) and
+     * when the last Incognito tab closes. If a page still holds the profile, everything in it is cleared instead.
+     * SyncUp's own Incognito choices (site permissions, pop-ups) go too.
+     */
+    fun wipeIncognito() {
+        SitePermissions.clearIncognito()
+        BrowserSettings.clearIncognitoPopups()
+        if (!MULTI_PROFILE) return
+        val name = profileName(Section.INCOGNITO)
+        val store = runCatching { ProfileStore.getInstance() }.getOrNull() ?: return
+        // Deleted with everything in it (or there was nothing yet). It's made again, empty, for the next page.
+        if (runCatching { store.deleteProfile(name) }.isSuccess) return
+        // A page still uses it: empty it instead.
+        runCatching {
+            val profile = store.getOrCreateProfile(name)
+            profile.cookieManager.removeAllCookies(null)
+            profile.cookieManager.flush()
+            profile.webStorage.deleteAllData()
+            profile.geolocationPermissions.clearAll()
+        }
+        // The HTTP cache is the profile's too: a WebView on it empties it.
+        runCatching {
+            WebView(activity).apply {
+                WebViewCompat.setProfile(this, name)
+                clearCache(true)
+                destroy()
+            }
+        }
+    }
+
+    /** Wipe a section's cookies + site storage (sign-out for Work); Incognito is wiped completely ([wipeIncognito]). */
     fun wipeSection(section: Section) {
         if (section == Section.NORMAL) return
+        if (section == Section.INCOGNITO) {
+            wipeIncognito()
+            return
+        }
         if (MULTI_PROFILE) {
             runCatching {
                 val profile = ProfileStore.getInstance().getOrCreateProfile(profileName(section))

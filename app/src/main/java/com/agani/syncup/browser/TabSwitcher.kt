@@ -380,7 +380,7 @@ internal fun groupName(tabs: TabManager, groupId: Long): String {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LinkPagesSheet(
+internal fun LinkPagesSheet(
     tabs: TabManager,
     groupId: Long,
     onOpen: (BrowserTab) -> Unit,

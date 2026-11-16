@@ -172,6 +172,8 @@ fun BrowserScreen(
     var showWorkInfo by remember { mutableStateOf(false) }
     var finding by remember { mutableStateOf(false) }
     var showDetected by remember { mutableStateOf(false) }
+    // The tab group whose page list is open (from the group strip), or null.
+    var groupSheet by remember { mutableStateOf<Long?>(null) }
     var previousSection by remember { mutableStateOf(Section.NORMAL) }
     val snackbar = remember { SnackbarHostState() }
     // Sign-in / sign-up typing survives the sheet being closed by accident; cleared once signed in.
@@ -450,6 +452,21 @@ fun BrowserScreen(
                     }
                 }
 
+                // A tab group's pages, one tap apart, while the page on screen is in a group (user, 17 Nov 2026).
+                val group = if (tab != null && !tab.isHome && !editing && !finding) tabs.groupPages(tab.groupId) else emptyList()
+                if (tab != null && group.size > 1) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = !barHidden,
+                        enter = expandVertically(tween(160)),
+                        exit = shrinkVertically(tween(160)),
+                    ) {
+                        Column {
+                            HorizontalDivider(thickness = 1.dp, color = cs.outlineVariant)
+                            GroupStrip(group, tab, onPick = { tabs.select(it) }, onAll = { groupSheet = tab.groupId })
+                        }
+                    }
+                }
+
                 val bottomPageBar = tab != null && showPageBar && barBottom && !editing && !finding
                 if (tab != null && bottomPageBar) {
                     // Address bar at the bottom: it and the bottom bar read as one block under one line.
@@ -549,6 +566,24 @@ fun BrowserScreen(
             com.agani.syncup.downloads.DownloadPromptSheet(req) { com.agani.syncup.downloads.Downloads.prompt = null }
         }
 
+        // The group's full page list, from the strip's last button.
+        groupSheet?.let { g ->
+            LinkPagesSheet(
+                tabs = tabs,
+                groupId = g,
+                onOpen = { page ->
+                    groupSheet = null
+                    tabs.select(page)
+                },
+                onCloseLink = { name ->
+                    groupSheet = null
+                    val closed = tabs.closeGroup(g)
+                    offerUndo("$name closed (${closed.size} pages)") { tabs.reopen(closed) }
+                },
+                onDismiss = { groupSheet = null },
+            )
+        }
+
         // Long-press on a link or an image.
         tabs.pressed?.let { p ->
             val from = tabs.tabs.firstOrNull { it.id == p.tabId }
@@ -561,11 +596,17 @@ fun BrowserScreen(
                     val image = p.target.image.orEmpty()
                     val wv = tabs.viewOf(from)
                     when (action) {
-                        PressAction.OPEN_NEW, PressAction.OPEN_IMAGE -> {
-                            val opened = tabs.openInBackground(from, if (action == PressAction.OPEN_NEW) link else image)
+                        PressAction.OPEN_NEW, PressAction.OPEN_IMAGE, PressAction.OPEN_IN_GROUP -> {
+                            // A tab of its own, or a page in this page's group; either way in the background.
+                            val url = if (action == PressAction.OPEN_IMAGE) image else link
+                            val inGroup = action == PressAction.OPEN_IN_GROUP
+                            val opened = if (inGroup) tabs.openInBackground(from, url) else tabs.openInNewTab(from, url)
                             scope.launch {
                                 snackbar.currentSnackbarData?.dismiss()
-                                val r = snackbar.showSnackbar("Opened in a new tab", actionLabel = "Switch", duration = SnackbarDuration.Short)
+                                val r = snackbar.showSnackbar(
+                                    if (inGroup) "Opened in this tab group" else "Opened in a new tab",
+                                    actionLabel = "Switch", duration = SnackbarDuration.Short,
+                                )
                                 if (r == SnackbarResult.ActionPerformed && tabs.tabs.contains(opened)) tabs.select(opened)
                             }
                         }

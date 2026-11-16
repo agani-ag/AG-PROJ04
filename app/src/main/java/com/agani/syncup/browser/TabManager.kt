@@ -473,8 +473,22 @@ class TabManager(
     }
 
     /**
-     * "Open in new tab" from a page: a new tab in its group that stays in the background. Returns the
-     * new tab so the caller can offer to switch to it.
+     * "Open in new tab" from a page (user, 17 Nov 2026): a tab of its own — its own group — in the background.
+     * A SyncUp page's stays a SyncUp page (its link's name, address hidden). Returns it for "Switch".
+     */
+    fun openInNewTab(from: BrowserTab, url: String): BrowserTab =
+        newTab(
+            from.section, url,
+            workName = from.workName,
+            workLinkId = from.workLinkId,
+            workRoots = from.maskedRoots.toList(),
+            select = false,
+            desktop = from.desktop,
+        )
+
+    /**
+     * "Open in this tab group" from a page: a new page in its group that stays in the background. Returns
+     * the new tab so the caller can offer to switch to it.
      */
     fun openInBackground(from: BrowserTab, url: String): BrowserTab =
         newTab(

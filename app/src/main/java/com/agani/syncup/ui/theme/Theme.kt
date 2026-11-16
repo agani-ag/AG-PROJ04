@@ -11,7 +11,9 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -19,7 +21,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 
@@ -148,11 +154,32 @@ fun AgHubTheme(
         }
     }
 
-    MaterialTheme(
-        colorScheme = scheme,
-        shapes = AppShapes,
-        content = content,
-    )
+    // Every page a size smaller (user, 17 Nov 2026: "small on all pages"): see AppDensity.
+    val base = LocalDensity.current
+    val smaller = remember(base) { AppDensity(base) }
+    CompositionLocalProvider(LocalDensity provides smaller) {
+        MaterialTheme(
+            colorScheme = scheme,
+            shapes = AppShapes,
+            content = content,
+        )
+    }
+}
+
+/** How much smaller the whole app is drawn than Android's standard: layout (dp) and text (sp). */
+private const val SIZE_SCALE = 0.9f
+private const val TEXT_SCALE = 0.94f
+
+/**
+ * The phone's own density, a size smaller (user, 17 Nov 2026: on a Samsung everything felt "a little bigger
+ * than bigger"). Layout is drawn at 90 %, text at 94 %, on top of the phone's display and font size settings.
+ * Text goes through the phone's own conversion first, so Android 14's gentler scaling of very large text stays.
+ */
+private class AppDensity(private val base: Density) : Density {
+    override val density: Float get() = base.density * SIZE_SCALE
+    override val fontScale: Float get() = base.fontScale * TEXT_SCALE / SIZE_SCALE
+    override fun TextUnit.toDp(): Dp = with(base) { this@toDp.toDp() } * (TEXT_SCALE / SIZE_SCALE)
+    override fun Dp.toSp(): TextUnit = with(base) { (this@toSp * (SIZE_SCALE / TEXT_SCALE)).toSp() }
 }
 
 // ------------------------------------------------------------------ browser sections

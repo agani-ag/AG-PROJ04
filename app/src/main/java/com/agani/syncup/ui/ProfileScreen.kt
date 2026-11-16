@@ -561,7 +561,6 @@ fun ProfileScreen(
                             com.agani.syncup.usage.UsageTime.setEnabled(context, it)
                         },
                     )
-                    UsageTimerRow(counting = shareUsage)
                 }
 
                 SettingsSection(
@@ -648,9 +647,10 @@ fun ProfileScreen(
                             },
                         )
                     }
-                    SettingRow(icon = Icons.Rounded.Info, title = "App version", subtitle = appVersion, onClick = null)
-                    // The live usage timer here too (user, 17 Nov 2026), as under Share usage time in Privacy & security.
+                    // The live usage timer, only here (user, 17 Nov 2026); the switch stays in Privacy & security.
                     UsageTimerRow(counting = shareUsage)
+                    // The app version last.
+                    SettingRow(icon = Icons.Rounded.Info, title = "App version", subtitle = appVersion, onClick = null)
                 }
             }
 
@@ -1177,7 +1177,7 @@ private fun SettingsGroup(content: @Composable () -> Unit) {
 }
 
 /** A row's plain grey icon (red for a row that deletes something). */
-/** Under Share usage time: this phone's usage time, ticking each second while it counts (user, 16 Nov 2026). */
+/** In About, above the app version: this phone's usage time, ticking each second while it counts (user, 16–17 Nov 2026). */
 @Composable
 private fun UsageTimerRow(counting: Boolean) {
     val context = LocalContext.current

@@ -72,7 +72,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-private enum class AppScreen { ForceUpdate, Welcome, Announcement, Home, Browser, Profile, SiteSettings, Dns, Music, Radio, Library, Partners, Notifications, Tools }
+private enum class AppScreen { ForceUpdate, Welcome, Announcement, Home, Browser, Settings, Profile, SiteSettings, Dns, Music, Radio, Library, Partners, Notifications, Tools }
 
 class MainActivity : FragmentActivity() {
 
@@ -991,6 +991,8 @@ class MainActivity : FragmentActivity() {
             showDns -> AppScreen.Dns
             showSiteSettings -> AppScreen.SiteSettings
             profilePage != null -> AppScreen.Profile
+            // Settings is a page (not a sheet): a group opened from it sits on top, and Back comes back here.
+            showAccountSheet -> AppScreen.Settings
             libraryPage != null -> AppScreen.Library
             toolsPage != null && toolsPage != com.agani.syncup.tools.ToolsPage.HOME -> AppScreen.Tools
             else -> when (mainTab) {
@@ -1016,7 +1018,7 @@ class MainActivity : FragmentActivity() {
 
         // What a settings search result or the account sheet opens.
         fun openSetting(key: String) {
-            showAccountSheet = false
+            // Settings stays open underneath, so Back from the group's page comes back to it.
             when (key) {
                 com.agani.syncup.home.SettingsPage.DNS -> showDns = true
                 com.agani.syncup.home.SettingsPage.SITE_SETTINGS -> showSiteSettings = true
@@ -1133,6 +1135,7 @@ class MainActivity : FragmentActivity() {
                             onBack = { profilePage = null },
                             onLogout = {
                                 profilePage = null
+                                showAccountSheet = false
                                 tabManager.wipeWork()
                                 vm.logout()
                             },
@@ -1149,12 +1152,34 @@ class MainActivity : FragmentActivity() {
                                 val result = vm.deleteAccount()
                                 if (result.isSuccess) {
                                     profilePage = null
+                                    showAccountSheet = false
                                     tabManager.wipeWork()
                                 }
                                 result
                             },
                         )
                     }
+                    AppScreen.Settings -> com.agani.syncup.ui.SettingsHome(
+                        user = state.user.takeIf { loggedIn },
+                        themeMode = themeMode,
+                        appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                        chatEnabled = loggedIn && chatEnabled,
+                        chatUnread = state.chatUnread,
+                        hasPartners = loggedIn && state.hasPartners,
+                        partnersWaiting = state.partnersWaiting,
+                        onBack = { showAccountSheet = false },
+                        onSignIn = {
+                            showAccountSheet = false
+                            authForm.creating = false
+                            showLogin = true
+                        },
+                        onPage = { openSetting(it) },
+                        onSignOut = {
+                            showAccountSheet = false
+                            tabManager.wipeWork()
+                            vm.logout()
+                        },
+                    )
                     AppScreen.SiteSettings -> com.agani.syncup.browser.SiteSettingsScreen(onBack = { showSiteSettings = false })
                     AppScreen.Dns -> com.agani.syncup.dns.DnsScreen(onBack = { showDns = false })
                     AppScreen.Notifications -> com.agani.syncup.notifications.NotificationsScreen(
@@ -1446,29 +1471,6 @@ class MainActivity : FragmentActivity() {
                         onClearError = { vm.clearError() },
                     )
                 }
-            }
-            if (showAccountSheet && booted) {
-                com.agani.syncup.ui.AccountSheet(
-                    user = state.user.takeIf { loggedIn },
-                    themeMode = themeMode,
-                    appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                    chatEnabled = loggedIn && chatEnabled,
-                    chatUnread = state.chatUnread,
-                    hasPartners = loggedIn && state.hasPartners,
-                    partnersWaiting = state.partnersWaiting,
-                    onDismiss = { showAccountSheet = false },
-                    onSignIn = {
-                        showAccountSheet = false
-                        authForm.creating = false
-                        showLogin = true
-                    },
-                    onPage = { openSetting(it) },
-                    onSignOut = {
-                        showAccountSheet = false
-                        tabManager.wipeWork()
-                        vm.logout()
-                    },
-                )
             }
         }
 

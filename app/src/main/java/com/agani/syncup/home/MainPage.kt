@@ -7,6 +7,10 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -34,6 +38,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
@@ -61,7 +66,6 @@ import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.LiveTv
@@ -102,6 +106,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -200,7 +205,8 @@ class MainPageState {
     var recommendedOpen by mutableStateOf(false)
 }
 
-// The "easy for every age" sizes (docs/mockup/v7/simple_ui_page.py, .phone.easy).
+// The "easy for every age" sizes (docs/mockup/v7/simple_ui_page.py, .phone.easy). Since 17 Nov 2026 the whole app is drawn a
+// size smaller (AgHubTheme: layout 90%, text 94%), so these come out at normal app sizes.
 private val ROW_MIN = 64.dp
 private val TITLE_SIZE = 16.sp
 private val SUB_SIZE = 13.5.sp
@@ -313,11 +319,7 @@ fun MainPage(
     }
 
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val partnerLinks = links
-        .filter { it.source == "partner" && !it.sourceName.isNullOrBlank() }
-        .groupBy { it.sourceName!!.trim() }
-        .toSortedMap(String.CASE_INSENSITIVE_ORDER)
-    val otherLinks = links.filter { l -> partnerLinks.values.none { l in it } }
+    val (partnerSection, otherLinks) = remember(links) { mainPageLinks(links) }
     val waiting = waitingPartners.filter { signedIn && it.id !in HomePrefs.laterPartners }
 
     PullToRefreshBox(
@@ -390,12 +392,13 @@ fun MainPage(
                 item(key = "welcome") { WelcomeCard(signupEnabled, onSignIn, onCreateAccount) }
             }
             // A partner user's partners come first, right under the search (user, 14 Nov 2026).
-            if (waiting.isNotEmpty() || partnerLinks.isNotEmpty()) {
-                item(key = "partners-head") { Header(if (waiting.size + partnerLinks.size == 1) "Your partner" else "Your partners") }
+            // A partner waiting for its password always shows here: it needs the person to act.
+            if (waiting.isNotEmpty() || partnerSection.isNotEmpty()) {
+                item(key = "partners-head") { Header(if (waiting.size + partnerSection.size == 1) "Your partner" else "Your partners") }
                 for (p in waiting) {
                     item(key = "waiting-${p.id}") { PartnerWaitingCard(p, onEnablePartner, onPartnerEnabled) }
                 }
-                for ((name, items) in partnerLinks) {
+                for ((name, items) in partnerSection) {
                     item(key = "partner-$name") { PartnerCard(name, items, onOpenLink) }
                 }
             }
@@ -427,8 +430,11 @@ fun MainPage(
                         val shown = if (state.linksOpen || otherLinks.size <= LINKS_FIRST + 1) otherLinks else otherLinks.take(LINKS_FIRST)
                         shown.forEachIndexed { i, l ->
                             if (i > 0) Divider()
-                            // The link's own description, like the SyncUp section (user, 16 Nov 2026); none → just the name.
-                            CardRow(l.title, l.description?.trim(), onClick = { onOpenLink(l) }, subLines = 2) {
+                            // The link's own description, like the SyncUp section (user, 16 Nov 2026); a partner's link
+                            // without one says whose it is; otherwise just the name.
+                            val sub = l.description?.trim()?.takeIf { it.isNotEmpty() }
+                                ?: l.sourceName?.trim()?.takeIf { l.source == "partner" && it.isNotEmpty() }?.let { "From $it" }
+                            CardRow(l.title, sub, onClick = { onOpenLink(l) }, subLines = 2) {
                                 com.agani.syncup.browser.LinkIcon(l, 40.dp)
                             }
                         }
@@ -450,7 +456,24 @@ fun MainPage(
             }
             item(key = "sites") { Websites(state, onOpenUrl, onOpenInNewTab, onRecommended = { state.recommendedOpen = true }) }
         }
+        // The phone's navigation bar (3 buttons or the gesture line) sits on the page's own colour, never over a
+        // row that scrolls under it (user, 17 Nov 2026).
+        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsBottomHeight(WindowInsets.navigationBars).background(cs.surface))
     }
+}
+
+/**
+ * Which links go where on the main page (user, 17 Nov 2026): a partner gets its own section (by partner name) only
+ * when partner links are all there is; with SyncUp's own or the general links too, every link is in one list under
+ * SyncUp links, in the server's order.
+ */
+internal fun mainPageLinks(links: List<UrlItem>): Pair<Map<String, List<UrlItem>>, List<UrlItem>> {
+    val partnerLinks = links
+        .filter { it.source == "partner" && !it.sourceName.isNullOrBlank() }
+        .groupBy { it.sourceName!!.trim() }
+        .toSortedMap(String.CASE_INSENSITIVE_ORDER)
+    val partnersOnly = links.all { l -> partnerLinks.values.any { l in it } }
+    return if (partnersOnly) partnerLinks to emptyList() else emptyMap<String, List<UrlItem>>() to links
 }
 
 private const val TODAY_FIRST = 3
@@ -508,8 +531,12 @@ private fun Header(text: String) {
 
 @Composable
 private fun Card(content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxWidth().appCard(CardShape)) { content() }
+    // Show more / Show less grows and shrinks the card smoothly instead of jumping (user, 17 Nov 2026).
+    Column(Modifier.fillMaxWidth().animateContentSize(SMOOTH).appCard(CardShape)) { content() }
 }
+
+/** How "Show more / Show less" opens and closes: a quick, gentle ease. */
+private val SMOOTH = tween<androidx.compose.ui.unit.IntSize>(durationMillis = 280, easing = FastOutSlowInEasing)
 
 @Composable
 private fun Divider() {
@@ -570,7 +597,9 @@ private fun MoreLine(text: String, open: Boolean, onClick: () -> Unit) {
     ) {
         Text(text, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.primary)
         Spacer(Modifier.width(4.dp))
-        Icon(if (open) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown, null, tint = cs.primary, modifier = Modifier.size(22.dp))
+        // One arrow that turns over as the section opens or closes.
+        val turn by animateFloatAsState(if (open) 180f else 0f, tween(280, easing = FastOutSlowInEasing), label = "more-arrow")
+        Icon(Icons.Rounded.KeyboardArrowDown, null, tint = cs.primary, modifier = Modifier.size(22.dp).rotate(turn))
     }
 }
 
@@ -1097,7 +1126,7 @@ private fun ToolGrid(tools: List<ToolDef>, onTool: (HomeTool) -> Unit, open: Boo
     val cs = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     val sections = if (open) GROUPS.map { g -> g to tools.filter { it.group == g } } else listOf(null to tools.take(TOOLS_FIRST))
-    Column {
+    Column(Modifier.animateContentSize(SMOOTH)) {
         sections.forEachIndexed { i, (group, items) ->
             if (group != null) {
                 Text(

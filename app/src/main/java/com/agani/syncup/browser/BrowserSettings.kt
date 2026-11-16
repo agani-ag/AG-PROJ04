@@ -153,6 +153,11 @@ object BrowserSettings {
         prefs?.edit()?.putStringSet("popup_sites", popupSites.toSet())?.apply()
     }
 
+    /** Incognito was wiped: its "always allow pop-ups" choices go with it. */
+    fun clearIncognitoPopups() {
+        incognitoPopupSites.clear()
+    }
+
     fun clearPopupSites() {
         popupSites.clear()
         incognitoPopupSites.clear()

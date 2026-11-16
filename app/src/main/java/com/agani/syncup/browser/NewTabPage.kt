@@ -105,7 +105,7 @@ internal fun IncognitoHome(onSearch: () -> Unit) {
             Text("You've gone incognito", fontSize = 24.sp, lineHeight = 32.sp, color = cs.onSurface, textAlign = TextAlign.Center)
             Spacer(Modifier.height(18.dp))
             IncognitoPoint(Icons.Rounded.History, "Pages you view won't be kept in history")
-            IncognitoPoint(Icons.Rounded.Cookie, "Cookies and site data are deleted when you close all incognito tabs")
+            IncognitoPoint(Icons.Rounded.Cookie, "Cookies, site data and cache are wiped when you close all incognito tabs or close SyncUp")
             IncognitoPoint(Icons.Rounded.Download, "Downloads and bookmarks are kept")
             IncognitoPoint(Icons.Rounded.NoPhotography, "Screenshots are blocked")
             Spacer(Modifier.height(16.dp))
