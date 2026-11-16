@@ -12,6 +12,10 @@
          songs never leave the device. Android 13+ has a music-only permission; older versions
          only have the storage one. -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- The Video player lists the device's videos and folders, like Music (Play: "Photos and videos" declaration).
+         Android 14+ can give just the videos the person picks. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 

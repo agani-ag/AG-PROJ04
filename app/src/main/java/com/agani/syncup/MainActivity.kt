@@ -1210,6 +1210,13 @@ class MainActivity : FragmentActivity() {
                             signedIn = loggedIn,
                             userName = state.user?.name.takeIf { loggedIn },
                             links = if (loggedIn) state.urls else com.agani.syncup.browser.GeneralLinks.links,
+                            refreshing = if (loggedIn) state.refreshing else com.agani.syncup.browser.GeneralLinks.refreshing,
+                            onRefresh = {
+                                // Pull down: new SyncUp links (and everything else the server can change).
+                                if (loggedIn) runFullRefresh(silent = false)
+                                else lifecycleScope.launch { com.agani.syncup.browser.GeneralLinks.refresh(spinner = true) }
+                                lifecycleScope.launch { com.agani.syncup.browser.ShortcutCatalog.refresh(force = true) }
+                            },
                             db = browserDb,
                             tabCount = Section.entries.sumOf { s -> tabManager.cardsIn(s).count { !it.isHome } },
                             radioAvailable = radioAvailable,

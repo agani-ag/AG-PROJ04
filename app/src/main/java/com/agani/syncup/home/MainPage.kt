@@ -82,12 +82,14 @@ import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -207,14 +209,17 @@ private val SECTION_SIZE = 18.sp
  * the bell and the account picture; one search for websites, tools, settings and history; chips for tabs,
  * bookmarks, history, downloads and Incognito; a partner user's partners first; Today; what's happening
  * now; every tool under small headings; SyncUp links; websites. Nothing to customise: long sections show
- * their first few and open the rest in place.
+ * their first few and open the rest in place. Pulling the page down fetches new SyncUp links (user, 16 Nov 2026).
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainPage(
     state: MainPageState,
     signedIn: Boolean,
     userName: String?,
     links: List<UrlItem>,
+    refreshing: Boolean,
+    onRefresh: () -> Unit,
     db: BrowserDb,
     tabCount: Int,
     radioAvailable: Boolean,
@@ -294,129 +299,136 @@ fun MainPage(
     val otherLinks = links.filter { l -> partnerLinks.values.none { l in it } }
     val waiting = waitingPartners.filter { signedIn && it.id !in HomePrefs.laterPartners }
 
-    LazyColumn(
-        state = state.list,
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = onRefresh,
+        // The insets sit on the box so the spinner comes down below the status bar.
         modifier = Modifier.fillMaxSize().background(cs.surface)
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 28.dp + bottom),
     ) {
-        item(key = "top") {
-            val first = userName?.trim()?.substringBefore(' ')?.takeIf { signedIn && it.isNotBlank() }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 68.dp).padding(top = 8.dp, bottom = 6.dp)) {
-                Column(Modifier.weight(1f).padding(start = 4.dp)) {
-                    if (first != null) Text(greeting(), fontSize = 14.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant)
-                    Text(
-                        first ?: "SyncUp", fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium, color = cs.onSurface,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Bell(onNotifications)
-                Box(Modifier.padding(start = 4.dp, end = 2.dp)) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.size(42.dp).clip(CircleShape)
-                            .background(if (signedIn) cs.primary else cs.surfaceContainerHigh)
-                            .clickable(onClickLabel = "Your account and settings", onClick = onAvatar),
-                    ) {
-                        val initial = userName?.trim()?.take(1)?.uppercase()?.takeIf { signedIn && it.isNotBlank() }
-                        if (initial != null) Text(initial, color = cs.onPrimary, fontSize = 17.sp, fontWeight = FontWeight.Medium)
-                        else Icon(Icons.Rounded.Person, "Your account and settings", tint = cs.onSurfaceVariant, modifier = Modifier.size(24.dp))
-                    }
-                    if (signedIn && chatUnread > 0) {
-                        Box(
-                            Modifier.align(Alignment.TopEnd).size(13.dp).clip(CircleShape).background(cs.surface).padding(2.dp)
-                                .clip(CircleShape).background(cs.error),
+        LazyColumn(
+            state = state.list,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 28.dp + bottom),
+        ) {
+            item(key = "top") {
+                val first = userName?.trim()?.substringBefore(' ')?.takeIf { signedIn && it.isNotBlank() }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 68.dp).padding(top = 8.dp, bottom = 6.dp)) {
+                    Column(Modifier.weight(1f).padding(start = 4.dp)) {
+                        if (first != null) Text(greeting(), fontSize = 14.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant)
+                        Text(
+                            first ?: "SyncUp", fontSize = 24.sp, lineHeight = 30.sp, fontWeight = FontWeight.Medium, color = cs.onSurface,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
-                }
-            }
-        }
-        item(key = "search") {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 4.dp).fillMaxWidth().height(56.dp).appCard(RoundedCornerShape(50))
-                    .clickable(onClickLabel = "Search") { state.searching = true }.padding(start = 18.dp, end = 6.dp),
-            ) {
-                Icon(Icons.Rounded.Search, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(22.dp))
-                Spacer(Modifier.width(12.dp))
-                Text("Search anything", fontSize = 16.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(44.dp).clip(CircleShape).clickable(onClickLabel = "Voice search") { voiceSearch() },
-                ) { Icon(Icons.Rounded.Mic, "Voice search", tint = cs.onSurfaceVariant) }
-            }
-        }
-        item(key = "chips") {
-            Chips(tabCount, onTabs, onLibrary, onIncognito)
-        }
-        val ann = announcement
-        if (signedIn && ann != null && ann.active && !ann.fullscreen && (ann.title.isNotBlank() || ann.message.isNotBlank())) {
-            item(key = "announcement") { AnnouncementStrip(ann) }
-        }
-        item(key = "nudge") { com.agani.syncup.browser.DefaultBrowserNudge(Modifier.padding(top = 14.dp)) }
-        if (!signedIn) {
-            item(key = "welcome") { WelcomeCard(signupEnabled, onSignIn, onCreateAccount) }
-        }
-        // A partner user's partners come first, right under the search (user, 14 Nov 2026).
-        if (waiting.isNotEmpty() || partnerLinks.isNotEmpty()) {
-            item(key = "partners-head") { Header(if (waiting.size + partnerLinks.size == 1) "Your partner" else "Your partners") }
-            for (p in waiting) {
-                item(key = "waiting-${p.id}") { PartnerWaitingCard(p, onEnablePartner, onPartnerEnabled) }
-            }
-            for ((name, items) in partnerLinks) {
-                item(key = "partner-$name") { PartnerCard(name, items, onOpenLink) }
-            }
-        }
-        item(key = "today") {
-            Header("Today · ${todayText()}")
-            val rows = todayRows(onTool)
-            Card {
-                val shown = if (state.todayOpen || rows.size <= TODAY_FIRST + 1) rows else rows.take(TODAY_FIRST)
-                if (rows.isEmpty()) {
-                    Text("Nothing for today yet", fontSize = SUB_SIZE, color = cs.onSurfaceVariant, modifier = Modifier.padding(18.dp))
-                }
-                shown.forEachIndexed { i, row ->
-                    if (i > 0) Divider()
-                    row()
-                }
-                if (rows.size > TODAY_FIRST + 1) {
-                    Divider()
-                    MoreLine(
-                        if (state.todayOpen) "Show less" else "Show ${rows.size - TODAY_FIRST} more", state.todayOpen,
-                    ) { state.todayOpen = !state.todayOpen }
-                }
-            }
-        }
-        item(key = "now") { HappeningNow(onTool) }
-        if (otherLinks.isNotEmpty()) {
-            item(key = "links") {
-                Header("SyncUp links")
-                Card {
-                    val shown = if (state.linksOpen || otherLinks.size <= LINKS_FIRST + 1) otherLinks else otherLinks.take(LINKS_FIRST)
-                    shown.forEachIndexed { i, l ->
-                        if (i > 0) Divider()
-                        val from = l.sourceName?.takeIf { it.isNotBlank() } ?: "SyncUp"
-                        CardRow(l.title, if (l.general) "For everyone" else from, onClick = { onOpenLink(l) }) {
-                            com.agani.syncup.browser.LinkIcon(l, 40.dp)
+                    Bell(onNotifications)
+                    Box(Modifier.padding(start = 4.dp, end = 2.dp)) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.size(42.dp).clip(CircleShape)
+                                .background(if (signedIn) cs.primary else cs.surfaceContainerHigh)
+                                .clickable(onClickLabel = "Your account and settings", onClick = onAvatar),
+                        ) {
+                            val initial = userName?.trim()?.take(1)?.uppercase()?.takeIf { signedIn && it.isNotBlank() }
+                            if (initial != null) Text(initial, color = cs.onPrimary, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+                            else Icon(Icons.Rounded.Person, "Your account and settings", tint = cs.onSurfaceVariant, modifier = Modifier.size(24.dp))
+                        }
+                        if (signedIn && chatUnread > 0) {
+                            Box(
+                                Modifier.align(Alignment.TopEnd).size(13.dp).clip(CircleShape).background(cs.surface).padding(2.dp)
+                                    .clip(CircleShape).background(cs.error),
+                            )
                         }
                     }
-                    if (otherLinks.size > LINKS_FIRST + 1) {
+                }
+            }
+            item(key = "search") {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 4.dp).fillMaxWidth().height(56.dp).appCard(RoundedCornerShape(50))
+                        .clickable(onClickLabel = "Search") { state.searching = true }.padding(start = 18.dp, end = 6.dp),
+                ) {
+                    Icon(Icons.Rounded.Search, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text("Search anything", fontSize = 16.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.size(44.dp).clip(CircleShape).clickable(onClickLabel = "Voice search") { voiceSearch() },
+                    ) { Icon(Icons.Rounded.Mic, "Voice search", tint = cs.onSurfaceVariant) }
+                }
+            }
+            item(key = "chips") {
+                Chips(tabCount, onTabs, onLibrary, onIncognito)
+            }
+            val ann = announcement
+            if (signedIn && ann != null && ann.active && !ann.fullscreen && (ann.title.isNotBlank() || ann.message.isNotBlank())) {
+                item(key = "announcement") { AnnouncementStrip(ann) }
+            }
+            item(key = "nudge") { com.agani.syncup.browser.DefaultBrowserNudge(Modifier.padding(top = 14.dp)) }
+            if (!signedIn) {
+                item(key = "welcome") { WelcomeCard(signupEnabled, onSignIn, onCreateAccount) }
+            }
+            // A partner user's partners come first, right under the search (user, 14 Nov 2026).
+            if (waiting.isNotEmpty() || partnerLinks.isNotEmpty()) {
+                item(key = "partners-head") { Header(if (waiting.size + partnerLinks.size == 1) "Your partner" else "Your partners") }
+                for (p in waiting) {
+                    item(key = "waiting-${p.id}") { PartnerWaitingCard(p, onEnablePartner, onPartnerEnabled) }
+                }
+                for ((name, items) in partnerLinks) {
+                    item(key = "partner-$name") { PartnerCard(name, items, onOpenLink) }
+                }
+            }
+            item(key = "today") {
+                Header("Today · ${todayText()}")
+                val rows = todayRows(onTool)
+                Card {
+                    val shown = if (state.todayOpen || rows.size <= TODAY_FIRST + 1) rows else rows.take(TODAY_FIRST)
+                    if (rows.isEmpty()) {
+                        Text("Nothing for today yet", fontSize = SUB_SIZE, color = cs.onSurfaceVariant, modifier = Modifier.padding(18.dp))
+                    }
+                    shown.forEachIndexed { i, row ->
+                        if (i > 0) Divider()
+                        row()
+                    }
+                    if (rows.size > TODAY_FIRST + 1) {
                         Divider()
-                        MoreLine(if (state.linksOpen) "Show less" else "Show all ${otherLinks.size}", state.linksOpen) { state.linksOpen = !state.linksOpen }
+                        MoreLine(
+                            if (state.todayOpen) "Show less" else "Show ${rows.size - TODAY_FIRST} more", state.todayOpen,
+                        ) { state.todayOpen = !state.todayOpen }
                     }
                 }
             }
-        }
-        // Tools sit below SyncUp links (user, 16 Nov 2026).
-        item(key = "tools") {
-            Header("Tools")
-            ToolGrid(tools, onTool, open = state.toolsOpen)
-            // The first two rows; "Show all 18 tools" opens every tool here, under its heading (user, 16 Nov 2026).
-            Column(Modifier.padding(top = 14.dp).fillMaxWidth().appCard(CardShape)) {
-                MoreLine(if (state.toolsOpen) "Show less" else "Show all ${tools.size} tools", state.toolsOpen) { state.toolsOpen = !state.toolsOpen }
+            item(key = "now") { HappeningNow(onTool) }
+            if (otherLinks.isNotEmpty()) {
+                item(key = "links") {
+                    Header("SyncUp links")
+                    Card {
+                        val shown = if (state.linksOpen || otherLinks.size <= LINKS_FIRST + 1) otherLinks else otherLinks.take(LINKS_FIRST)
+                        shown.forEachIndexed { i, l ->
+                            if (i > 0) Divider()
+                            // The link's own description, like the SyncUp section (user, 16 Nov 2026); none → just the name.
+                            CardRow(l.title, l.description?.trim(), onClick = { onOpenLink(l) }, subLines = 2) {
+                                com.agani.syncup.browser.LinkIcon(l, 40.dp)
+                            }
+                        }
+                        if (otherLinks.size > LINKS_FIRST + 1) {
+                            Divider()
+                            MoreLine(if (state.linksOpen) "Show less" else "Show all ${otherLinks.size}", state.linksOpen) { state.linksOpen = !state.linksOpen }
+                        }
+                    }
+                }
             }
+            // Tools sit below SyncUp links (user, 16 Nov 2026).
+            item(key = "tools") {
+                Header("Tools")
+                ToolGrid(tools, onTool, open = state.toolsOpen)
+                // The first two rows; "Show all 18 tools" opens every tool here, under its heading (user, 16 Nov 2026).
+                Column(Modifier.padding(top = 14.dp).fillMaxWidth().appCard(CardShape)) {
+                    MoreLine(if (state.toolsOpen) "Show less" else "Show all ${tools.size} tools", state.toolsOpen) { state.toolsOpen = !state.toolsOpen }
+                }
+            }
+            item(key = "sites") { Websites(state, onOpenUrl, onOpenInNewTab) }
         }
-        item(key = "sites") { Websites(state, onOpenUrl, onOpenInNewTab) }
     }
 }
 
@@ -499,6 +511,7 @@ private fun CardRow(
     sub: String?,
     onClick: () -> Unit,
     subColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    subLines: Int = 1,
     chevron: Boolean = true,
     end: (@Composable () -> Unit)? = null,
     leading: @Composable () -> Unit,
@@ -513,7 +526,7 @@ private fun CardRow(
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = TITLE_SIZE, lineHeight = 21.sp, color = cs.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (!sub.isNullOrBlank()) {
-                Text(sub, fontSize = SUB_SIZE, lineHeight = 18.sp, color = subColor, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                Text(sub, fontSize = SUB_SIZE, lineHeight = 18.sp, color = subColor, maxLines = subLines, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
             }
         }
         if (end != null) {

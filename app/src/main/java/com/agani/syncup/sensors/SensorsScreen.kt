@@ -32,9 +32,9 @@ import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.FlashlightOn
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Headphones
-import androidx.compose.material.icons.rounded.NetworkCheck
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.SatelliteAlt
+import androidx.compose.material.icons.rounded.SignalCellularAlt
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Straighten
 import androidx.compose.material.icons.rounded.Terrain
@@ -331,7 +331,7 @@ private fun NotInPhone(tool: SensorTool, onAllSensors: () -> Unit, onOk: () -> U
 // ============================================================================ icons
 val SensorTool.icon: ImageVector
     get() = when (this) {
-        SensorTool.NETWORK -> Icons.Rounded.NetworkCheck
+        SensorTool.NETWORK -> Icons.Rounded.SignalCellularAlt
         SensorTool.COMPASS -> Icons.Rounded.Explore
         SensorTool.SPEEDOMETER -> Icons.Rounded.Speed
         SensorTool.HEIGHT -> Icons.Rounded.Terrain

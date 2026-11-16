@@ -9,9 +9,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Thumbnails and watch positions for videos SyncUp plays — a SyncUp download, a video picked once
- * from the phone, or a pasted link. SyncUp never browses the phone's whole video library (no
- * READ_MEDIA_VIDEO): every URI here is one the user explicitly opened.
+ * Thumbnails and watch positions for videos SyncUp plays — the device's videos (LocalVideos), a SyncUp
+ * download, a video picked once, or a pasted link.
  */
 object VideoStore {
     private val thumbs = object : LruCache<String, Bitmap>(16 * 1024 * 1024) {
@@ -25,6 +24,13 @@ object VideoStore {
     fun thumbnail(context: Context, uri: Uri): Bitmap? {
         val key = uri.toString()
         thumbs.get(key)?.let { return it }
+        // A video in the device's library: Android's own thumbnail is quick and cached by the system.
+        if (uri.authority == android.provider.MediaStore.AUTHORITY && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            runCatching { context.contentResolver.loadThumbnail(uri, android.util.Size(320, 180), null) }.getOrNull()?.let {
+                thumbs.put(key, it)
+                return it
+            }
+        }
         // release(), not close() — close() only exists from API 29, and minSdk here is 24.
         val mmr = MediaMetadataRetriever()
         val bmp = try {

@@ -265,6 +265,7 @@ private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit, onOpenParty
     // Folders: the songs by the folder they're in; [openFolder] is the one open (its path).
     var byFolder by rememberSaveable { mutableStateOf(false) }
     var openFolder by rememberSaveable { mutableStateOf<String?>(null) }
+    var sort by rememberSortOrder("music", SongSort.values(), SongSort.NAME_AZ)
 
     // Re-read on every return to the app: picks up songs added meanwhile, and access given in Settings.
     var reload by remember { mutableIntStateOf(0) }
@@ -304,13 +305,15 @@ private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit, onOpenParty
         all.isEmpty() -> EmptyState(Icons.Rounded.MusicOff, "No songs on this phone", "Songs you download or copy to this phone show up here")
         else -> {
             val q = query.trim()
-            val list = remember(all, q) {
-                if (q.isEmpty()) all
-                else all.filter { it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true) }
+            val list = remember(all, q, sort) {
+                sort.sort(
+                    if (q.isEmpty()) all
+                    else all.filter { it.title.contains(q, true) || it.artist.contains(q, true) || it.album.contains(q, true) },
+                )
             }
             val folder = openFolder.takeIf { byFolder }
             val shown = remember(list, folder) { if (folder == null) list else list.filter { it.folder == folder } }
-            val folders = remember(list) { list.groupBy { it.folder }.toList().sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { folderName(it.first) }) }
+            val folders = remember(list, sort) { sort.folders(list.groupBy { it.folder }.toList(), ::folderName) }
             val showFolders = byFolder && folder == null
             if (folder != null) BackHandler { openFolder = null }
             // While this phone hosts a party, Music adds to it instead of playing on its own.
@@ -396,10 +399,14 @@ private fun SongsTab(player: PlayerHandle, onOpenPlayer: () -> Unit, onOpenParty
                     }
                 }
                 item(key = "count") {
+                    // Sort sits by the count (nothing to sort when the search matches nothing).
+                    val sortButton: @Composable () -> Unit = {
+                        if (list.isNotEmpty()) SortButton(SongSort.values().toList(), sort) { sort = it }
+                    }
                     when {
-                        folder != null -> FolderHead(folder, shown.size) { openFolder = null }
-                        showFolders -> SectionHead("${folders.size} folder${if (folders.size == 1) "" else "s"}")
-                        else -> SectionHead("${list.size} song${if (list.size == 1) "" else "s"}")
+                        folder != null -> FolderHead(folder, shown.size, onBack = { openFolder = null }, trailing = sortButton)
+                        showFolders -> SectionHead("${folders.size} folder${if (folders.size == 1) "" else "s"}") { sortButton() }
+                        else -> SectionHead("${list.size} song${if (list.size == 1) "" else "s"}") { sortButton() }
                     }
                 }
                 if (list.isEmpty()) {
@@ -451,7 +458,7 @@ private fun FolderRow(path: String, count: Int, slice: Modifier, onClick: () -> 
         Column(Modifier.weight(1f)) {
             Text(folderName(path), fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                "$count song${if (count == 1) "" else "s"}" + if (path.isNotBlank()) " · $path" else "",
+                "$count song${if (count == 1) "" else "s"}" + if (path.isNotBlank() && path != folderName(path)) " · $path" else "",
                 fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
@@ -461,15 +468,17 @@ private fun FolderRow(path: String, count: Int, slice: Modifier, onClick: () -> 
 
 /** Above an open folder's songs: back to the folders, its name and how many. */
 @Composable
-private fun FolderHead(path: String, count: Int, onBack: () -> Unit) {
+private fun FolderHead(path: String, count: Int, onBack: () -> Unit, trailing: @Composable () -> Unit = {}) {
     val cs = MaterialTheme.colorScheme
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp)) {
+    // end = 4 dp: the Sort button lines up with the one by the list's count (SectionHead).
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(end = 4.dp, top = 10.dp, bottom = 6.dp)) {
         IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "All folders") }
         Spacer(Modifier.width(4.dp))
         Column(Modifier.weight(1f)) {
             Text(folderName(path), fontSize = 16.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("$count song${if (count == 1) "" else "s"}", fontSize = 12.5.sp, color = cs.onSurfaceVariant)
         }
+        trailing()
     }
 }
 

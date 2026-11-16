@@ -26,6 +26,8 @@ data class Song(
     val uri: Uri,
     /** The folder it's in, from the storage's top ("Music/Tamil"); empty when the phone doesn't say. */
     val folder: String = "",
+    /** When it was added to the phone, seconds since 1970 (the Sort menu's "Newest added"). */
+    val addedSec: Long = 0L,
 ) {
     /** Where the list, the player and its notification load the cover art from (see [Artwork]). */
     val artUri: Uri get() = Artwork.uriFor(uri, albumId)
@@ -33,6 +35,9 @@ data class Song(
 
 /** The phone's own songs, read from MediaStore. */
 object LocalSongs {
+    /** A song with no artist tag shows this (and sorts last under "Artist A–Z"). */
+    const val UNKNOWN_ARTIST = "Unknown artist"
+
     /** Android 13+ asks for music only; older versions only have the storage permission. */
     val permission: String
         get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Manifest.permission.READ_MEDIA_AUDIO
@@ -69,6 +74,7 @@ object LocalSongs {
             MediaStore.Audio.Media.ALBUM,
             MediaStore.Audio.Media.ALBUM_ID,
             MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.DATE_ADDED,
             folderColumn,
         )
         val songs = ArrayList<Song>()
@@ -80,17 +86,19 @@ object LocalSongs {
             val albumId = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
             val duration = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             val folder = c.getColumnIndex(folderColumn)
+            val added = c.getColumnIndex(MediaStore.Audio.Media.DATE_ADDED)
             while (c.moveToNext()) {
                 val songId = c.getLong(id)
                 songs += Song(
                     id = songId,
                     title = c.getString(title).known() ?: "Unknown song",
-                    artist = c.getString(artist).known() ?: "Unknown artist",
+                    artist = c.getString(artist).known() ?: UNKNOWN_ARTIST,
                     album = c.getString(album).known().orEmpty(),
                     albumId = c.getLong(albumId),
                     durationMs = c.getLong(duration),
                     uri = ContentUris.withAppendedId(collection, songId),
                     folder = if (folder < 0) "" else folderOf(c.getString(folder)),
+                    addedSec = if (added < 0) 0L else c.getLong(added),
                 )
             }
         }
