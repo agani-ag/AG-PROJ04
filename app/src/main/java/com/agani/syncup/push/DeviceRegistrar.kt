@@ -87,6 +87,7 @@ object DeviceRegistrar {
                         installSource = installSource(app),
                         notificationsAllowed = NotificationManagerCompat.from(app).areNotificationsEnabled(),
                         updatesEnabled = updatesEnabled(app),
+                        usageSeconds = com.agani.syncup.usage.UsageTime.forCheckIn(app),
                     ),
                 )
                 resp.deviceSecret?.takeIf { it.isNotBlank() }?.let { prefs.edit().putString(KEY_SECRET, it).apply() }

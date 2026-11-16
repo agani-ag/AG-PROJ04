@@ -12,10 +12,8 @@
          songs never leave the device. Android 13+ has a music-only permission; older versions
          only have the storage one. -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    <!-- The Video player lists the device's videos and folders, like Music (Play: "Photos and videos" declaration).
-         Android 14+ can give just the videos the person picks. -->
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <!-- No READ_MEDIA_VIDEO / READ_MEDIA_IMAGES (Play photo and video policy, 16 Nov 2026): the Video player uses
+         the folders the person adds with the folder picker and videos picked with the photo picker. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
@@ -210,6 +208,28 @@
             android:resizeableActivity="true"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden"
             android:theme="@style/Theme.Player" />
+
+        <!-- "Open with SyncUp" for a video in Files, Gallery, WhatsApp, a browser's download…: the same player with only
+             that video (the player ignores every extra when started through this alias). No storage permission needed. -->
+        <activity-alias
+            android:name=".video.OpenVideo"
+            android:targetActivity=".video.VideoPlayerActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+        </activity-alias>
 
         <!-- Tools → Video player → Watch Party: the party's player (same window behaviour as the Video player) -->
         <activity

@@ -44,6 +44,7 @@ import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VerticalAlignBottom
@@ -195,6 +196,7 @@ fun ProfileScreen(
 
     var hasPin by remember { mutableStateOf(security.hasPin()) }
     var biometricEnabled by remember { mutableStateOf(prefs.biometricEnabled()) }
+    var shareUsage by remember { mutableStateOf(com.agani.syncup.usage.UsageTime.enabled(context)) }
     var lockGrace by remember { mutableStateOf(prefs.lockGraceSeconds()) }
     var showLockGrace by remember { mutableStateOf(false) }
     var showChangePassword by remember { mutableStateOf(false) }
@@ -547,6 +549,19 @@ fun ProfileScreen(
                         subtitle = "Camera, mic, location, notifications, pop-ups, ads",
                         onClick = onOpenSiteSettings,
                     )
+                    // Usage time (user, 16 Nov 2026): every install, signed in or not.
+                    SwitchRow(
+                        icon = Icons.Rounded.Schedule,
+                        title = "Share usage time",
+                        subtitle = "How long SyncUp is open on this phone. Nothing else.",
+                        checked = shareUsage,
+                        enabled = true,
+                        onCheckedChange = {
+                            shareUsage = it
+                            com.agani.syncup.usage.UsageTime.setEnabled(context, it)
+                        },
+                    )
+                    UsageTimerRow(counting = shareUsage)
                 }
 
                 SettingsSection(
@@ -634,6 +649,8 @@ fun ProfileScreen(
                         )
                     }
                     SettingRow(icon = Icons.Rounded.Info, title = "App version", subtitle = appVersion, onClick = null)
+                    // The live usage timer here too (user, 17 Nov 2026), as under Share usage time in Privacy & security.
+                    UsageTimerRow(counting = shareUsage)
                 }
             }
 
@@ -1160,6 +1177,37 @@ private fun SettingsGroup(content: @Composable () -> Unit) {
 }
 
 /** A row's plain grey icon (red for a row that deletes something). */
+/** Under Share usage time: this phone's usage time, ticking each second while it counts (user, 16 Nov 2026). */
+@Composable
+private fun UsageTimerRow(counting: Boolean) {
+    val context = LocalContext.current
+    val cs = MaterialTheme.colorScheme
+    var seconds by remember { mutableStateOf(com.agani.syncup.usage.UsageTime.total(context)) }
+    LaunchedEffect(counting) {
+        while (true) {
+            seconds = com.agani.syncup.usage.UsageTime.total(context)
+            if (!counting) break
+            delay(1_000)
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().groupRow()) {
+        RowIcon(Icons.Rounded.Timer)
+        Spacer(Modifier.width(14.dp))
+        RowText(
+            "Usage time on this phone",
+            if (counting) "Counting while SyncUp is open" else "Paused · Share usage time is off",
+            Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        val h = seconds / 3600
+        val clock = if (h > 0) "%d:%02d:%02d".format(h, (seconds / 60) % 60, seconds % 60) else "%d:%02d".format(seconds / 60, seconds % 60)
+        Text(
+            clock, fontSize = 17.sp, fontWeight = FontWeight.Medium, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+            color = if (counting) cs.primary else cs.onSurfaceVariant,
+        )
+    }
+}
+
 @Composable
 private fun RowIcon(icon: ImageVector, danger: Boolean = false) {
     val cs = MaterialTheme.colorScheme

@@ -954,7 +954,7 @@ class MainActivity : FragmentActivity() {
                     if (url.isNotBlank()) {
                         startActivity(
                             WebViewActivity.intent(
-                                this@MainActivity, url, "Chat",
+                                this@MainActivity, url, "Chat with admin",
                             ),
                         )
                         vm.refreshChatUnread()

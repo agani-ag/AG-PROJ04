@@ -95,6 +95,16 @@ data class DeviceHelloRequest(
     @SerializedName("install_source") val installSource: String,
     @SerializedName("notifications_allowed") val notificationsAllowed: Boolean,
     @SerializedName("updates_enabled") val updatesEnabled: Boolean,
+    /** Seconds SyncUp has been open on this phone (Share usage time on); left out (null) when it's off. */
+    @SerializedName("usage_seconds") val usageSeconds: Long? = null,
+)
+
+/** The usage time heartbeat (see UsageTime): this phone's total so far, and whether SyncUp is open now. */
+data class DeviceBeatRequest(
+    @SerializedName("device_id") val deviceId: String,
+    @SerializedName("device_secret") val deviceSecret: String,
+    @SerializedName("usage_seconds") val usageSeconds: Long?,
+    val open: Boolean,
 )
 
 data class DeviceHelloResponse(

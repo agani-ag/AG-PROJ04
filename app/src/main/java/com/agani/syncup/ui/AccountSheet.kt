@@ -62,8 +62,8 @@ import com.agani.syncup.ui.theme.CardShape
 import com.agani.syncup.ui.theme.appCard
 
 /**
- * The picture on the main page opens this sheet (not a page): the account, Chat and Partners, then the
- * settings groups — each opens its own page with everything in it — and Sign out. Signed out: Sign in,
+ * The picture on the main page (or Settings in the browser's ⋮) opens this sheet (not a page): the account and
+ * Partners, then the settings groups (Chat among them) — each opens its own page with everything in it — and Sign out. Signed out: Sign in,
  * then the settings.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -109,16 +109,11 @@ fun AccountSheet(
                     }
                     Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = cs.onSurfaceVariant)
                 }
-                if ((chatEnabled) || hasPartners) {
+                // Chat sits in the Settings list below (user, 16 Nov 2026); Partners keeps its own card.
+                if (hasPartners) {
                     Spacer(Modifier.height(12.dp))
                     Column(Modifier.fillMaxWidth().appCard(CardShape)) {
-                        if (chatEnabled) {
-                            SheetRow(Icons.AutoMirrored.Rounded.Chat, "Chat", badge = chatUnread.takeIf { it > 0 }?.toString()) { onPage(SettingsPage.CHAT) }
-                        }
-                        if (hasPartners) {
-                            if (chatEnabled) Line()
-                            SheetRow(Icons.Rounded.Handshake, "Partners", badge = partnersWaiting.takeIf { it > 0 }?.let { "$it new" }) { onPage(SettingsPage.PARTNERS) }
-                        }
+                        SheetRow(Icons.Rounded.Handshake, "Partners", badge = partnersWaiting.takeIf { it > 0 }?.let { "$it new" }) { onPage(SettingsPage.PARTNERS) }
                     }
                 }
             } else {
@@ -174,6 +169,14 @@ fun AccountSheet(
                     "SyncUp updates ${if (updatesOn) "on" else "off"}${if (allowed) "" else " · blocked"}",
                 ) { onPage(SettingsPage.NOTIFICATIONS) }
                 Line()
+                if (user != null && chatEnabled) {
+                    GroupRow(
+                        Icons.AutoMirrored.Rounded.Chat, "Chat with admin",
+                        if (chatUnread > 0) "New reply from the admin" else "Ask for help or send feedback",
+                        badge = chatUnread.takeIf { it > 0 }?.toString(),
+                    ) { onPage(SettingsPage.CHAT) }
+                    Line()
+                }
                 GroupRow(Icons.Rounded.Info, "About", "Help · privacy policy · version $appVersion") { onPage(SettingsPage.ABOUT) }
             }
             if (user != null) {
@@ -227,9 +230,9 @@ private fun SheetRow(icon: ImageVector, title: String, badge: String? = null, on
     }
 }
 
-/** A settings group: its tile, name and what's set now in one line; opens the group's page. */
+/** A settings group: its tile, name and what's set now in one line (and a red [badge]); opens the group's page. */
 @Composable
-private fun GroupRow(icon: ImageVector, title: String, summary: String, onClick: () -> Unit) {
+private fun GroupRow(icon: ImageVector, title: String, summary: String, badge: String? = null, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -242,6 +245,12 @@ private fun GroupRow(icon: ImageVector, title: String, summary: String, onClick:
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
             Text(summary, fontSize = 13.5.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 1.dp))
+        }
+        if (badge != null) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.padding(start = 8.dp, end = 6.dp).heightIn(min = 22.dp).clip(RoundedCornerShape(50)).background(cs.error).padding(horizontal = 8.dp),
+            ) { Text(badge, style = BadgeTextStyle, fontSize = 12.sp, lineHeight = 14.sp, fontWeight = FontWeight.Bold, color = cs.onError) }
         }
         Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = cs.onSurfaceVariant)
     }

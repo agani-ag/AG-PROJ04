@@ -216,17 +216,38 @@ class VideoPlayerActivity : ComponentActivity() {
     }
 
     private fun open(intent: Intent, exo: ExoPlayer) {
-        uri = intent.getStringExtra(EXTRA_URI).orEmpty()
-        title = intent.getStringExtra(EXTRA_TITLE)?.takeIf { it.isNotBlank() } ?: Uri.parse(uri).lastPathSegment.orEmpty()
-        source = intent.getStringExtra(EXTRA_SOURCE).orEmpty()
-        fallback = intent.getStringExtra(EXTRA_FALLBACK)?.takeIf { it.isNotBlank() }
+        if (intent.fromOtherApp) {
+            // "Open with SyncUp" from Files, Gallery, WhatsApp…: only the video it hands over; any extras are ignored.
+            val data = intent.data
+            if (data == null) {
+                finish()
+                return
+            }
+            uri = data.toString()
+            title = displayName(data) ?: data.lastPathSegment.orEmpty()
+            source = OPENED_FROM_APP
+            fallback = null
+            canChangeChannel = false
+        } else {
+            uri = intent.getStringExtra(EXTRA_URI).orEmpty()
+            title = intent.getStringExtra(EXTRA_TITLE)?.takeIf { it.isNotBlank() } ?: Uri.parse(uri).lastPathSegment.orEmpty()
+            source = intent.getStringExtra(EXTRA_SOURCE).orEmpty()
+            fallback = intent.getStringExtra(EXTRA_FALLBACK)?.takeIf { it.isNotBlank() }
+            canChangeChannel = intent.getBooleanExtra(EXTRA_CHANNELS, false) && ChannelQueue.canStep
+        }
         onFallback = false
-        canChangeChannel = intent.getBooleanExtra(EXTRA_CHANNELS, false) && ChannelQueue.canStep
         load(exo, uri)
         val resume = WatchHistory.positionOf(this, uri)
         if (resume > 0) exo.seekTo(resume)
         exo.playWhenReady = true
     }
+
+    /** A shared file's name without its ending ("Ooty trip.mp4" → "Ooty trip"), or null (a web link, say). */
+    private fun displayName(u: Uri): String? = runCatching {
+        contentResolver.query(u, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst() && !c.isNull(0)) c.getString(0) else null
+        }
+    }.getOrNull()?.takeIf { it.isNotBlank() }?.let { LocalVideos.cleanName(it) }
 
     /** Next / Previous on a channel ([step] = 1 or -1): what to call where it landed, null if there's nowhere to go. */
     private fun changeChannel(step: Int): String? {
@@ -245,13 +266,17 @@ class VideoPlayerActivity : ComponentActivity() {
 
     /** Put [address] in the player (the video, or its converted copy). */
     private fun load(exo: ExoPlayer, address: String) {
+        // Another app's "Open with" never sets our User-Agent, Referer or cookies.
+        val ours = !intent.fromOtherApp
         val http = DefaultHttpDataSource.Factory()
-            .setUserAgent(intent.getStringExtra(EXTRA_UA)?.takeIf { it.isNotBlank() } ?: Downloads.defaultUserAgent.ifBlank { null })
+            .setUserAgent(intent.getStringExtra(EXTRA_UA)?.takeIf { ours && it.isNotBlank() } ?: Downloads.defaultUserAgent.ifBlank { null })
             .setAllowCrossProtocolRedirects(true)
             .setDefaultRequestProperties(
                 buildMap {
-                    intent.getStringExtra(EXTRA_REFERER)?.takeIf { it.isNotBlank() }?.let { put("Referer", it) }
-                    intent.getStringExtra(EXTRA_COOKIES)?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
+                    if (ours) {
+                        intent.getStringExtra(EXTRA_REFERER)?.takeIf { it.isNotBlank() }?.let { put("Referer", it) }
+                        intent.getStringExtra(EXTRA_COOKIES)?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
+                    }
                 },
             )
         val upstream = DefaultDataSource.Factory(this, http)
@@ -366,6 +391,12 @@ class VideoPlayerActivity : ComponentActivity() {
     }
 
     companion object {
+        /** The source of a video another app opened with SyncUp (left out of Continue watching: its access ends). */
+        const val OPENED_FROM_APP = "Opened from another app"
+
+        /** Started through the manifest's exported `.video.OpenVideo` alias, i.e. by another app's "Open with". */
+        private val Intent.fromOtherApp: Boolean get() = component?.className?.endsWith(".video.OpenVideo") == true
+
         private const val EXTRA_URI = "uri"
         private const val EXTRA_TITLE = "title"
         private const val EXTRA_SOURCE = "source"

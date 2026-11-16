@@ -59,6 +59,7 @@ import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.FlashlightOn
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Language
@@ -195,6 +196,8 @@ class MainPageState {
     var toolsOpen by mutableStateOf(false)
     var searching by mutableStateOf(false)
     var query by mutableStateOf("")
+    /** Websites → Recommended: the most used sites with their visits (7 days, 30 days, all time). */
+    var recommendedOpen by mutableStateOf(false)
 }
 
 // The "easy for every age" sizes (docs/mockup/v7/simple_ui_page.py, .phone.easy).
@@ -288,6 +291,24 @@ fun MainPage(
             },
             onVoice = { voiceSearch() },
         )
+        return
+    }
+    if (state.recommendedOpen) {
+        // The full ranking from History (user, 16 Nov 2026): how many times each site was used, over 7 days, 30 days or all time.
+        Box(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
+            com.agani.syncup.browser.RecommendedPage(
+                onBack = { state.recommendedOpen = false },
+                onOpen = { url ->
+                    state.recommendedOpen = false
+                    onOpenUrl(url)
+                },
+                onOpenInNewTab = onOpenInNewTab,
+                onRemove = {
+                    BrowserSettings.removeFromRecommended(it.key)
+                    Toast.makeText(context, "${it.title} removed from Recommended", Toast.LENGTH_SHORT).show()
+                },
+            )
+        }
         return
     }
 
@@ -427,7 +448,7 @@ fun MainPage(
                     MoreLine(if (state.toolsOpen) "Show less" else "Show all ${tools.size} tools", state.toolsOpen) { state.toolsOpen = !state.toolsOpen }
                 }
             }
-            item(key = "sites") { Websites(state, onOpenUrl, onOpenInNewTab) }
+            item(key = "sites") { Websites(state, onOpenUrl, onOpenInNewTab, onRecommended = { state.recommendedOpen = true }) }
         }
     }
 }
@@ -1128,7 +1149,7 @@ private class Site(val title: String, val url: String, val used: UsedSite? = nul
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Websites(state: MainPageState, onOpen: (String) -> Unit, onOpenInNewTab: (String) -> Unit) {
+private fun Websites(state: MainPageState, onOpen: (String) -> Unit, onOpenInNewTab: (String) -> Unit, onRecommended: () -> Unit) {
     val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
     val cats = ShortcutCatalog.categories
@@ -1148,7 +1169,7 @@ private fun Websites(state: MainPageState, onOpen: (String) -> Unit, onOpenInNew
     val recommended = used.take(MostUsed.PLACES)
     val rest = MostUsed.withoutRecommended(cats, recommended)
     val groups = buildList {
-        if (recommended.isNotEmpty()) add("Your most used" to recommended.map { Site(it.title, it.url, it) })
+        if (recommended.isNotEmpty()) add("Recommended" to recommended.map { Site(it.title, it.url, it) })
         rest.forEach { c -> if (c.items.isNotEmpty()) add(c.name to c.items.map { Site(it.title, it.url) }) }
     }
     val all = groups.flatMap { it.second }
@@ -1189,6 +1210,13 @@ private fun Websites(state: MainPageState, onOpen: (String) -> Unit, onOpenInNew
     Column {
         Header("Websites")
         Card {
+            // Recommended: the sites used most, with how many times over 7 days, 30 days or all time (user, 16 Nov 2026).
+            if (used.isNotEmpty()) {
+                CardRow("Recommended", "Your most used sites · how often, last 7 or 30 days", onClick = onRecommended) {
+                    Tile(Icons.Rounded.Insights, ToolTint.BLUE)
+                }
+                Divider()
+            }
             Column(Modifier.padding(start = 8.dp, end = 8.dp, top = 18.dp, bottom = if (all.size > SITES_FIRST) 4.dp else 18.dp)) {
                 if (state.sitesOpen && all.size > SITES_FIRST) {
                     groups.forEachIndexed { i, (name, sites) ->
@@ -1244,6 +1272,7 @@ private class SettingHit(
 private fun settingsIndex(signedIn: Boolean): List<SettingHit> {
     val context = LocalContext.current
     var updatesOn by remember { mutableStateOf(com.agani.syncup.push.DeviceRegistrar.updatesEnabled(context)) }
+    var shareUsage by remember { mutableStateOf(com.agani.syncup.usage.UsageTime.enabled(context)) }
     val sync = com.agani.syncup.sync.BrowserSync
     val dark = !MaterialTheme.colorScheme.isLight
     val b = "Setting · Browser"
@@ -1257,7 +1286,7 @@ private fun settingsIndex(signedIn: Boolean): List<SettingHit> {
             add(SettingHit("Sync on this phone", "Setting · Sync", Icons.Rounded.History, "sync backup devices", SettingsPage.SYNC,
                 checked = sync.enabled, onToggle = { sync.setSyncEnabled(it) }))
             add(SettingHit("Partners", "Your partners", Icons.Rounded.Groups, "partner school password", SettingsPage.PARTNERS))
-            add(SettingHit("Chat", "Chat with SyncUp", Icons.Rounded.Groups, "support help message", SettingsPage.CHAT))
+            add(SettingHit("Chat with admin", "Help from the SyncUp admin", Icons.Rounded.Groups, "chat support help message admin feedback", SettingsPage.CHAT))
         }
         add(SettingHit("Default browser", b, Icons.Rounded.Language, "links open default", SettingsPage.BROWSER))
         add(SettingHit("Search engine", b, Icons.Rounded.Search, "google bing duckduckgo", SettingsPage.BROWSER, value = BrowserSettings.searchEngine.label))
@@ -1279,6 +1308,8 @@ private fun settingsIndex(signedIn: Boolean): List<SettingHit> {
             checked = BrowserSettings.addressBarBottom, onToggle = { BrowserSettings.updateAddressBarBottom(it) }))
         add(SettingHit("Downloads", b, Icons.Rounded.Download, "parts wifi ask download at once", SettingsPage.BROWSER))
         add(SettingHit("App lock (PIN)", "Setting · Privacy & security", Icons.Rounded.VisibilityOff, "pin lock security fingerprint biometric", SettingsPage.PRIVACY))
+        add(SettingHit("Share usage time", "Setting · Privacy & security", Icons.Rounded.History, "usage time analytics tracking privacy", SettingsPage.PRIVACY,
+            checked = shareUsage, onToggle = { on -> shareUsage = on; com.agani.syncup.usage.UsageTime.setEnabled(context, on) }))
         add(SettingHit("Clear browsing data", "Setting · Privacy & security", Icons.Rounded.History, "history cookies cache delete", SettingsPage.PRIVACY))
         add(SettingHit("Site settings", "Setting · Privacy & security", Icons.Rounded.Language, "camera mic location notifications permissions", SettingsPage.SITE_SETTINGS))
         add(SettingHit("Theme", "Setting · Appearance", Icons.Rounded.Bedtime, "dark light black appearance colour color", SettingsPage.APPEARANCE,

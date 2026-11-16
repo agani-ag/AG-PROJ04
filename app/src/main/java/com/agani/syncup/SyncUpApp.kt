@@ -30,10 +30,13 @@ class SyncUpApp : Application() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) {
                 AppLock.onBackground()
+                com.agani.syncup.usage.UsageTime.onBackground(this@SyncUpApp)
             }
 
             override fun onStart(owner: LifecycleOwner) {
                 AppLock.onForeground()
+                // Usage time: SyncUp came on screen (counted only while signed in).
+                com.agani.syncup.usage.UsageTime.onForeground(this@SyncUpApp)
             }
         })
     }

@@ -677,6 +677,7 @@ fun BrowserScreen(
                             MenuAction.BOOKMARKS -> actions.onOpenLibrary(LibraryPage.BOOKMARKS)
                             MenuAction.HISTORY -> actions.onOpenLibrary(LibraryPage.HISTORY)
                             MenuAction.DOWNLOADS -> actions.onOpenLibrary(LibraryPage.DOWNLOADS)
+                            MenuAction.SETTINGS -> actions.onOpenSettings()
                         }
                     },
                 )

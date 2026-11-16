@@ -72,7 +72,11 @@ object WatchHistory {
 
     /** Videos stopped part-way, most recent first. */
     fun continueWatching(context: Context): List<Watched> =
-        all(context).filter { it.positionMs > 5_000 && (it.durationMs <= 0 || it.progress < 0.95f) }
+        all(context).filter {
+            // A video another app opened with SyncUp can't be opened again from here (that app's access has ended);
+            // opening it again from that app still resumes it.
+            it.source != VideoPlayerActivity.OPENED_FROM_APP && it.positionMs > 5_000 && (it.durationMs <= 0 || it.progress < 0.95f)
+        }
 
     fun positionOf(context: Context, uri: String): Long =
         all(context).firstOrNull { it.uri == uri }?.takeIf { it.durationMs <= 0 || it.progress < 0.95f }?.positionMs ?: 0L

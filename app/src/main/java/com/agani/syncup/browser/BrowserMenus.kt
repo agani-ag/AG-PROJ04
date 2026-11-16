@@ -187,14 +187,14 @@ private fun SectionChoice(section: Section, subtitle: String, count: Int, select
 // ============================================================================ page menu
 internal enum class MenuAction {
     NEW_TAB, NEW_INCOGNITO, RELOAD, BOOKMARK, SHARE, FIND, DESKTOP, OPEN_IN_CHROME, ADS,
-    WORK, WORK_INFO, SITE_INFO, BOOKMARKS, HISTORY, DOWNLOADS, HOME,
+    WORK, WORK_INFO, SITE_INFO, BOOKMARKS, HISTORY, DOWNLOADS, HOME, SETTINGS,
 }
 
 /**
  * The ⋮ menu (mockup "After · ⋮ menu", user 14 Nov 2026): six quick buttons — Home (the main page), Bookmark,
  * Find, Reload, Desktop, Share — then the ads on this page, About this site, New tab, New incognito tab,
- * Bookmarks, History, Downloads, SyncUp links and Open in Chrome. No big button; Forward lives on the bar,
- * Notifications on the bell, Partners and Settings in the account sheet.
+ * Bookmarks, History, Downloads, Settings (user, 16 Nov 2026: the settings sheet, as from the main page's
+ * picture), SyncUp links and Open in Chrome. No big button; Forward lives on the bar, Notifications on the bell.
  */
 @Composable
 internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, hasWork: Boolean, onAction: (MenuAction) -> Unit) {
@@ -246,6 +246,7 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
         MenuRow(Icons.Rounded.History, "History") { onAction(MenuAction.HISTORY) }
         val running = com.agani.syncup.downloads.Downloads.tasks.count { it.state == com.agani.syncup.downloads.DlState.RUNNING }
         MenuRow(Icons.Rounded.Download, "Downloads", trailing = if (running > 0) "$running running" else null) { onAction(MenuAction.DOWNLOADS) }
+        MenuRow(Icons.Rounded.Settings, "Settings") { onAction(MenuAction.SETTINGS) }
         val links = !incognito && hasWork && !tab.isWork
         // For the rare page that won't work inside an app (Google sign-in). Never a SyncUp page (its
         // address stays here) or an Incognito one (it would leave Incognito).

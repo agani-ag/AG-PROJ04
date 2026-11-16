@@ -1,13 +1,18 @@
 package com.agani.syncup.video
 
+import android.content.ActivityNotFoundException
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.border
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.ButtonDefaults
@@ -16,6 +21,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.agani.syncup.browser.ui.PillButton
@@ -51,13 +57,13 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.RemoveCircleOutline
 import androidx.compose.material.icons.rounded.Theaters
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.Button
@@ -114,8 +120,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Tools → Video player: every video on the device by itself or by folder, like Music (user, 16 Nov 2026), a
- * video picked once (the system picker), or a pasted direct video link. No
+ * Tools → Video player: the videos in the folders the person added, the ones they picked and SyncUp's
+ * downloads, by themselves or by folder, like Music (user, 16 Nov 2026; no storage permission since Play
+ * flagged READ_MEDIA_VIDEO), or a pasted direct video link. No
  * YouTube handling (would mean either breaking YouTube's terms by pulling its stream out, or just
  * handing off to the YouTube app — neither is in scope right now).
  *
@@ -141,17 +148,36 @@ fun VideoLibraryScreen(onBack: () -> Unit, startWith: WatchSource? = null, onSta
     var link by remember { mutableStateOf("") }
     var reload by remember { mutableStateOf(0) }
 
-    // The device's videos (like Music's songs): read again on every return, so new videos and access given in
-    // Settings show up.
-    var granted by remember { mutableStateOf(LocalVideos.canRead(context)) }
-    var onlyPicked by remember { mutableStateOf(LocalVideos.onlyPicked(context)) }
-    var asked by rememberSaveable { mutableStateOf(false) }
-    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        granted = LocalVideos.canRead(context)
-        onlyPicked = LocalVideos.onlyPicked(context)
-        asked = true
-        reload++
+    // The videos: the folders the person added, the videos they picked and SyncUp's downloads (no storage
+    // permission — see LocalVideos). Read again on every return, so new videos in those folders show up.
+    var sources by remember { mutableIntStateOf(0) } // bumps when a folder or picked video is added or removed
+    val addedFolders = remember(sources) { LocalVideos.folders(context) }
+    val hasSources = remember(sources) { LocalVideos.hasSources(context) }
+    var addSheet by remember { mutableStateOf(false) }
+    val addFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            if (!LocalVideos.addFolder(context, uri)) Toast.makeText(context, "That folder is already here", Toast.LENGTH_SHORT).show()
+            addSheet = false
+            sources++
+            reload++
+        }
     }
+    val pickVideos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
+        if (uris.isNotEmpty()) {
+            LocalVideos.addPicked(context, uris)
+            addSheet = false
+            sources++
+            reload++
+        }
+    }
+    fun launchAddFolder() {
+        try {
+            addFolder.launch(null)
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(context, "This device can't choose folders. Use Pick videos.", Toast.LENGTH_LONG).show()
+        }
+    }
+    fun launchPickVideos() = pickVideos.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
     var videos by remember { mutableStateOf<List<LocalVideo>?>(null) } // null while loading
     var query by rememberSaveable { mutableStateOf("") }
     // Folders: the videos by the folder they're in; [openFolder] is the one open (its path).
@@ -164,11 +190,7 @@ fun VideoLibraryScreen(onBack: () -> Unit, startWith: WatchSource? = null, onSta
     val owner = LocalLifecycleOwner.current
     DisposableEffect(owner) {
         val o = LifecycleEventObserver { _, e ->
-            if (e == Lifecycle.Event.ON_RESUME) {
-                granted = LocalVideos.canRead(context)
-                onlyPicked = LocalVideos.onlyPicked(context)
-                reload++
-            }
+            if (e == Lifecycle.Event.ON_RESUME) reload++
         }
         owner.lifecycle.addObserver(o)
         onDispose { owner.lifecycle.removeObserver(o) }
@@ -176,10 +198,22 @@ fun VideoLibraryScreen(onBack: () -> Unit, startWith: WatchSource? = null, onSta
     val watching by produceState(emptyList<Watched>(), reload) {
         value = withContext(Dispatchers.IO) { WatchHistory.continueWatching(context) }
     }
-    LaunchedEffect(granted, reload) {
-        if (granted) videos = withContext(Dispatchers.IO) { runCatching { LocalVideos.load(context) }.getOrDefault(emptyList()) }
+    LaunchedEffect(reload) {
+        // SyncUp's own downloads sit in the same list, under "SyncUp downloads".
+        val downloads = Downloads.tasks.filter { it.state == DlState.DONE && it.kind == FileKind.VIDEO && it.contentUri != null }.map { t ->
+            LocalVideo(
+                name = LocalVideos.cleanName(t.fileName), durationMs = 0L, sizeBytes = t.total.coerceAtLeast(0L), uri = Uri.parse(t.contentUri),
+                folder = LocalVideos.DOWNLOADS, addedSec = (t.finishedAt.takeIf { it > 0 } ?: t.createdAt) / 1000,
+            )
+        }
+        val loaded = withContext(Dispatchers.IO) { runCatching { LocalVideos.load(context, downloads) }.getOrDefault(downloads) }
+        videos = loaded
+        // Lengths not known yet are read a few at a time (and remembered), so the list shows at once.
+        for (chunk in loaded.filter { !LocalVideos.measured(it) }.chunked(12)) {
+            val found = withContext(Dispatchers.IO) { chunk.associate { it.key to LocalVideos.measure(context, it) } }
+            videos = videos?.map { v -> found[v.key]?.takeIf { it > 0 }?.let { v.copy(durationMs = it) } ?: v }
+        }
     }
-    val downloads = Downloads.tasks.filter { it.state == DlState.DONE && it.kind == FileKind.VIDEO && it.contentUri != null }
 
     fun play(uri: String, title: String, source: String) {
         context.startActivity(VideoPlayerActivity.intent(context, uri, title, source))
@@ -190,18 +224,6 @@ fun VideoLibraryScreen(onBack: () -> Unit, startWith: WatchSource? = null, onSta
         play(u, Uri.parse(u).lastPathSegment ?: u, "Video link")
         link = ""
         linkSheet = false
-    }
-    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            runCatching { context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            val name = runCatching {
-                context.contentResolver.query(uri, null, null, null, null)?.use { c ->
-                    val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    if (c.moveToFirst() && i >= 0) c.getString(i) else null
-                }
-            }.getOrNull() ?: uri.lastPathSegment ?: "Video"
-            play(uri.toString(), name, "Picked from your phone")
-        }
     }
 
     Box(Modifier.fillMaxSize().background(cs.background).windowInsetsPadding(WindowInsets.safeDrawing)) {
@@ -217,9 +239,9 @@ fun VideoLibraryScreen(onBack: () -> Unit, startWith: WatchSource? = null, onSta
                 }
                 return@Column
             }
-            /** The ⋮ on a video. */
+            /** The ⋮ on a video; [onRemove] for a video picked on its own. */
             @Composable
-            fun Menu(uri: String, title: String, source: String, tint: Color = cs.onSurfaceVariant) = VideoMenu(
+            fun Menu(uri: String, title: String, source: String, tint: Color = cs.onSurfaceVariant, onRemove: (() -> Unit)? = null) = VideoMenu(
                 onPlay = { play(uri, title, source) },
                 onAudioOnly = { playAudioOnly(context, uri, title, source, WatchHistory.positionOf(context, uri)) },
                 onPlayWith = { playWith = uri to title },
@@ -227,21 +249,26 @@ fun VideoLibraryScreen(onBack: () -> Unit, startWith: WatchSource? = null, onSta
                     together = WatchSource(uri, title, WatchHistory.positionOf(context, uri))
                     tab = 1
                 },
+                onRemove = onRemove,
                 tint = tint,
             )
             val all = videos
             val q = query.trim()
             val list = remember(all, q, sort) {
                 val v = all.orEmpty()
-                sort.sort(if (q.isEmpty()) v else v.filter { it.name.contains(q, true) || it.folder.contains(q, true) })
+                sort.sort(
+                    if (q.isEmpty()) v
+                    else v.filter { it.name.contains(q, true) || LocalVideos.folderName(it.folder).contains(q, true) || it.folder.contains(q, true) },
+                )
             }
             val folder = openFolder.takeIf { byFolder }
             val shown = remember(list, folder) { if (folder == null) list else list.filter { it.folder == folder } }
             val folders = remember(list, sort) { sort.folders(list.groupBy { it.folder }.toList()) }
             val showFolders = byFolder && folder == null
+            val any = !all.isNullOrEmpty()
             if (folder != null) BackHandler { openFolder = null }
             LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-                if (granted) {
+                if (any) {
                     item(key = "search") {
                         val pill = RoundedCornerShape(50)
                         Row(
@@ -271,7 +298,7 @@ fun VideoLibraryScreen(onBack: () -> Unit, startWith: WatchSource? = null, onSta
                 item(key = "actions") {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth()) {
                         val small = PaddingValues(horizontal = 10.dp)
-                        if (granted) {
+                        if (any) {
                             // Videos by folder (on: tinted), as in Music.
                             FilledTonalButton(
                                 onClick = {
@@ -283,42 +310,28 @@ fun VideoLibraryScreen(onBack: () -> Unit, startWith: WatchSource? = null, onSta
                                 contentPadding = small, modifier = Modifier.weight(1f).height(40.dp),
                             ) { ButtonLabel(Icons.Rounded.Folder, "Folders") }
                         }
+                        FilledTonalButton(onClick = { addSheet = true }, contentPadding = small, modifier = Modifier.weight(1f).height(40.dp)) {
+                            ButtonLabel(Icons.Rounded.Add, "Add videos")
+                        }
                         FilledTonalButton(onClick = { linkSheet = true }, contentPadding = small, modifier = Modifier.weight(1f).height(40.dp)) {
                             ButtonLabel(Icons.Rounded.Link, "Play a link")
                         }
-                        FilledTonalButton(onClick = { pick.launch(arrayOf("video/*")) }, contentPadding = small, modifier = Modifier.weight(1f).height(40.dp)) {
-                            ButtonLabel(Icons.Rounded.FolderOpen, "Open a file")
-                        }
                     }
                 }
-                if (!granted) {
-                    item(key = "allow") {
-                        val blocked = asked && !LocalVideos.canRead(context)
-                        Column(
-                            Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().appCard(CardShape).padding(18.dp),
-                        ) {
+                if (!hasSources) {
+                    // Nothing added yet: say where videos come from, with both ways to add them.
+                    item(key = "start") {
+                        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().appCard(CardShape).padding(18.dp)) {
                             ToolTile(Icons.Rounded.VideoLibrary, ToolTint.ROSE)
-                            Text("See every video on this phone", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.padding(top = 12.dp))
+                            Text("Add your videos", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.padding(top = 12.dp))
                             Text(
-                                if (blocked) "Video access is off for SyncUp. Turn it on in Settings → Permissions."
-                                else "Your videos and their folders, like the Music player. They stay on this phone; nothing is uploaded.",
+                                "Choose the folders your videos are in — Camera, Movies, WhatsApp Video. SyncUp remembers them and shows new videos by themselves. Nothing is uploaded.",
                                 fontSize = 13.5.sp, lineHeight = 19.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp),
                             )
-                            Button(
-                                onClick = { if (blocked) com.agani.syncup.sensors.openAppSettings(context) else ask.launch(LocalVideos.permissions) },
-                                modifier = Modifier.padding(top = 12.dp).height(42.dp),
-                            ) { Text(if (blocked) "Open settings" else "Allow access") }
-                        }
-                    }
-                } else if (onlyPicked) {
-                    item(key = "picked") {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                                .background(cs.primaryContainer).padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-                        ) {
-                            Text("Showing only the videos you chose", fontSize = 13.5.sp, color = cs.onPrimaryContainer, modifier = Modifier.weight(1f))
-                            TextButton(onClick = { ask.launch(LocalVideos.permissions) }) { Text("Allow all") }
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 14.dp)) {
+                                Button(onClick = { launchAddFolder() }, modifier = Modifier.height(42.dp)) { Text("Add a folder") }
+                                OutlinedButton(onClick = { launchPickVideos() }, modifier = Modifier.height(42.dp)) { Text("Pick videos") }
+                            }
                         }
                     }
                 }
@@ -330,65 +343,72 @@ fun VideoLibraryScreen(onBack: () -> Unit, startWith: WatchSource? = null, onSta
                         }
                     }
                 }
-                if (granted) {
-                    when {
-                        all == null -> item(key = "loading") {
-                            Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                        }
-                        all.isEmpty() -> item(key = "none") { Empty("Videos you record, download or copy to this phone show up here") }
-                        else -> {
-                            item(key = "count") {
-                                // Sort sits by the count (nothing to sort when the search matches nothing).
-                                val sortButton: @Composable () -> Unit = {
-                                    if (list.isNotEmpty()) SortButton(VideoSort.values().toList(), sort) { sort = it }
-                                }
-                                when {
-                                    folder != null -> FolderHead(folder, shown.size, onBack = { openFolder = null }, trailing = sortButton)
-                                    showFolders -> SectionHead("${folders.size} folder${if (folders.size == 1) "" else "s"}", Modifier.padding(horizontal = 16.dp)) { sortButton() }
-                                    else -> SectionHead("${list.size} video${if (list.size == 1) "" else "s"}", Modifier.padding(horizontal = 16.dp)) { sortButton() }
-                                }
-                            }
-                            if (list.isEmpty()) {
-                                item(key = "nomatch") {
-                                    Text(
-                                        "No videos match “$q”", fontSize = 14.sp, color = cs.onSurfaceVariant,
-                                        modifier = Modifier.fillMaxWidth().padding(24.dp),
-                                    )
-                                }
-                            }
-                            if (showFolders) {
-                                itemsIndexed(folders, key = { _, f -> "folder:${f.first}" }) { i, (path, inIt) ->
-                                    FolderRow(path, inIt.size, first = i == 0, last = i == folders.lastIndex) { openFolder = path }
-                                }
-                            } else {
-                                itemsIndexed(shown, key = { _, v -> v.id }) { i, v ->
-                                    val source = LocalVideos.folderName(v.folder)
-                                    VideoRow(
-                                        v, first = i == 0, last = i == shown.lastIndex,
-                                        showFolder = folder == null, // inside a folder its name is already above
-                                        menu = { Menu(v.uri.toString(), v.name, source) },
-                                    ) { play(v.uri.toString(), v.name, source) }
-                                }
-                            }
-                        }
+                when {
+                    all == null -> item(key = "loading") {
+                        Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                     }
-                } else {
-                    // Without access, SyncUp's own downloads still play.
-                    item(key = "downloads-head") { SectionHead("SyncUp downloads", Modifier.padding(horizontal = 16.dp)) }
-                    if (downloads.isEmpty()) {
-                        item(key = "downloads-none") { Empty("Videos you download with SyncUp show here") }
-                    } else {
-                        itemsIndexed(downloads, key = { _, t -> t.id }) { i, t ->
-                            DownloadRow(
-                                t.contentUri!!, t.fileName, Files.size(t.total),
-                                first = i == 0, last = i == downloads.lastIndex,
-                                menu = { Menu(t.contentUri!!, t.fileName, "SyncUp downloads") },
-                            ) { play(t.contentUri!!, t.fileName, "SyncUp downloads") }
+                    all.isEmpty() -> if (hasSources) item(key = "none") { Empty("No videos in the folders you added yet") }
+                    else -> {
+                        item(key = "count") {
+                            // Sort sits by the count (nothing to sort when the search matches nothing).
+                            val sortButton: @Composable () -> Unit = {
+                                if (list.isNotEmpty()) SortButton(VideoSort.values().toList(), sort) { sort = it }
+                            }
+                            when {
+                                folder != null -> FolderHead(folder, shown.size, onBack = { openFolder = null }, trailing = sortButton)
+                                showFolders -> SectionHead("${folders.size} folder${if (folders.size == 1) "" else "s"}", Modifier.padding(horizontal = 16.dp)) { sortButton() }
+                                else -> SectionHead("${list.size} video${if (list.size == 1) "" else "s"}", Modifier.padding(horizontal = 16.dp)) { sortButton() }
+                            }
+                        }
+                        if (list.isEmpty()) {
+                            item(key = "nomatch") {
+                                Text(
+                                    "No videos match “$q”", fontSize = 14.sp, color = cs.onSurfaceVariant,
+                                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                                )
+                            }
+                        }
+                        if (showFolders) {
+                            itemsIndexed(folders, key = { _, f -> "folder:${f.first}" }) { i, (path, inIt) ->
+                                FolderRow(path, inIt.size, first = i == 0, last = i == folders.lastIndex) { openFolder = path }
+                            }
+                        } else {
+                            itemsIndexed(shown, key = { _, v -> v.key }) { i, v ->
+                                val source = LocalVideos.folderName(v.folder)
+                                VideoRow(
+                                    v, first = i == 0, last = i == shown.lastIndex,
+                                    showFolder = folder == null, // inside a folder its name is already above
+                                    menu = {
+                                        Menu(
+                                            v.uri.toString(), v.name, source,
+                                            onRemove = if (v.picked) ({
+                                                LocalVideos.removePicked(context, v.uri)
+                                                sources++
+                                                reload++
+                                            }) else null,
+                                        )
+                                    },
+                                ) { play(v.uri.toString(), v.name, source) }
+                            }
                         }
                     }
                 }
             }
         }
+    }
+    if (addSheet) {
+        AddVideosSheet(
+            folders = addedFolders,
+            onAddFolder = { launchAddFolder() },
+            onPickVideos = { launchPickVideos() },
+            onRemoveFolder = { f ->
+                LocalVideos.removeFolder(context, f)
+                if (openFolder?.let { it == f.name || it.startsWith(f.name + "/") } == true) openFolder = null
+                sources++
+                reload++
+            },
+            onDismiss = { addSheet = false },
+        )
     }
     playWith?.let { (uri, title) ->
         PlayWithSheet(uri = uri, title = title, onPlayHere = { play(uri, title, "SyncUp") }, onDismiss = { playWith = null })
@@ -484,8 +504,8 @@ private fun FolderRow(path: String, count: Int, first: Boolean, last: Boolean, o
         Column(Modifier.weight(1f)) {
             Text(LocalVideos.folderName(path), fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                // The path only when it adds something ("DCIM/Camera", not "Movies · Movies").
-                "$count video${if (count == 1) "" else "s"}" + if (path.isNotBlank() && path != LocalVideos.folderName(path)) " · $path" else "",
+                // The path only when it adds something ("Movies/Trip", not "Movies · Movies").
+                "$count video${if (count == 1) "" else "s"}" + LocalVideos.folderPath(path).let { if (it.isNotEmpty()) " · $it" else "" },
                 fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
@@ -509,9 +529,9 @@ private fun FolderHead(path: String, count: Int, onBack: () -> Unit, trailing: @
     }
 }
 
-/** ⋮ on a video: Play, Play audio only, Play with another app, Watch together. */
+/** ⋮ on a video: Play, Play audio only, Play with another app, Watch together (and Remove from list for a picked one). */
 @Composable
-private fun VideoMenu(onPlay: () -> Unit, onAudioOnly: () -> Unit, onPlayWith: () -> Unit, onTogether: () -> Unit, tint: Color) {
+private fun VideoMenu(onPlay: () -> Unit, onAudioOnly: () -> Unit, onPlayWith: () -> Unit, onTogether: () -> Unit, onRemove: (() -> Unit)?, tint: Color) {
     var open by remember { mutableStateOf(false) }
     Box {
         Box(Modifier.size(40.dp).clip(CircleShape).clickable { open = true }, contentAlignment = Alignment.Center) {
@@ -522,7 +542,73 @@ private fun VideoMenu(onPlay: () -> Unit, onAudioOnly: () -> Unit, onPlayWith: (
             DropdownMenuItem(text = { Text("Play audio only") }, leadingIcon = { Icon(Icons.Rounded.Headphones, null) }, onClick = { open = false; onAudioOnly() })
             DropdownMenuItem(text = { Text("Play with another app") }, leadingIcon = { Icon(Icons.Rounded.OpenInNew, null) }, onClick = { open = false; onPlayWith() })
             DropdownMenuItem(text = { Text("Watch together") }, leadingIcon = { Icon(Icons.Rounded.Theaters, null) }, onClick = { open = false; onTogether() })
+            if (onRemove != null) {
+                DropdownMenuItem(text = { Text("Remove from list") }, leadingIcon = { Icon(Icons.Rounded.RemoveCircleOutline, null) }, onClick = { open = false; onRemove() })
+            }
         }
+    }
+}
+
+/**
+ * "Add videos": a folder (kept, new videos in it show by themselves) or some videos picked with Android's
+ * photo picker; below, the folders already added, each with Remove.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddVideosSheet(
+    folders: List<VideoFolder>,
+    onAddFolder: () -> Unit,
+    onPickVideos: () -> Unit,
+    onRemoveFolder: (VideoFolder) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = cs.surfaceContainerLowest) {
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+            Text("Add videos", fontSize = 18.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, modifier = Modifier.padding(start = 4.dp, bottom = 10.dp))
+            AddChoice(Icons.Rounded.CreateNewFolder, "Add a folder", "Camera, Movies, WhatsApp Video… New videos in it show up by themselves.", first = true, last = false, onAddFolder)
+            AddChoice(Icons.Rounded.VideoLibrary, "Pick videos", "Choose some videos from anywhere on your phone.", first = false, last = true, onPickVideos)
+            if (folders.isNotEmpty()) {
+                Text(
+                    "Folders shown here", fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp, top = 18.dp, bottom = 8.dp),
+                )
+                folders.forEachIndexed { i, f ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().cardSlice(i == 0, i == folders.lastIndex).heightIn(min = 56.dp)
+                            .padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                    ) {
+                        Icon(Icons.Rounded.Folder, null, tint = ToolTint.ROSE.icon, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text(f.name, fontSize = 15.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { onRemoveFolder(f) }) { Text("Remove") }
+                    }
+                }
+            }
+            Text(
+                "SyncUp reads only what you add here, on this phone. Nothing is uploaded.",
+                fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, top = 14.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun AddChoice(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, sub: String, first: Boolean, last: Boolean, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().cardSlice(first, last).clickable(onClick = onClick).heightIn(min = 72.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        ToolTile(icon, ToolTint.ROSE)
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 15.5.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
+            Text(sub, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+        }
+        Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = cs.onSurfaceVariant)
     }
 }
 
@@ -565,26 +651,6 @@ private fun WatchingCard(w: Watched, menu: @Composable () -> Unit, onClick: () -
         Text(w.title, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 7.dp))
         val left = if (w.durationMs > 0) " · ${duration(w.durationMs - w.positionMs)} left" else ""
         Text(w.source + left, fontSize = 11.5.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
-
-/** A SyncUp download: its first frame, name and size, ⋮ — one slice of the downloads card. */
-@Composable
-private fun DownloadRow(uri: String, title: String, subtitle: String, first: Boolean, last: Boolean, menu: @Composable () -> Unit, onClick: () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    val parsed = remember(uri) { Uri.parse(uri) }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().cardSlice(first, last).clickable(onClick = onClick)
-            .heightIn(min = 66.dp).padding(start = 14.dp, end = 4.dp, top = 9.dp, bottom = 9.dp),
-    ) {
-        Thumb(parsed, Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)))
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, fontSize = 12.5.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
-        }
-        menu()
     }
 }
 

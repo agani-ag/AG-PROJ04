@@ -47,6 +47,10 @@ interface ApiService {
     @POST("device/hello")
     suspend fun deviceHello(@Header("Authorization") auth: String?, @Body body: DeviceHelloRequest): DeviceHelloResponse
 
+    /** Usage time heartbeat: every 30 s while SyncUp is open, and once as it closes (Share usage time on). */
+    @POST("device/beat")
+    suspend fun deviceBeat(@Body body: DeviceBeatRequest): SimpleOk
+
     /** Sign-out: detach the account from this install (it keeps public broadcasts). */
     @POST("devices/unregister")
     suspend fun deviceUnregister(@Header("Authorization") auth: String, @Body body: DeviceUnregisterRequest): SimpleOk
