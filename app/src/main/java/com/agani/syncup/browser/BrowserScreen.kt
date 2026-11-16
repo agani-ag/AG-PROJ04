@@ -112,13 +112,17 @@ class BrowserActions(
     val onOpenNotifications: () -> Unit,
     val onOpenSettings: () -> Unit,
     val onOpenMusic: () -> Unit,
-    val onOpenTools: () -> Unit,
     val onOpenLibrary: (LibraryPage) -> Unit,
     val onRefreshLinks: () -> Unit,
-    /** SyncUp Home and You (the ⋮ menu's top row); [backToHome]: Back from the first page goes Home. */
+    /**
+     * The main page (the ⋮ menu's Home button, Back from a website's first page, a new tab) and the account
+     * sheet; [backToHome]: Back from the first page goes to the main page.
+     */
     val onHome: () -> Unit = {},
     val onOpenYou: () -> Unit = {},
     val backToHome: Boolean = false,
+    /** Settings → Privacy & security → Site settings (from "About this site"). */
+    val onOpenSiteSettings: () -> Unit = {},
     /**
      * The user's one link is what SyncUp opens to (HomePrefs.opensLink): on its page the bar names it and
      * has a house button for SyncUp Home, and Back from its first page leaves the app, like Home's Back.
@@ -146,14 +150,26 @@ fun BrowserScreen(
 
     var editing by remember { mutableStateOf(false) }
     var editValue by remember { mutableStateOf(TextFieldValue("")) }
-    var showTabs by remember { mutableStateOf(false) }
+    // The main page's Tabs chip opens the browser on its tab switcher; closing it without picking a tab
+    // goes back to the main page.
+    var showTabs by remember { mutableStateOf(tabs.openSwitcher) }
+    var switcherFromMain by remember { mutableStateOf(tabs.openSwitcher) }
     // The section the tab switcher is showing (it can look at another section than the one in use).
-    var switcherSection by remember { mutableStateOf(tabs.section) }
+    var switcherSection by remember { mutableStateOf(if (tabs.openSwitcher) Section.NORMAL else tabs.section) }
+    LaunchedEffect(tabs.openSwitcher) {
+        if (!tabs.openSwitcher) return@LaunchedEffect
+        tabs.openSwitcher = false
+        tabs.captureActive()
+        if (!showTabs) {
+            switcherSection = Section.NORMAL
+            showTabs = true
+            switcherFromMain = true
+        }
+    }
+    var showSiteInfo by remember { mutableStateOf(false) }
     var showSections by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showWorkInfo by remember { mutableStateOf(false) }
-    var showAccount by remember { mutableStateOf(false) }
-    var confirmSignOut by remember { mutableStateOf(false) }
     var finding by remember { mutableStateOf(false) }
     var showDetected by remember { mutableStateOf(false) }
     var previousSection by remember { mutableStateOf(Section.NORMAL) }
@@ -199,13 +215,18 @@ fun BrowserScreen(
         editing = true
     }
 
-    // Home's search box: straight into typing, on a new tab page in Normal.
-    LaunchedEffect(tabs.focusAddressBar) {
-        if (!tabs.focusAddressBar) return@LaunchedEffect
-        tabs.focusAddressBar = false
-        if (tabs.section != Section.NORMAL) switchSection(Section.NORMAL)
-        if (tabs.activeTab(Section.NORMAL)?.isHome != true) tabs.newTab(Section.NORMAL)
-        startEditing("")
+    // A new Normal tab is the main page (user, 14 Nov 2026): an empty Normal tab on screen — a new tab, Back
+    // from a website's first page, the last tab closed — shows the main page instead. Not while the tab
+    // switcher or the address bar is open.
+    LaunchedEffect(section, tab?.id, tab?.isHome, showTabs, editing) {
+        if (section == Section.NORMAL && tab != null && tab.isHome && !showTabs && !editing) actions.onHome()
+    }
+
+    // The tab switcher closed without picking a tab: back where it was opened from.
+    fun dismissSwitcher() {
+        showTabs = false
+        if (switcherFromMain) actions.onHome()
+        switcherFromMain = false
     }
 
     fun openInCurrent(url: String) {
@@ -277,7 +298,7 @@ fun BrowserScreen(
                 finding = false
                 tab?.let { tabs.webView(it).clearMatches() }
             }
-            showTabs -> showTabs = false
+            showTabs -> dismissSwitcher()
             linkFirstPage -> activity?.moveTaskToBack(true)
             tabs.back() -> Unit
             section != Section.NORMAL -> switchSection(Section.NORMAL)
@@ -388,37 +409,13 @@ fun BrowserScreen(
                     if (tab != null) {
                         if (tab.isHome) {
                             when (section) {
-                                Section.NORMAL -> NormalHome(
-                                    account = account,
-                                    hasWork = hasWork,
-                                    workOpenTabs = singleLink?.let { tabs.linkPageCount(it.id) } ?: tabs.tabsIn(Section.WORK).count { !it.isHome },
-                                    singleLink = singleLink,
-                                    onSearch = { startEditing("") },
-                                    onVoice = { voiceSearch() },
-                                    onOpenUrl = { openInCurrent(it) },
-                                    onOpenInNewTab = { url ->
-                                        val opened = tabs.openInBackground(tabs.activeTab() ?: tabs.ensureTab(tabs.section), url)
-                                        scope.launch {
-                                            snackbar.currentSnackbarData?.dismiss()
-                                            val r = snackbar.showSnackbar("Opened in a new tab", actionLabel = "Switch", duration = SnackbarDuration.Short)
-                                            if (r == SnackbarResult.ActionPerformed && tabs.tabs.contains(opened)) tabs.select(opened)
-                                        }
-                                    },
-                                    onRemoveSite = { site ->
-                                        BrowserSettings.removeFromRecommended(site.key)
-                                        offerUndo("${site.title} removed from Recommended") { BrowserSettings.bringBackToRecommended(site.key) }
-                                    },
-                                    onAvatar = { if (!signedIn) actions.onSignIn() else showAccount = true },
-                                    onOpenWork = { switchSection(Section.WORK) },
-                                    onOpenMusic = actions.onOpenMusic,
-                                    onNotifications = actions.onOpenNotifications,
-                                )
+                                Section.NORMAL -> Unit
                                 Section.INCOGNITO -> IncognitoHome(onSearch = { startEditing("") })
                                 Section.WORK -> WorkHome(
                                     account = account,
                                     openCount = { tabs.linkPageCount(it.id) },
                                     onOpen = { openWorkLink(it) },
-                                    onAvatar = { if (!signedIn) actions.onSignIn() else showAccount = true },
+                                    onAvatar = { if (!signedIn) actions.onSignIn() else actions.onOpenYou() },
                                     onRefresh = actions.onRefreshLinks,
                                     onNotifications = actions.onOpenNotifications,
                                 )
@@ -484,6 +481,7 @@ fun BrowserScreen(
                         onTabs = {
                             tabs.captureActive()
                             switcherSection = section
+                            switcherFromMain = false
                             showTabs = true
                         },
                         onMenu = { showMenu = true },
@@ -515,7 +513,11 @@ fun BrowserScreen(
                     },
                     onSignIn = actions.onSignIn,
                     onUndo = ::offerUndo,
-                    onClose = { showTabs = false },
+                    onClose = {
+                        showTabs = false
+                        switcherFromMain = false
+                    },
+                    onDismiss = { dismissSwitcher() },
                 )
             }
 
@@ -645,9 +647,12 @@ fun BrowserScreen(
                     onAction = { action ->
                         showMenu = false
                         when (action) {
-                            MenuAction.NEW_TAB -> tabs.newTab(if (section == Section.INCOGNITO) Section.INCOGNITO else Section.NORMAL)
+                            MenuAction.NEW_TAB -> if (section == Section.INCOGNITO) tabs.newTab(Section.INCOGNITO) else {
+                                // A new tab is the main page.
+                                tabs.newTab(Section.NORMAL)
+                                actions.onHome()
+                            }
                             MenuAction.NEW_INCOGNITO -> tabs.newTab(Section.INCOGNITO)
-                            MenuAction.FORWARD -> tabs.forward()
                             MenuAction.RELOAD -> tabs.reload(tab)
                             MenuAction.BOOKMARK -> scope.launch {
                                 val added = withContext(Dispatchers.IO) { db.toggleBookmark(tab.url, tab.title) }
@@ -665,20 +670,26 @@ fun BrowserScreen(
                                 tabs.reload(tab)
                             }
                             MenuAction.OPEN_IN_CHROME -> openInBrowserApp(context, tab.url)
-                            MenuAction.MUSIC -> actions.onOpenMusic()
-                            MenuAction.TOOLS -> actions.onOpenTools()
                             MenuAction.HOME -> actions.onHome()
-                            MenuAction.YOU -> actions.onOpenYou()
                             MenuAction.WORK -> switchSection(Section.WORK)
                             MenuAction.WORK_INFO -> showWorkInfo = true
+                            MenuAction.SITE_INFO -> showSiteInfo = true
                             MenuAction.BOOKMARKS -> actions.onOpenLibrary(LibraryPage.BOOKMARKS)
                             MenuAction.HISTORY -> actions.onOpenLibrary(LibraryPage.HISTORY)
                             MenuAction.DOWNLOADS -> actions.onOpenLibrary(LibraryPage.DOWNLOADS)
-                            MenuAction.SETTINGS -> actions.onOpenSettings()
-                            MenuAction.SIGN_IN -> actions.onSignIn()
-                            MenuAction.PARTNERS -> actions.onOpenPartners()
-                            MenuAction.NOTIFICATIONS -> actions.onOpenNotifications()
                         }
+                    },
+                )
+            }
+        }
+
+        if (showSiteInfo && tab != null) {
+            ModalBottomSheet(onDismissRequest = { showSiteInfo = false }, containerColor = cs.sheet) {
+                SiteInfoSheet(
+                    tab = tab,
+                    onSiteSettings = {
+                        showSiteInfo = false
+                        actions.onOpenSiteSettings()
                     },
                 )
             }
@@ -702,40 +713,7 @@ fun BrowserScreen(
         }
     }
 
-    // Account + sign-in sheets use the app theme, not the section tint.
-    if (showAccount && account.user != null) {
-        ModalBottomSheet(onDismissRequest = { showAccount = false }, containerColor = MaterialTheme.colorScheme.sheet) {
-            AccountSheet(
-                account = account,
-                hasWork = hasWork,
-                onWork = {
-                    showAccount = false
-                    switchSection(Section.WORK)
-                },
-                onSettings = {
-                    showAccount = false
-                    actions.onOpenSettings()
-                },
-                onChat = {
-                    showAccount = false
-                    actions.onOpenChat()
-                },
-                onSignOut = {
-                    showAccount = false
-                    confirmSignOut = true
-                },
-            )
-        }
-    }
-    if (confirmSignOut) {
-        SignOutDialog(
-            onDismiss = { confirmSignOut = false },
-            onConfirm = {
-                confirmSignOut = false
-                actions.onSignOut()
-            },
-        )
-    }
+    // The sign-in sheet uses the app theme, not the section tint.
     if (signInVisible && account.user == null) {
         ModalBottomSheet(
             onDismissRequest = {

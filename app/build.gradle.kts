@@ -23,8 +23,8 @@ android {
         applicationId = "com.agani.syncup"
         minSdk = 24
         targetSdk = 36
-        versionCode = 9
-        versionName = "7.1"
+        versionCode = 10
+        versionName = "8"
         vectorDrawables { useSupportLibrary = true }
     }
 

@@ -8,4 +8,13 @@
             <certificates src="system" />
         </trust-anchors>
     </base-config>
+    <!-- Debug builds only: trust user-installed CAs so a proxy (e.g. HTTP Toolkit) can
+         decrypt this app's HTTPS while developing. Android ignores this block entirely in
+         release builds, so it never ships. -->
+    <debug-overrides>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </debug-overrides>
 </network-security-config>

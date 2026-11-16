@@ -145,6 +145,7 @@ internal fun WheelScreen(onBack: () -> Unit, onOpenGroup: () -> Unit) {
                 if (Together.available && Together.phones > 0) GroupChip(Together.phones)
                 WheelMenu()
             }
+            DecideSwitchRow()
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
                 if (shared != null) SharedBanner(shared, onClose = game::leaveShared)
                 NameRow(w, enabled = shared == null && !busy) { sheet = WheelSheet.WHEELS }

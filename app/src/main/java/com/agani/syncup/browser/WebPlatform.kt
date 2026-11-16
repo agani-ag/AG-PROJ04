@@ -222,12 +222,15 @@ class WebPlatform(private val activity: ComponentActivity) {
      * Chrome's own user agent (its reduced form), not WebView's ("; wv" … "Version/4.0"), which some
      * sites answer with a cut-down "app" page or a "use a browser" wall. [desktop] = "Desktop site".
      */
-    fun userAgent(desktop: Boolean): String =
-        if (desktop) {
+    fun userAgent(desktop: Boolean, append: String? = null): String {
+        val base = if (desktop) {
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$chromeMajor.0.0.0 Safari/537.36"
         } else {
             "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$chromeMajor.0.0.0 Mobile Safari/537.36"
         }
+        // A per-link "append to UA" value (UaTokens), kept for the tab's life. Not a secret — see UaTokens.
+        return if (append.isNullOrBlank()) base else "$base $append"
+    }
 
     /** Apply the user's page settings (text size, darkening websites) — on creation and when they change. */
     fun applySettings(webView: WebView) {
@@ -330,7 +333,8 @@ class WebPlatform(private val activity: ComponentActivity) {
             cacheMode = if (tab.section == Section.INCOGNITO) WebSettings.LOAD_NO_CACHE else WebSettings.LOAD_DEFAULT
             // Like Chrome: http images and media on an https page still show; http scripts don't run.
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-            userAgentString = userAgent(tab.desktop)
+            // tab.uaToken is set only off Incognito, so a new/woken/desktop-toggled WebView keeps it.
+            userAgentString = userAgent(tab.desktop, tab.uaToken)
         }
         applySettings(webView)
         cookieManager(webView).setAcceptThirdPartyCookies(webView, true)
@@ -373,6 +377,13 @@ class WebPlatform(private val activity: ComponentActivity) {
         if (tab.section != Section.INCOGNITO) applyPageTokens(webView)
 
         webView.webViewClient = object : WebViewClient() {
+            // The DNS proxy asks which profile this is (Incognito can stay off the DNS); a site's own sign-in
+            // is handled as before.
+            override fun onReceivedHttpAuthRequest(view: WebView?, handler: android.webkit.HttpAuthHandler?, host: String?, realm: String?) {
+                if (handler != null && com.agani.syncup.dns.DnsServices.answerProxyAuth(handler, host, realm, proxyUser(tab.section))) return
+                super.onReceivedHttpAuthRequest(view, handler, host, realm)
+            }
+
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 tab.freshPopup = false
                 tab.error = null
@@ -1163,6 +1174,12 @@ class WebPlatform(private val activity: ComponentActivity) {
 
         /** Separate cookie/storage profiles per section need a recent Android System WebView. */
         val MULTI_PROFILE: Boolean by lazy { WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE) }
+
+        /**
+         * Who a tab tells the DNS proxy it is: its section's profile. With one shared profile (an old WebView)
+         * every tab says "normal" — they'd share the answer anyway.
+         */
+        fun proxyUser(section: Section): String = if (MULTI_PROFILE) section.name.lowercase() else "normal"
 
         fun profileName(section: Section) = when (section) {
             Section.NORMAL -> androidx.webkit.Profile.DEFAULT_PROFILE_NAME

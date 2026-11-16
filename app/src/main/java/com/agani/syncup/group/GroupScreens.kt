@@ -717,17 +717,19 @@ private fun CodeCard(code: String, modifier: Modifier = Modifier, onCard: Boolea
  * their own pages). Group photos' viewer and Photo Show go full screen over the page.
  */
 @Composable
-fun GroupModeScreen(onBack: () -> Unit) {
+fun GroupModeScreen(
+    onBack: () -> Unit,
+    /** Not in a group: start one with music (Radio → Party), or find groups nearby there. */
+    onMusic: () -> Unit = {},
+    /** Not in a group: start one with a video (Video player → Watch Party). */
+    onWatch: () -> Unit = {},
+) {
     val cs = MaterialTheme.colorScheme
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
             ToolTopBar(if (GroupLink.inGroup) GroupLink.mode.label else "Group", onBack)
             when {
-                !GroupLink.inGroup -> NoteBox(
-                    Icons.Rounded.Groups,
-                    "You're not in a group. Start one from Radio → Party or Video player → Watch Party, or join one there.",
-                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
+                !GroupLink.inGroup -> GroupStart(onMusic, onWatch)
                 GroupLink.mode == GroupMode.WALKIE -> WalkieView()
                 GroupLink.mode == GroupMode.SHARE -> ShareView()
                 GroupLink.mode == GroupMode.PHOTOS -> PhotosView()
@@ -735,6 +737,65 @@ fun GroupModeScreen(onBack: () -> Unit) {
             }
         }
         if (GroupLink.inGroup && GroupLink.mode == GroupMode.PHOTOS) PhotosFullScreen()
+    }
+}
+
+/**
+ * Not in a group: what a group is, and the ways in — never a dead end (user, 14 Nov 2026). Starting and
+ * joining happen where they always have (Radio → Party, Video player → Watch Party), which ask for the
+ * Nearby permission and name the group.
+ */
+@Composable
+private fun GroupStart(onMusic: () -> Unit, onWatch: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val tint = com.agani.syncup.home.ToolTint.INDIGO
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp)) {
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(tint.tile).padding(18.dp)) {
+            Text("Do things together, nearby", fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold, color = tint.icon)
+            Text(
+                "Join up to 8 phones, no internet needed. Play music, watch, talk or share at the same time.",
+                fontSize = 14.5.sp, lineHeight = 21.sp, color = cs.onSurface, modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+        Text(
+            "Start a group", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant,
+            modifier = Modifier.padding(start = 6.dp, top = 22.dp, bottom = 10.dp),
+        )
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(cs.surfaceContainerLowest)) {
+            StartRow(Icons.Rounded.MusicNote, com.agani.syncup.home.ToolTint.PINK, "With music", "Your songs on every phone, in sync", onMusic)
+            Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant))
+            StartRow(Icons.Rounded.Theaters, com.agani.syncup.home.ToolTint.ROSE, "With a video", "Watch the same moment together", onWatch)
+        }
+        Text(
+            "Join one", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurfaceVariant,
+            modifier = Modifier.padding(start = 6.dp, top = 22.dp, bottom = 10.dp),
+        )
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(cs.surfaceContainerLowest)) {
+            StartRow(Icons.Rounded.Groups, tint, "Groups nearby", "See the groups phones around you started", onMusic)
+        }
+        Text(
+            "Once you're in a group, this page shows what it's doing.", fontSize = 13.5.sp, lineHeight = 19.sp, color = cs.onSurfaceVariant,
+            modifier = Modifier.padding(start = 6.dp, top = 14.dp),
+        )
+    }
+}
+
+@Composable
+private fun StartRow(icon: androidx.compose.ui.graphics.vector.ImageVector, tint: com.agani.syncup.home.ToolTint, title: String, sub: String, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Box(Modifier.size(40.dp).clip(RoundedCornerShape(13.dp)).background(tint.tile), contentAlignment = Alignment.Center) {
+            Icon(icon, null, tint = tint.icon, modifier = Modifier.size(22.dp))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 16.sp, lineHeight = 21.sp, color = cs.onSurface)
+            Text(sub, fontSize = 13.5.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+        }
+        Icon(Icons.Rounded.ArrowForward, null, tint = cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
     }
 }
 

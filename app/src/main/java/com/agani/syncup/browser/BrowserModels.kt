@@ -83,6 +83,13 @@ class BrowserTab(
      */
     var groupId: Long = id
 
+    /**
+     * A value appended to this tab's User-Agent, bound once when the tab (its group's first page)
+     * starts at a website with an "append to UA" rule, then kept for the whole group across
+     * redirects to other sites until it's closed. Never set in Incognito. See [UaTokens].
+     */
+    var uaToken: String? = null
+
     /** When the tab was last on screen (a link's card shows its latest page; the oldest sleep first). */
     var lastUsed by mutableLongStateOf(0L)
 

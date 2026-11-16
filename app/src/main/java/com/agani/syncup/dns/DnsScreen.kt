@@ -107,6 +107,33 @@ fun DnsScreen(onBack: () -> Unit) {
                     }
                 }
             }
+            if (canUse) {
+                // Incognito stays on the phone's DNS unless switched on here (user, 16 Nov 2026).
+                val apart = com.agani.syncup.browser.WebPlatform.MULTI_PROFILE
+                Heading("Incognito", null)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().browserCard().clickable(enabled = apart) { DnsServices.changeIncognito(!DnsServices.incognito) }
+                        .padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Use in Incognito tabs", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
+                        Text(
+                            when {
+                                !apart -> "This phone's WebView can't keep Incognito apart, so Incognito tabs use it too"
+                                DnsServices.incognito -> "On · Incognito tabs use your DNS too"
+                                else -> "Off · Incognito tabs use your phone's DNS"
+                            },
+                            fontSize = 13.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    androidx.compose.material3.Switch(
+                        checked = DnsServices.incognito || !apart, enabled = apart,
+                        onCheckedChange = { DnsServices.changeIncognito(it) },
+                    )
+                }
+            }
             val off = DnsServices.turnedOff
             Heading("Available", if (off.isEmpty()) null else "${off.size} turned off")
             Column(Modifier.fillMaxWidth().browserCard()) {
@@ -125,7 +152,7 @@ fun DnsScreen(onBack: () -> Unit) {
                 }
             }
             Text(
-                "Only for web pages in SyncUp, including Incognito tabs. Other apps and the rest of your phone don't change. " +
+                "Only for web pages in SyncUp (Incognito tabs only when switched on above). Other apps and the rest of your phone don't change. " +
                     "A DNS service you turn on can see the names of the sites you open. Downloads stay on your phone's DNS.",
                 fontSize = 12.5.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant,
                 modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 14.dp),

@@ -186,11 +186,16 @@ private fun SectionChoice(section: Section, subtitle: String, count: Int, select
 
 // ============================================================================ page menu
 internal enum class MenuAction {
-    NEW_TAB, NEW_INCOGNITO, FORWARD, RELOAD, BOOKMARK, SHARE, FIND, DESKTOP, OPEN_IN_CHROME, ADS,
-    MUSIC, TOOLS, WORK, WORK_INFO, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, SIGN_IN, PARTNERS, NOTIFICATIONS,
-    HOME, YOU,
+    NEW_TAB, NEW_INCOGNITO, RELOAD, BOOKMARK, SHARE, FIND, DESKTOP, OPEN_IN_CHROME, ADS,
+    WORK, WORK_INFO, SITE_INFO, BOOKMARKS, HISTORY, DOWNLOADS, HOME,
 }
 
+/**
+ * The ⋮ menu (mockup "After · ⋮ menu", user 14 Nov 2026): six quick buttons — Home (the main page), Bookmark,
+ * Find, Reload, Desktop, Share — then the ads on this page, About this site, New tab, New incognito tab,
+ * Bookmarks, History, Downloads, SyncUp links and Open in Chrome. No big button; Forward lives on the bar,
+ * Notifications on the bell, Partners and Settings in the account sheet.
+ */
 @Composable
 internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, hasWork: Boolean, onAction: (MenuAction) -> Unit) {
     val cs = MaterialTheme.colorScheme
@@ -198,35 +203,24 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
     val normalPage = page && tab.section == Section.NORMAL
     var bookmarked by remember { mutableStateOf(false) }
     LaunchedEffect(tab.url) { bookmarked = normalPage && withContext(Dispatchers.IO) { db.isBookmarked(tab.url) } }
-    val signedIn = account.user != null
     val incognito = tab.section == Section.INCOGNITO
     val workPage = page && tab.isWork
     val context = LocalContext.current
     val chromeInstalled = remember { runCatching { context.packageManager.getPackageInfo(CHROME_PACKAGE, 0) }.isSuccess }
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 12.dp)) {
-        // SyncUp's other places, from anywhere in the browser.
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            HubButton(Icons.Rounded.Home, "Home", Modifier.weight(1f)) { onAction(MenuAction.HOME) }
-            HubButton(Icons.Rounded.GridView, "Tools", Modifier.weight(1f), busy = com.agani.syncup.tools.toolsStatus() != null) { onAction(MenuAction.TOOLS) }
-            HubButton(Icons.Rounded.Person, "You", Modifier.weight(1f)) { onAction(MenuAction.YOU) }
-        }
-        // Quick actions that apply to what's on screen — none on a home page, so no row at all.
-        if (page || tab.canGoForward) {
-            Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp)) {
-                if (tab.canGoForward) QuickAction(Icons.AutoMirrored.Rounded.ArrowForward, "Forward", true) { onAction(MenuAction.FORWARD) }
-                if (normalPage) {
-                    QuickAction(if (bookmarked) Icons.Rounded.Star else Icons.Rounded.StarBorder, if (bookmarked) "Bookmarked" else "Bookmark", true, on = bookmarked) {
-                        onAction(MenuAction.BOOKMARK)
-                    }
+        Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp)) {
+            QuickAction(Icons.Rounded.Home, "Home", true) { onAction(MenuAction.HOME) }
+            if (normalPage) {
+                QuickAction(if (bookmarked) Icons.Rounded.Star else Icons.Rounded.StarBorder, if (bookmarked) "Bookmarked" else "Bookmark", true, on = bookmarked) {
+                    onAction(MenuAction.BOOKMARK)
                 }
-                if (page) {
-                    QuickAction(Icons.Rounded.FindInPage, "Find", true) { onAction(MenuAction.FIND) }
-                    QuickAction(Icons.Rounded.Refresh, "Reload", true) { onAction(MenuAction.RELOAD) }
-                    QuickAction(Icons.Rounded.Computer, "Desktop", true, on = tab.desktop) { onAction(MenuAction.DESKTOP) }
-                }
-                if (workPage) QuickAction(Icons.Rounded.Info, "About", true) { onAction(MenuAction.WORK_INFO) }
             }
+            QuickAction(Icons.Rounded.FindInPage, "Find", page) { onAction(MenuAction.FIND) }
+            QuickAction(Icons.Rounded.Refresh, "Reload", page) { onAction(MenuAction.RELOAD) }
+            QuickAction(Icons.Rounded.Computer, "Desktop", page, on = tab.desktop) { onAction(MenuAction.DESKTOP) }
+            // SyncUp pages can't be shared, so there's no Share on them.
+            if (!tab.isWork) QuickAction(Icons.Rounded.Share, "Share", page) { onAction(MenuAction.SHARE) }
         }
         // The ad blocker on this page: how much it blocked, and a way out for a site that breaks.
         if (page && BrowserSettings.blockAds) {
@@ -240,48 +234,65 @@ internal fun MenuSheet(tab: BrowserTab, db: BrowserDb, account: BrowserAccount, 
                 action = if (allowed) "Block again" else "Allow on site",
             ) { onAction(MenuAction.ADS) }
         }
-        if (workPage) MenuRow(Icons.Rounded.Info, "About this SyncUp link", tint = cs.primary, textColor = cs.primary) { onAction(MenuAction.WORK_INFO) }
+        if (workPage) {
+            MenuRow(Icons.Rounded.Info, "About this SyncUp link", tint = cs.primary, textColor = cs.primary) { onAction(MenuAction.WORK_INFO) }
+        } else if (page) {
+            MenuRow(Icons.Rounded.Info, "About this site") { onAction(MenuAction.SITE_INFO) }
+        }
         MenuRow(Icons.Rounded.Add, if (tab.isWork) "New Normal tab" else "New tab") { onAction(MenuAction.NEW_TAB) }
         MenuRow(Icons.Rounded.VisibilityOff, "New incognito tab") { onAction(MenuAction.NEW_INCOGNITO) }
-        if (!incognito && (hasWork || account.hasPartners)) {
-            SheetDivider()
-            if (hasWork && !tab.isWork) {
-                SectionTheme(Section.WORK) {
-                    // One link: the row is that link and opens the website directly.
-                    val single = account.links.singleOrNull()
-                    MenuRow(
-                        SyncUpMark, single?.title ?: "SyncUp links", if (single != null) "Your SyncUp link" else "${account.links.size}",
-                        tint = MaterialTheme.colorScheme.primary,
-                    ) { onAction(MenuAction.WORK) }
-                }
-            }
-            if (account.hasPartners) {
-                MenuRow(Icons.Rounded.Handshake, "Partners", badge = if (account.partnersWaiting > 0) "${account.partnersWaiting} new" else null) {
-                    onAction(MenuAction.PARTNERS)
-                }
-            }
-        }
         SheetDivider()
-        // Everyone (signed in or not) has a Notifications page — not offered from Incognito.
-        if (!incognito) {
-            val new = com.agani.syncup.notifications.Inbox.newCount
-            MenuRow(Icons.Rounded.Notifications, "Notifications", badge = if (new > 0) "$new new" else null) { onAction(MenuAction.NOTIFICATIONS) }
-        }
         MenuRow(Icons.Rounded.Bookmarks, "Bookmarks") { onAction(MenuAction.BOOKMARKS) }
         MenuRow(Icons.Rounded.History, "History") { onAction(MenuAction.HISTORY) }
         val running = com.agani.syncup.downloads.Downloads.tasks.count { it.state == com.agani.syncup.downloads.DlState.RUNNING }
         MenuRow(Icons.Rounded.Download, "Downloads", trailing = if (running > 0) "$running running" else null) { onAction(MenuAction.DOWNLOADS) }
-        // SyncUp pages can't be shared, so the row simply isn't there.
-        if (page && !tab.isWork) MenuRow(Icons.Rounded.Share, "Share page") { onAction(MenuAction.SHARE) }
+        val links = !incognito && hasWork && !tab.isWork
         // For the rare page that won't work inside an app (Google sign-in). Never a SyncUp page (its
         // address stays here) or an Incognito one (it would leave Incognito).
+        if (links || normalPage) SheetDivider()
+        if (links) {
+            SectionTheme(Section.WORK) {
+                // One link: the row is that link and opens the website directly.
+                val single = account.links.singleOrNull()
+                MenuRow(
+                    SyncUpMark, single?.title ?: "SyncUp links", if (single != null) "Your SyncUp link" else "${account.links.size}",
+                    tint = MaterialTheme.colorScheme.primary,
+                ) { onAction(MenuAction.WORK) }
+            }
+        }
         if (normalPage) {
             MenuRow(Icons.AutoMirrored.Rounded.OpenInNew, if (chromeInstalled) "Open in Chrome" else "Open in browser app") {
                 onAction(MenuAction.OPEN_IN_CHROME)
             }
         }
-        MenuRow(Icons.Rounded.Settings, "Settings") { onAction(MenuAction.SETTINGS) }
-        if (!signedIn) MenuRow(Icons.Rounded.Person, "Sign in to SyncUp", tint = cs.primary, textColor = cs.primary) { onAction(MenuAction.SIGN_IN) }
+    }
+}
+
+// ============================================================================ about this site
+/** "About this site" (⋮): the site, whether the connection is secure, ads blocked here, and its settings. */
+@Composable
+internal fun SiteInfoSheet(tab: BrowserTab, onSiteSettings: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val secure = UrlInput.isSecure(tab.url)
+    Column(Modifier.padding(bottom = 16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 12.dp)) {
+            SiteMark(tab.url, tab.title, circle = 48.dp, iconSize = 26.dp)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    UrlInput.hostAndPath(tab.url).first, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium,
+                    color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Text(tab.title, fontSize = 13.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (secure) MenuRow(Icons.Rounded.Lock, "Connection is secure", tint = cs.success) {}
+        else MenuRow(Icons.Rounded.Info, "Connection is not secure", tint = cs.error, textColor = cs.error) {}
+        if (BrowserSettings.blockAds) {
+            val allowed = AdBlocker.isAllowed(tab.pageHost)
+            MenuRow(Icons.Rounded.Shield, if (allowed) "Ads allowed on this site" else "${tab.adsBlocked} ad${if (tab.adsBlocked == 1) "" else "s"} blocked on this page") {}
+        }
+        MenuRow(Icons.Rounded.Settings, "Site settings", onClick = onSiteSettings)
     }
 }
 
@@ -373,22 +384,5 @@ internal fun ErrorPage(message: String, onRetry: () -> Unit) {
             Icons.Rounded.CloudOff, "Can't load this page", message,
             action = "Retry", actionIcon = Icons.Rounded.Refresh, onAction = onRetry,
         )
-    }
-}
-
-/** Home, Tools or You: a big soft button at the top of the browser's ⋮ menu. [busy]: something runs inside. */
-@Composable
-private fun HubButton(icon: ImageVector, label: String, modifier: Modifier, busy: Boolean = false, onClick: () -> Unit) {
-    // Like Home's Your tools: the icon on a square tile, its name underneath.
-    val cs = MaterialTheme.colorScheme
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = modifier.clip(RoundedCornerShape(16.dp)).clickable(onClickLabel = label, onClick = onClick).padding(vertical = 4.dp),
-    ) {
-        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(56.dp).clip(RoundedCornerShape(18.dp)).background(cs.primaryContainer)) {
-            Icon(icon, null, tint = cs.onPrimaryContainer, modifier = Modifier.size(26.dp))
-            if (busy) Box(Modifier.align(Alignment.TopEnd).offset(x = (-9).dp, y = 9.dp).size(8.dp).clip(CircleShape).background(cs.primary))
-        }
-        Text(label, fontSize = 12.5.sp, color = cs.onSurface, maxLines = 1, modifier = Modifier.padding(top = 7.dp))
     }
 }

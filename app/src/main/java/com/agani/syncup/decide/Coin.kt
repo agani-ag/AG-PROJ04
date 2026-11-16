@@ -272,6 +272,7 @@ internal fun CoinScreen(onBack: () -> Unit, onOpenGroup: () -> Unit) {
             BarIcon(Icons.Rounded.Edit, "Name the sides", onClick = { naming = true })
             DecideMoreMenu()
         }
+        DecideSwitchRow()
         val by = shared?.takeIf { !it.mine }?.by
         if (by != null) WhoBanner(by, Modifier.padding(horizontal = 16.dp))
         // Outside the scrolling part, so the coin can fly up over the bar without being cut off.

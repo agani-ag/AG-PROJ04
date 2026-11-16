@@ -6,6 +6,7 @@ import android.webkit.WebView
 import androidx.core.app.NotificationManagerCompat
 import com.agani.syncup.BuildConfig
 import com.agani.syncup.browser.PageTokens
+import com.agani.syncup.browser.UaTokens
 import com.agani.syncup.data.ApiClient
 import com.agani.syncup.data.DeviceHelloRequest
 import com.agani.syncup.data.TokenStore
@@ -93,6 +94,7 @@ object DeviceRegistrar {
                 // user signed in or out while this was on its way (the answer would be for the other).
                 if (store.token() == access) {
                     PageTokens.update(app, resp.tokenSites)
+                    UaTokens.update(app, resp.uaRules)
                     resp.notificationsNew?.let { Inbox.setCount(it) }
                 }
             }

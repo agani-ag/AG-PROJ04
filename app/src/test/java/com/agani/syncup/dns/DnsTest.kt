@@ -489,4 +489,78 @@ class DnsTest {
         c.close()
         assertTrue(runCatching { Socket("127.0.0.1", proxyPort).close() }.isFailure)
     }
+
+    // ------------------------------------------------------------------ who's asking (Incognito off the DNS)
+    private fun basic(user: String, pass: String): String {
+        val raw = "$user:$pass".toByteArray()
+        val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        val out = StringBuilder()
+        for (i in raw.indices step 3) {
+            val b = (raw[i].toInt() and 0xFF shl 16) or
+                ((raw.getOrNull(i + 1)?.toInt() ?: 0) and 0xFF shl 8) or
+                ((raw.getOrNull(i + 2)?.toInt() ?: 0) and 0xFF)
+            out.append(alphabet[b shr 18 and 63]).append(alphabet[b shr 12 and 63])
+            out.append(if (i + 1 < raw.size) alphabet[b shr 6 and 63] else '=')
+            out.append(if (i + 2 < raw.size) alphabet[b and 63] else '=')
+        }
+        return "Basic $out"
+    }
+
+    @Test
+    fun who_is_asking_is_read_from_the_request() {
+        val r = ProxyRequest.parse("CONNECT example.com:443 HTTP/1.1\r\nProxy-Authorization: ${basic("incognito", "s3cret")}")!!
+        assertEquals("incognito" to "s3cret", r.credentials)
+        assertNull(ProxyRequest.parse("CONNECT example.com:443 HTTP/1.1")!!.credentials)
+        assertNull(ProxyRequest.basic("Bearer abc"))
+        assertEquals("normal" to "a:b", ProxyRequest.basic(basic("normal", "a:b")))
+    }
+
+    @Test(timeout = 10_000)
+    fun with_a_secret_a_page_must_say_who_it_is() {
+        val port = site { it.getOutputStream().write('k'.code) }
+        val p = BrowsingProxy({ listOf(InetAddress.getLoopbackAddress()) }, { true }, secret = "s3cret")
+        closers += { p.stop() }
+        val proxyPort = p.start()
+        Socket("127.0.0.1", proxyPort).use { c ->
+            c.send("CONNECT example.com:$port HTTP/1.1\r\n\r\n")
+            val head = c.readHead()
+            assertTrue(head, head.startsWith("HTTP/1.1 407"))
+            assertTrue(head, head.contains("Proxy-Authenticate: Basic realm=\"${BrowsingProxy.REALM}\""))
+        }
+        Socket("127.0.0.1", proxyPort).use { c ->
+            c.send("CONNECT example.com:$port HTTP/1.1\r\nProxy-Authorization: ${basic("normal", "wrong")}\r\n\r\n")
+            assertTrue(c.readHead().startsWith("HTTP/1.1 407"))
+        }
+        Socket("127.0.0.1", proxyPort).use { c ->
+            c.send("CONNECT example.com:$port HTTP/1.1\r\nProxy-Authorization: ${basic("normal", "s3cret")}\r\n\r\n")
+            assertTrue(c.readHead().startsWith("HTTP/1.1 200"))
+            assertEquals('k'.code, c.getInputStream().read())
+        }
+    }
+
+    @Test(timeout = 10_000)
+    fun incognito_uses_the_phones_dns_unless_switched_on() {
+        val port = site { it.getOutputStream().write('k'.code) }
+        val asked = java.util.Collections.synchronizedList(ArrayList<String>())
+        var incognitoOn = false
+        val p = BrowsingProxy(
+            lookup = { asked += "dns:$it"; listOf(InetAddress.getLoopbackAddress()) },
+            allowed = { true },
+            secret = "s3cret",
+            phoneLookup = { asked += "phone:$it"; listOf(InetAddress.getLoopbackAddress()) },
+            usesDns = { who -> who != "incognito" || incognitoOn },
+        )
+        closers += { p.stop() }
+        val proxyPort = p.start()
+        fun visit(who: String, host: String) = Socket("127.0.0.1", proxyPort).use { c ->
+            c.send("CONNECT $host:$port HTTP/1.1\r\nProxy-Authorization: ${basic(who, "s3cret")}\r\n\r\n")
+            assertTrue(c.readHead().startsWith("HTTP/1.1 200"))
+        }
+        visit("normal", "a.com")
+        visit("incognito", "b.com")
+        incognitoOn = true
+        visit("incognito", "c.com")
+        visit("work", "d.com")
+        assertEquals(listOf("dns:a.com", "phone:b.com", "dns:c.com", "dns:d.com"), asked.toList())
+    }
 }

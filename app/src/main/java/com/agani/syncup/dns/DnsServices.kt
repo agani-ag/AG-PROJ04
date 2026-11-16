@@ -35,13 +35,15 @@ data class DnsChoice(val id: String, val name: String, val address: String, val 
  * own stay on this phone; the server is never told. With none on, nothing here runs at all.
  *
  * WebView has no DNS setting, so while one is on its pages go through [BrowsingProxy]. That setting covers
- * the whole app, so Incognito tabs can't be left out, which is why the DNS page says so.
+ * the whole app, so each WebView tells the proxy which profile it is ([answerProxyAuth]): Incognito tabs stay
+ * on the phone's DNS unless the person switches [incognito] on (user, 16 Nov 2026: off by default).
  */
 object DnsServices {
     private const val PREFS = "dns_services"
     private const val KEY_ENABLED = "enabled"
     private const val KEY_OWN = "own"
     private const val KEY_NOTICE = "notice"
+    private const val KEY_INCOGNITO = "incognito"
     private const val LIST_FILE = "dns_services.json"
 
     private var prefs: SharedPreferences? = null
@@ -67,6 +69,31 @@ object DnsServices {
     val latency = mutableStateMapOf<String, Long>()
     /** The ones not answering just now. */
     val failing = mutableStateMapOf<String, Boolean>()
+    /** Incognito tabs use the DNS too (off: they stay on the phone's DNS). */
+    var incognito by mutableStateOf(false)
+        private set
+
+    /** What the WebViews answer the proxy with: made fresh each time the app starts, never saved. */
+    private val proxySecret: String by lazy { UUID.randomUUID().toString().replace("-", "") }
+
+    /**
+     * A WebView was asked who it is ([host] the proxy on this phone, [realm] the proxy's): answers with [who]
+     * (its profile — "normal", "work", "incognito") and returns true. Anything else (a site's own sign-in)
+     * returns false, for the WebView to handle as before.
+     */
+    fun answerProxyAuth(handler: android.webkit.HttpAuthHandler, host: String?, realm: String?, who: String): Boolean {
+        if (realm != BrowsingProxy.REALM) return false
+        val h = host?.substringBefore(':')
+        if (h != "127.0.0.1" && h != "localhost") return false
+        handler.proceed(who, proxySecret)
+        return true
+    }
+
+    fun changeIncognito(on: Boolean) {
+        incognito = on
+        prefs?.edit()?.putBoolean(KEY_INCOGNITO, on)?.apply()
+    }
+
     /** A DNS is on but the proxy wouldn't start, so pages are on the phone's DNS after all. */
     var couldntStart by mutableStateOf(false)
         private set
@@ -131,6 +158,7 @@ object DnsServices {
             List(a.length()) { a.getString(it) }
         }.getOrDefault(emptyList())
         notice = p.getString(KEY_NOTICE, null)
+        incognito = p.getBoolean(KEY_INCOGNITO, false)
         apply()
     }
 
@@ -242,7 +270,12 @@ object DnsServices {
 
     private fun startProxy() {
         if (proxy != null) return
-        val started = BrowsingProxy(resolver::resolve)
+        val started = BrowsingProxy(
+            resolver::resolve,
+            secret = proxySecret,
+            phoneLookup = { InetAddress.getAllByName(it).toList() },
+            usesDns = { who -> who != "incognito" || incognito },
+        )
         try {
             val port = started.start()
             val config = ProxyConfig.Builder()

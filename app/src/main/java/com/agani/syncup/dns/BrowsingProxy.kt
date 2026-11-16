@@ -14,19 +14,30 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-/** What a browser asked this proxy for: the place to connect to, and for plain http the request to pass on. */
-internal class ProxyRequest(val host: String, val port: Int, val tunnel: Boolean, val forward: ByteArray?) {
+/**
+ * What a browser asked this proxy for: the place to connect to, for plain http the request to pass on, and
+ * who is asking ([credentials], from its Proxy-Authorization: the WebView profile's name and the proxy's secret).
+ */
+internal class ProxyRequest(
+    val host: String,
+    val port: Int,
+    val tunnel: Boolean,
+    val forward: ByteArray?,
+    val credentials: Pair<String, String>? = null,
+) {
     companion object {
         /** Reads the head of a request ("CONNECT a.com:443 HTTP/1.1…" or "GET http://a.com/x HTTP/1.1…"). */
         fun parse(head: String): ProxyRequest? {
             val lines = head.split("\r\n")
             val first = lines.firstOrNull()?.split(' ')?.takeIf { it.size == 3 } ?: return null
             val (method, target, version) = first
+            val credentials = lines.drop(1).firstOrNull { it.substringBefore(':').trim().equals("proxy-authorization", ignoreCase = true) }
+                ?.substringAfter(':')?.trim()?.let(::basic)
             if (method == "CONNECT") {
                 val colon = target.lastIndexOf(':')
                 if (colon <= 0) return null
                 val port = target.substring(colon + 1).toIntOrNull()?.takeIf { it in 1..65_535 } ?: return null
-                return ProxyRequest(target.substring(0, colon).trim('[', ']'), port, tunnel = true, forward = null)
+                return ProxyRequest(target.substring(0, colon).trim('[', ']'), port, tunnel = true, forward = null, credentials = credentials)
             }
             val uri = runCatching { URI(target) }.getOrNull() ?: return null
             if (!uri.scheme.equals("http", ignoreCase = true)) return null
@@ -38,7 +49,37 @@ internal class ProxyRequest(val host: String, val port: Int, val tunnel: Boolean
                 line.isNotEmpty() && name !in setOf("proxy-connection", "proxy-authorization", "connection", "keep-alive")
             }
             val rewritten = "$method $path $version\r\n" + headers.joinToString("") { "$it\r\n" } + "Connection: close\r\n\r\n"
-            return ProxyRequest(host, if (uri.port > 0) uri.port else 80, tunnel = false, forward = rewritten.toByteArray(Charsets.ISO_8859_1))
+            return ProxyRequest(
+                host, if (uri.port > 0) uri.port else 80, tunnel = false, forward = rewritten.toByteArray(Charsets.ISO_8859_1),
+                credentials = credentials,
+            )
+        }
+
+        /** "Basic dXNlcjpwYXNz" → ("user", "pass"); null when it isn't Basic or doesn't decode. */
+        internal fun basic(value: String): Pair<String, String>? {
+            if (!value.startsWith("Basic ", ignoreCase = true)) return null
+            val text = base64(value.substring(6).trim())?.toString(Charsets.UTF_8) ?: return null
+            val colon = text.indexOf(':').takeIf { it >= 0 } ?: return null
+            return text.substring(0, colon) to text.substring(colon + 1)
+        }
+
+        /** Plain base64 (java.util.Base64 needs Android 8; this runs on 7 and in tests). */
+        private fun base64(text: String): ByteArray? {
+            val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+            val clean = text.trimEnd('=')
+            val out = ByteArrayOutputStream()
+            var buffer = 0
+            var bits = 0
+            for (c in clean) {
+                val v = alphabet.indexOf(c).takeIf { it >= 0 } ?: return null
+                buffer = (buffer shl 6) or v
+                bits += 6
+                if (bits >= 8) {
+                    bits -= 8
+                    out.write((buffer shr bits) and 0xFF)
+                }
+            }
+            return out.toByteArray()
         }
     }
 }
@@ -48,10 +89,17 @@ internal class ProxyRequest(val host: String, val port: Int, val tunnel: Boolean
  * WebView different DNS. It looks up each site with [lookup] and joins the two ends; https stays encrypted
  * end to end, because it only ever passes the bytes along. It only runs while a DNS is on, listens only on
  * this phone, and won't connect back into it.
+ *
+ * With a [secret], every page must say who it is (Proxy-Authorization, which each WebView answers for its own
+ * profile — DnsServices.answerProxyAuth): nothing else on the phone can use the proxy, and a profile that
+ * [usesDns] says no to (Incognito, unless switched on) is looked up with [phoneLookup] instead.
  */
 internal class BrowsingProxy(
     private val lookup: (String) -> List<InetAddress>,
     private val allowed: (InetAddress) -> Boolean = { !it.isLoopbackAddress && !it.isAnyLocalAddress && !it.isLinkLocalAddress && !it.isMulticastAddress },
+    private val secret: String? = null,
+    private val phoneLookup: (String) -> List<InetAddress> = lookup,
+    private val usesDns: (who: String) -> Boolean = { true },
 ) {
     private val threads = Executors.newCachedThreadPool { r -> Thread(r, "browsing-proxy").apply { isDaemon = true } }
     private val open = ConcurrentHashMap.newKeySet<Socket>()
@@ -94,7 +142,13 @@ internal class BrowsingProxy(
                 refuse(out, "400 Bad Request")
                 return
             }
-            remote = connect(request)
+            val who = request.credentials?.takeIf { it.second == secret }?.first
+            if (secret != null && who == null) {
+                // The page's WebView answers this with its profile's name (and asks no one).
+                refuse(out, "407 Proxy Authentication Required", "Proxy-Authenticate: Basic realm=\"$REALM\"\r\n")
+                return
+            }
+            remote = connect(request, if (who == null || usesDns(who)) lookup else phoneLookup)
             if (remote == null) {
                 refuse(out, "502 Bad Gateway")
                 return
@@ -121,7 +175,7 @@ internal class BrowsingProxy(
         }
     }
 
-    private fun connect(request: ProxyRequest): Socket? {
+    private fun connect(request: ProxyRequest, lookup: (String) -> List<InetAddress>): Socket? {
         for (address in lookup(request.host).filter(allowed)) {
             val socket = Socket()
             try {
@@ -182,9 +236,9 @@ internal class BrowsingProxy(
         return null
     }
 
-    private fun refuse(out: OutputStream, status: String) {
+    private fun refuse(out: OutputStream, status: String, extra: String = "") {
         runCatching {
-            out.write("HTTP/1.1 $status\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+            out.write("HTTP/1.1 $status\r\n${extra}Content-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
             out.flush()
         }
     }
@@ -193,13 +247,15 @@ internal class BrowsingProxy(
         runCatching { socket.close() }
     }
 
-    private companion object {
-        const val BACKLOG = 128
-        const val BUFFER = 32 * 1024
-        const val MAX_HEAD = 64 * 1024
-        const val HEAD_WAIT_MS = 30_000
-        const val CONNECT_WAIT_MS = 6_000
-        const val AFTER_CLOSE_WAIT_MS = 5_000
-        val ESTABLISHED = "HTTP/1.1 200 Connection established\r\n\r\n".toByteArray()
+    companion object {
+        /** The name the proxy's question goes by; WebViews answer only this one. */
+        const val REALM = "SyncUp DNS"
+        private const val BACKLOG = 128
+        private const val BUFFER = 32 * 1024
+        private const val MAX_HEAD = 64 * 1024
+        private const val HEAD_WAIT_MS = 30_000
+        private const val CONNECT_WAIT_MS = 6_000
+        private const val AFTER_CLOSE_WAIT_MS = 5_000
+        private val ESTABLISHED = "HTTP/1.1 200 Connection established\r\n\r\n".toByteArray()
     }
 }

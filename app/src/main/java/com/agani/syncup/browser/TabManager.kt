@@ -20,12 +20,13 @@ import java.util.concurrent.Executors
  *
  * - Each section remembers its own active tab; [section] is the one on screen.
  * - WebViews are created lazily (a tab showing its section's home page has none) and live until the
- *   tab closes, so switching tabs keeps each page's state — except that a SyncUp link keeps only its
+ *   tab closes, so switching tabs keeps each page's state — except that a group keeps only its
  *   [AWAKE_PAGES_PER_LINK] latest pages loaded; older ones sleep (still listed) and reload when shown.
- * - SyncUp tabs are grouped by link: pages a link's site opens in new windows join that link
- *   ([BrowserTab.groupId]), so the tab switcher and the tab count show one entry per link.
- * - Only Normal tabs are persisted across app restarts. Work tabs are never saved (they need the
- *   login and must not outlive a sign-out) and Incognito tabs are never saved by definition.
+ * - Tabs are grouped in every section (user, 16 Nov 2026; SyncUp links were first): pages a page opens —
+ *   a new window, a pop-up, "Open in new tab" — join its group ([BrowserTab.groupId]), so the tab
+ *   switcher and the tab count show one entry per group.
+ * - Only Normal tabs are persisted across app restarts (with their groups). Work tabs are never saved
+ *   (they need the login and must not outlive a sign-out) and Incognito tabs are never saved by definition.
  */
 class TabManager(
     private val context: Context,
@@ -57,17 +58,16 @@ class TabManager(
      */
     var directLink by mutableStateOf<DirectLink?>(null)
 
-    /** Home's search box asks the browser to open on the address bar, ready to type. */
-    var focusAddressBar by mutableStateOf(false)
+    /** The main page's Tabs chip asks the browser to open on its tab switcher. */
+    var openSwitcher by mutableStateOf(false)
 
     fun tabsIn(s: Section): List<BrowserTab> = tabs.filter { it.section == s }
 
-    /** What the tab switcher and the tab count show: one entry per SyncUp link (its latest page), one per tab elsewhere. */
-    fun cardsIn(s: Section): List<BrowserTab> =
-        if (s == Section.WORK) tabsIn(s).groupBy { it.groupId }.values.map { g -> g.maxBy { it.lastUsed } } else tabsIn(s)
+    /** What the tab switcher and the tab count show: one entry per group (its latest page), in every section. */
+    fun cardsIn(s: Section): List<BrowserTab> = tabsIn(s).groupBy { it.groupId }.values.map { g -> g.maxBy { it.lastUsed } }
 
-    /** A SyncUp link's pages: its first page plus the ones its site opened, in the order they opened. */
-    fun groupPages(groupId: Long): List<BrowserTab> = tabs.filter { it.section == Section.WORK && it.groupId == groupId }
+    /** A group's pages: its first page plus the ones it opened, in the order they opened. */
+    fun groupPages(groupId: Long): List<BrowserTab> = tabs.filter { it.groupId == groupId }
 
     /** The page of an open SyncUp link that was last on screen, or null when the link isn't open. */
     fun linkFront(linkId: String): BrowserTab? =
@@ -109,6 +109,15 @@ class TabManager(
         tab.openerId = openerId
         tab.desktop = desktop
         groupId?.let { tab.groupId = it }
+        // A page joining an existing group inherits its UA token; a brand-new group binds one if it
+        // starts at a matching website (never in Incognito). It then rides the whole group for life.
+        tab.uaToken = if (groupId != null) {
+            tabs.firstOrNull { it.groupId == tab.groupId && it.uaToken != null }?.uaToken
+        } else if (s != Section.INCOGNITO && url.isNotBlank()) {
+            UaTokens.appendFor(url)
+        } else {
+            null
+        }
         tabs.add(tab)
         if (select) {
             active[s] = tab.id
@@ -144,10 +153,9 @@ class TabManager(
         persist()
     }
 
-    /** [tab] is on screen now: newest in its link, and the link's oldest loaded pages go to sleep. */
+    /** [tab] is on screen now: newest in its group, and the group's oldest loaded pages go to sleep. */
     private fun touch(tab: BrowserTab) {
         tab.lastUsed = ++useClock
-        if (tab.section != Section.WORK) return
         groupPages(tab.groupId)
             .filter { it.id != tab.id && views.containsKey(it.id) }
             .sortedByDescending { it.lastUsed }
@@ -168,8 +176,8 @@ class TabManager(
         destroyView(tab.id)
         tabs.remove(tab)
         if (active[tab.section] == tab.id) {
-            // A SyncUp page closing stays within its link while the link has other pages.
-            val sibling = if (tab.isWork) groupPages(tab.groupId).maxByOrNull { it.lastUsed } else null
+            // A page closing stays within its group while the group has other pages.
+            val sibling = groupPages(tab.groupId).maxByOrNull { it.lastUsed }
             val next = sibling ?: tabsIn(tab.section).lastOrNull()
             if (next != null) active[tab.section] = next.id else active.remove(tab.section)
         }
@@ -196,14 +204,19 @@ class TabManager(
         return closed
     }
 
-    /** Close a SyncUp link: all its pages. Returns them for Undo ([reopen]). */
+    /** Close a group (a SyncUp link, or a page and the pages it opened): all its pages. Returns them for Undo ([reopen]). */
     fun closeGroup(groupId: Long): List<BrowserTab> {
         val closed = groupPages(groupId)
         if (closed.isEmpty()) return closed
+        val s = closed.first().section
         closed.forEach { sleep(it) } // keeps each page's history for Undo
         tabs.removeAll(closed)
-        if (closed.any { it.id == active[Section.WORK] }) {
-            tabsIn(Section.WORK).lastOrNull()?.let { active[Section.WORK] = it.id } ?: active.remove(Section.WORK)
+        if (closed.any { it.id == active[s] }) {
+            tabsIn(s).lastOrNull()?.let { active[s] = it.id } ?: active.remove(s)
+        }
+        if (s == Section.INCOGNITO && tabsIn(Section.INCOGNITO).isEmpty()) {
+            web.wipeSection(Section.INCOGNITO) // last private tab closed → forget everything
+            SitePermissions.clearIncognito()
         }
         keepSectionUsable()
         persist()
@@ -302,10 +315,24 @@ class TabManager(
     // ------------------------------------------------------------------ navigation
     fun load(tab: BrowserTab, url: String) {
         if (url.isBlank()) return
+        // A tab that STARTS empty and loads its first page is its group starting there, so it binds its
+        // UA token now (newTab only binds when opened with a url) — the main page's search and websites,
+        // History, an address typed on an empty tab. Lone home tab only, never Incognito; checked before
+        // tab.url is set (that ends isHome), so a later navigation never re-binds.
+        if (tab.isHome && tab.uaToken == null && tab.section != Section.INCOGNITO &&
+            tabs.none { it.groupId == tab.groupId && it.id != tab.id }
+        ) {
+            tab.uaToken = UaTokens.appendFor(url)
+        }
         tab.error = null
         tab.url = url
         val existing = views[tab.id]
-        if (existing != null) existing.loadUrl(url) else webView(tab) // new view loads tab.url itself
+        if (existing != null) {
+            existing.settings.userAgentString = web.userAgent(tab.desktop, tab.uaToken)
+            existing.loadUrl(url)
+        } else {
+            webView(tab) // a new view loads tab.url itself, with tab.uaToken (create)
+        }
     }
 
     /** The tab's WebView, created on first use (and loading the tab's URL if it has one). */
@@ -353,10 +380,10 @@ class TabManager(
             wv.goBack()
             return true
         }
-        // A tab a page opened: close it and go back to the page that opened it (like Chrome) — for a
-        // SyncUp page whose opener was closed, to its link's latest other page.
+        // A tab a page opened: close it and go back to the page that opened it (like Chrome) — when
+        // its opener was closed, to its group's latest other page.
         val back = tab.openerId?.let { id -> tabs.firstOrNull { it.id == id } }
-            ?: tab.takeIf { it.isWork && it.openerId != null }
+            ?: tab.takeIf { it.openerId != null }
                 ?.let { t -> groupPages(t.groupId).filter { it.id != t.id }.maxByOrNull { it.lastUsed } }
         if (back != null) {
             close(tab)
@@ -416,14 +443,12 @@ class TabManager(
         blockedPopup = null
     }
 
-    /** Open [url] as a page [from] opened (a new tab next to it; a SyncUp page's joins its link). */
+    /** Open [url] as a page [from] opened: a new tab in [from]'s group. */
     private fun openFrom(from: BrowserTab, url: String) {
-        // A page the link already has is shown instead of a copy.
-        if (from.isWork) {
-            groupPages(from.groupId).firstOrNull { it.url == url && it.id != from.id }?.let {
-                select(it)
-                return
-            }
+        // A page the group already has is shown instead of a copy.
+        groupPages(from.groupId).firstOrNull { it.url == url && it.id != from.id }?.let {
+            select(it)
+            return
         }
         // New windows stay in the same section; a work link's new window stays Work (and masked).
         newTab(
@@ -432,7 +457,7 @@ class TabManager(
             workLinkId = from.workLinkId,
             workRoots = from.maskedRoots.toList(),
             openerId = from.id,
-            groupId = if (from.isWork) from.groupId else null,
+            groupId = from.groupId,
             desktop = from.desktop,
         )
     }
@@ -448,8 +473,8 @@ class TabManager(
     }
 
     /**
-     * "Open in new tab" from a page: a new tab next to it that stays in the background (a SyncUp
-     * page's joins its link). Returns the new tab so the caller can offer to switch to it.
+     * "Open in new tab" from a page: a new tab in its group that stays in the background. Returns the
+     * new tab so the caller can offer to switch to it.
      */
     fun openInBackground(from: BrowserTab, url: String): BrowserTab =
         newTab(
@@ -459,7 +484,7 @@ class TabManager(
             workRoots = from.maskedRoots.toList(),
             select = false,
             openerId = null,
-            groupId = if (from.isWork) from.groupId else null,
+            groupId = from.groupId,
             desktop = from.desktop,
         )
 
@@ -471,7 +496,7 @@ class TabManager(
     fun setDesktop(tab: BrowserTab, on: Boolean) {
         tab.desktop = on
         views[tab.id]?.let { wv ->
-            wv.settings.userAgentString = web.userAgent(on)
+            wv.settings.userAgentString = web.userAgent(on, tab.uaToken)
             wv.reload()
         }
     }
@@ -483,8 +508,8 @@ class TabManager(
 
     // ------------------------------------------------------------------ WebPlatform.Listener
     override fun onCreateWindow(from: BrowserTab): WebView {
-        // The new window is a tab of the same section; a SyncUp page's joins its link (one tab per
-        // link) and stays Work (and masked).
+        // The new window is a tab of the same section, in the opener's group; a SyncUp page's stays
+        // Work (and masked).
         val tab = BrowserTab(
             nextId++, from.section, "about:blank",
             workName = from.workName,
@@ -494,7 +519,8 @@ class TabManager(
         tab.openerId = from.id
         tab.freshPopup = true
         tab.desktop = from.desktop
-        if (from.isWork) tab.groupId = from.groupId
+        tab.groupId = from.groupId
+        tab.uaToken = from.uaToken // a pop-up joins its opener's group, so it carries the same token
         captureActive()
         tabs.add(tab)
         val wv = web.create(tab, this)
@@ -507,8 +533,7 @@ class TabManager(
     }
 
     override fun onPopupStarting(popup: BrowserTab, url: String): Boolean {
-        // A SyncUp page opening a page its link already has: show that one instead of a copy.
-        if (!popup.isWork) return false
+        // A page opening a page its group already has: show that one instead of a copy.
         val existing = groupPages(popup.groupId).firstOrNull { it.url == url && it.id != popup.id } ?: return false
         mainHandler.post {
             close(popup)
@@ -575,7 +600,13 @@ class TabManager(
     private fun persist() {
         val normal = tabsIn(Section.NORMAL)
         val arr = JSONArray()
-        normal.forEach { arr.put(JSONObject().put("url", it.url).put("title", it.title)) }
+        // Each tab's id, group and opener too, so groups (and Back to the opener) survive a restart.
+        normal.forEach {
+            val o = JSONObject().put("url", it.url).put("title", it.title).put("id", it.id).put("g", it.groupId)
+            it.openerId?.let { id -> o.put("o", id) }
+            it.uaToken?.let { t -> o.put("ut", t) }
+            arr.put(o)
+        }
         val activeIndex = normal.indexOfFirst { it.id == active[Section.NORMAL] }
         prefs.edit().putString("normal", arr.toString()).putInt("active", activeIndex).apply()
         onNormalTabsChanged?.invoke()
@@ -585,11 +616,23 @@ class TabManager(
     fun restore() {
         if (tabs.isNotEmpty()) return
         val arr = runCatching { JSONArray(prefs.getString("normal", "[]")) }.getOrNull() ?: JSONArray()
+        // Saved ids → this run's ids (groups and openers point at saved ids).
+        val ids = HashMap<Long, Long>()
+        val saved = ArrayList<Pair<BrowserTab, JSONObject>>()
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
             val tab = BrowserTab(nextId++, Section.NORMAL, o.optString("url"))
             tab.title = o.optString("title")
+            if (o.has("id")) ids[o.optLong("id")] = tab.id
             tabs.add(tab)
+            saved.add(tab to o)
+        }
+        val groups = HashMap<Long, Long>()
+        for ((tab, o) in saved) {
+            if (o.has("g")) tab.groupId = groups.getOrPut(o.optLong("g")) { ids[o.optLong("g")] ?: tab.id }
+            if (o.has("o")) tab.openerId = ids[o.optLong("o")]
+            // Keep the saved UA token only if its rule still exists (dropped when the admin removed it).
+            tab.uaToken = o.optString("ut").takeIf { it.isNotBlank() && UaTokens.hasAppend(it) }
         }
         val normal = tabsIn(Section.NORMAL)
         val idx = prefs.getInt("active", normal.lastIndex)
@@ -599,5 +642,5 @@ class TabManager(
     }
 }
 
-/** A SyncUp link keeps this many of its pages loaded; older ones sleep until shown again. */
+/** A group (a SyncUp link, or a page and the pages it opened) keeps this many of its pages loaded; older ones sleep until shown again. */
 private const val AWAKE_PAGES_PER_LINK = 5

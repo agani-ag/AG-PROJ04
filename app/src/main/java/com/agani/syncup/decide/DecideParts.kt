@@ -72,6 +72,21 @@ internal val DecideGroupTint = ToolTint.INDIGO
 /** "1 phone" / "4 phones". */
 internal fun phonesText(n: Int): String = if (n == 1) "1 phone" else "$n phones"
 
+/** Decide's switch between its four tools (Coin · Wheel · Number · Yes / No); null outside Decide. */
+internal class DecideSwitch(val selected: Int, val onSelect: (Int) -> Unit)
+
+internal val LocalDecideSwitch = androidx.compose.runtime.staticCompositionLocalOf<DecideSwitch?> { null }
+
+/** The switch, right under a Decide tool's top bar (user, 14 Nov 2026: no Decide menu page). */
+@Composable
+internal fun DecideSwitchRow() {
+    val sw = LocalDecideSwitch.current ?: return
+    com.agani.syncup.ui.theme.PillTabs(
+        listOf("Coin", "Wheel", "Number", "Yes / No"), selected = sw.selected, onSelect = sw.onSelect,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 8.dp),
+    )
+}
+
 /** A Decide page: the top bar, then [content] scrolling, with 16 dp sides. */
 @Composable
 internal fun DecidePage(
@@ -83,6 +98,7 @@ internal fun DecidePage(
     val cs = MaterialTheme.colorScheme
     Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
         ToolTopBar(title, onBack, actions = actions)
+        DecideSwitchRow()
         Column(
             Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
             content = content,

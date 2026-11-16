@@ -469,6 +469,12 @@ class WebViewActivity : ComponentActivity() {
         }
 
         webView.webViewClient = object : WebViewClient() {
+            // The DNS proxy asks which profile this is: the default one, like Normal tabs.
+            override fun onReceivedHttpAuthRequest(view: WebView?, handler: android.webkit.HttpAuthHandler?, host: String?, realm: String?) {
+                if (handler != null && com.agani.syncup.dns.DnsServices.answerProxyAuth(handler, host, realm, "normal")) return
+                super.onReceivedHttpAuthRequest(view, handler, host, realm)
+            }
+
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 // A fresh navigation is starting — clear any stale error page.
                 if (loadFailed) hideErrorPage()

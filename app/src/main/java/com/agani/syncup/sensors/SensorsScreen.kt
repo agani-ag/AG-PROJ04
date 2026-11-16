@@ -115,7 +115,8 @@ private fun ToolScreen(tool: SensorTool, onBack: () -> Unit, onOpen: (SensorTool
         SensorTool.LIGHT -> LightTool(onBack)
         SensorTool.SOUND -> SoundTool(onBack)
         SensorTool.VIBRATION -> VibrationTool(onBack)
-        SensorTool.STEPS -> StepsTool(onBack)
+        // One Steps in SyncUp: Sensors → Steps is Wellbeing's Steps (its goal, its history).
+        SensorTool.STEPS -> com.agani.syncup.wellbeing.StepsScreen(onBack = onBack)
         SensorTool.WEATHER -> WeatherTool(onBack)
         SensorTool.CLIMATE -> ClimateTool(onBack)
         SensorTool.METAL -> MetalTool(onBack)

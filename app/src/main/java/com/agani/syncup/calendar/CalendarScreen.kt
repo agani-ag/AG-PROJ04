@@ -285,17 +285,14 @@ private fun CalendarHome(
                                 CalendarSync.syncNow()
                             })
                         }
-                        DropdownMenuItem(text = { Text("Lists") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.List, null) }, onClick = {
+                        // One row: "Lists" and "Reminders & settings" opened the same page.
+                        DropdownMenuItem(text = { Text("Lists & reminders") }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.List, null) }, onClick = {
                             menu = false
                             onLists()
                         })
                         DropdownMenuItem(text = { Text("Done to-dos") }, leadingIcon = { Icon(Icons.Rounded.Done, null) }, onClick = {
                             menu = false
                             onDone()
-                        })
-                        DropdownMenuItem(text = { Text("Reminders & settings") }, leadingIcon = { Icon(Icons.Rounded.Tune, null) }, onClick = {
-                            menu = false
-                            onLists()
                         })
                     }
                 }

@@ -72,7 +72,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-private enum class AppScreen { ForceUpdate, Welcome, Announcement, Home, Browser, ToolsHome, You, Profile, SiteSettings, Dns, Music, Radio, Library, Partners, Notifications, Tools }
+private enum class AppScreen { ForceUpdate, Welcome, Announcement, Home, Browser, Profile, SiteSettings, Dns, Music, Radio, Library, Partners, Notifications, Tools }
 
 class MainActivity : FragmentActivity() {
 
@@ -140,6 +140,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         // The websites that get a SyncUp page token, saved from the last sync — before any tab loads.
         com.agani.syncup.browser.PageTokens.init(applicationContext)
+        com.agani.syncup.browser.UaTokens.init(applicationContext)
         // "Continue with SyncUp" was removed (23 Oct 2026): drop what it kept on the phone.
         applicationContext.deleteSharedPreferences("syncup_sign_in")
         // The server address known already, so the first screen's calls go to the right place.
@@ -474,7 +475,12 @@ class MainActivity : FragmentActivity() {
 
         var booted by remember { mutableStateOf(false) }
         var forceUpdate by remember { mutableStateOf(false) }
-        var showProfile by remember { mutableStateOf(false) }
+        // A settings page (SettingsPage.*), opened from the account sheet or a search result; null = none.
+        var profilePage by remember { mutableStateOf<String?>(null) }
+        // The page last opened: what the settings screen keeps showing while it fades out.
+        var lastProfilePage by remember { mutableStateOf(com.agani.syncup.home.SettingsPage.ABOUT) }
+        // The account sheet (the main page's picture).
+        var showAccountSheet by remember { mutableStateOf(false) }
         var showSiteSettings by remember { mutableStateOf(false) }
         var showDns by remember { mutableStateOf(false) }
         var showMusic by remember { mutableStateOf(false) }
@@ -489,9 +495,9 @@ class MainActivity : FragmentActivity() {
         var configLoaded by remember { mutableStateOf(false) }
         var libraryPage by remember { mutableStateOf<LibraryPage?>(null) }
         var toolsPage by remember { mutableStateOf<com.agani.syncup.tools.ToolsPage?>(null) }
-        // SyncUp Home: Home · Browse · Tools · You (tools, settings and the rest open over the tab they came from).
+        // The main page, or the browser with a website open (tools, settings and the rest open over either).
         var mainTab by rememberSaveable { mutableStateOf(com.agani.syncup.home.HomePrefs.startTab) }
-        var customiseHome by remember { mutableStateOf(false) }
+        val mainPage = remember { com.agani.syncup.home.MainPageState() }
         val authForm = remember { com.agani.syncup.browser.AuthFormState() }
         var announcement by remember { mutableStateOf<com.agani.syncup.data.AnnouncementDto?>(null) }
         var supportEmail by remember { mutableStateOf("") }
@@ -614,7 +620,7 @@ class MainActivity : FragmentActivity() {
             if (link != null && !link.fromOtherApp && (link.channels || com.agani.syncup.video.M3uPlaylist.isChannelLink(link.url))) {
                 // A channel list: Channels opens with its name and link filled in, for the person to save.
                 pendingLink.value = null
-                showProfile = false
+                profilePage = null
                 showSiteSettings = false
                 showDns = false
                 showMusic = false
@@ -628,7 +634,7 @@ class MainActivity : FragmentActivity() {
                 // A broadcast link: a Normal tab, for everyone. Signed out, any link does (a website's
                 // push to this phone) — SyncUp tabs need sign-in. (The session is restored before this runs.)
                 pendingLink.value = null
-                showProfile = false
+                profilePage = null
                 showSiteSettings = false
                 showDns = false
                 showMusic = false
@@ -643,7 +649,7 @@ class MainActivity : FragmentActivity() {
                 pendingLink.value = null
                 // A link from a SyncUp push/reminder is a work link: open it as a Work tab (address hidden)
                 // — the link's own tab when it's one of the user's links and already open.
-                showProfile = false
+                profilePage = null
                 showSiteSettings = false
                 showDns = false
                 showMusic = false
@@ -709,7 +715,7 @@ class MainActivity : FragmentActivity() {
             val fresh = signedOutThisRun
             signedOutThisRun = false
             val one = state.urls.singleOrNull()
-            val opens = one != null && (com.agani.syncup.home.HomePrefs.startLinkChoice ?: (user.partnerUser == true))
+            val opens = one != null && user.partnerUser == true
             if (opens && one != null && pendingLink.value == null) {
                 tabManager.openWorkLink(one.title, one.url, one.id)
                 mainTab = com.agani.syncup.home.MainTab.BROWSE
@@ -771,7 +777,7 @@ class MainActivity : FragmentActivity() {
                 showMusic = false
                 showPartners = false
                 showNotifications = false
-                showProfile = false
+                profilePage = null
                 radioOnParty = true
                 showRadio = true
             }
@@ -786,7 +792,7 @@ class MainActivity : FragmentActivity() {
                 showRadio = false
                 showPartners = false
                 showNotifications = false
-                showProfile = false
+                profilePage = null
                 libraryPage = null
                 videoPartyTab = true
                 toolsPage = com.agani.syncup.tools.ToolsPage.VIDEOS
@@ -801,7 +807,7 @@ class MainActivity : FragmentActivity() {
             showMusic = false
             showPartners = false
             showNotifications = false
-            showProfile = false
+            profilePage = null
             libraryPage = null
             when (com.agani.syncup.group.GroupLink.mode) {
                 com.agani.syncup.group.GroupMode.MUSIC -> {
@@ -830,7 +836,7 @@ class MainActivity : FragmentActivity() {
                 showRadio = false
                 showPartners = false
                 showNotifications = false
-                showProfile = false
+                profilePage = null
                 libraryPage = null
                 toolsPage = com.agani.syncup.tools.ToolsPage.WALKIE
             }
@@ -844,7 +850,7 @@ class MainActivity : FragmentActivity() {
                 showRadio = false
                 showPartners = false
                 showNotifications = false
-                showProfile = false
+                profilePage = null
                 libraryPage = LibraryPage.DOWNLOADS
             }
         }
@@ -858,7 +864,7 @@ class MainActivity : FragmentActivity() {
             showRadio = false
             showPartners = false
             showNotifications = false
-            showProfile = false
+            profilePage = null
             libraryPage = null
             calendarTask = id.ifBlank { null }
             toolsPage = com.agani.syncup.tools.ToolsPage.CALENDAR
@@ -874,7 +880,7 @@ class MainActivity : FragmentActivity() {
             showRadio = false
             showPartners = false
             showNotifications = false
-            showProfile = false
+            profilePage = null
             libraryPage = null
             toolArg = arg
             toolsPage = page
@@ -888,7 +894,7 @@ class MainActivity : FragmentActivity() {
                 showRadio = false
                 showPartners = false
                 showNotifications = false
-                showProfile = false
+                profilePage = null
                 libraryPage = null
                 toolsPage = com.agani.syncup.tools.ToolsPage.QUICK_SHARE
             }
@@ -902,17 +908,23 @@ class MainActivity : FragmentActivity() {
             showRadio = false
             showPartners = false
             showNotifications = false
-            showProfile = false
+            profilePage = null
             libraryPage = null
             toolsPage = null
-            mainTab = com.agani.syncup.home.MainTab.BROWSE
-            if (what == "incognito") tabManager.newTab(Section.INCOGNITO) else tabManager.focusAddressBar = true
+            if (what == "incognito") {
+                tabManager.newTab(Section.INCOGNITO)
+                mainTab = com.agani.syncup.home.MainTab.BROWSE
+            } else {
+                // A new tab is the main page: straight into its search.
+                mainTab = com.agani.syncup.home.MainTab.HOME
+                mainPage.searching = true
+            }
         }
-        // "Tools" asked for from anywhere is the Tools tab.
+        // "Tools" asked for from anywhere is the main page (every tool is on it).
         LaunchedEffect(toolsPage) {
             if (toolsPage == com.agani.syncup.tools.ToolsPage.HOME) {
                 toolsPage = null
-                mainTab = com.agani.syncup.home.MainTab.TOOLS
+                mainTab = com.agani.syncup.home.MainTab.HOME
             }
         }
 
@@ -921,12 +933,12 @@ class MainActivity : FragmentActivity() {
         androidx.activity.compose.BackHandler(enabled = showRadio) { showRadio = false }
         androidx.activity.compose.BackHandler(enabled = showPartners && !showMusic && !showRadio) { showPartners = false }
         androidx.activity.compose.BackHandler(enabled = showNotifications && !showMusic && !showRadio && !showPartners) { showNotifications = false }
-        androidx.activity.compose.BackHandler(enabled = showProfile && !showMusic && !showRadio && !showPartners && !showSiteSettings && !showDns) { showProfile = false }
+        androidx.activity.compose.BackHandler(enabled = profilePage != null && !showMusic && !showRadio && !showPartners && !showSiteSettings && !showDns) { profilePage = null }
         androidx.activity.compose.BackHandler(enabled = showDns && !showMusic && !showRadio && !showPartners) { showDns = false }
         androidx.activity.compose.BackHandler(enabled = showSiteSettings && !showMusic && !showRadio && !showPartners) { showSiteSettings = false }
-        androidx.activity.compose.BackHandler(enabled = libraryPage != null && !showProfile) { libraryPage = null }
-        // Tools: a tool goes back to the Tools page, the Tools page back to the browser.
-        androidx.activity.compose.BackHandler(enabled = toolsPage != null && !showMusic && !showRadio && libraryPage == null && !showProfile) {
+        androidx.activity.compose.BackHandler(enabled = libraryPage != null && profilePage == null) { libraryPage = null }
+        // A tool goes back to where it was opened from (the main page, or the browser).
+        androidx.activity.compose.BackHandler(enabled = toolsPage != null && !showMusic && !showRadio && libraryPage == null && profilePage == null) {
             toolsPage = null
         }
 
@@ -978,22 +990,45 @@ class MainActivity : FragmentActivity() {
             showNotifications -> AppScreen.Notifications
             showDns -> AppScreen.Dns
             showSiteSettings -> AppScreen.SiteSettings
-            showProfile -> AppScreen.Profile
+            profilePage != null -> AppScreen.Profile
             libraryPage != null -> AppScreen.Library
             toolsPage != null && toolsPage != com.agani.syncup.tools.ToolsPage.HOME -> AppScreen.Tools
             else -> when (mainTab) {
                 com.agani.syncup.home.MainTab.HOME -> AppScreen.Home
                 com.agani.syncup.home.MainTab.BROWSE -> AppScreen.Browser
-                com.agani.syncup.home.MainTab.TOOLS -> AppScreen.ToolsHome
-                com.agani.syncup.home.MainTab.YOU -> AppScreen.You
             }
         }
 
-        // Back on Tools or You goes to the start tab; on Home it leaves the app (tabs and all kept).
-        androidx.activity.compose.BackHandler(enabled = screen == AppScreen.ToolsHome || screen == AppScreen.You) {
-            mainTab = com.agani.syncup.home.HomePrefs.startTab
+        // Back on the main page leaves the app (tabs and all kept).
+        androidx.activity.compose.BackHandler(enabled = screen == AppScreen.Home && !mainPage.searching) { moveTaskToBack(true) }
+
+        // A website from the main page: in the Normal tab waiting empty, else a new tab.
+        fun openSite(url: String) {
+            val t = tabManager.activeTab(Section.NORMAL)
+            if (t != null && t.isHome) {
+                tabManager.select(t)
+                tabManager.load(t, url)
+            } else {
+                tabManager.newTab(Section.NORMAL, url)
+            }
+            mainTab = com.agani.syncup.home.MainTab.BROWSE
         }
-        androidx.activity.compose.BackHandler(enabled = screen == AppScreen.Home) { moveTaskToBack(true) }
+
+        // What a settings search result or the account sheet opens.
+        fun openSetting(key: String) {
+            showAccountSheet = false
+            when (key) {
+                com.agani.syncup.home.SettingsPage.DNS -> showDns = true
+                com.agani.syncup.home.SettingsPage.SITE_SETTINGS -> showSiteSettings = true
+                com.agani.syncup.home.SettingsPage.PARTNERS -> showPartners = true
+                com.agani.syncup.home.SettingsPage.CHAT -> openChatRequest.value = true
+                com.agani.syncup.home.SettingsPage.INBOX -> showNotifications = true
+                else -> {
+                    lastProfilePage = key
+                    profilePage = key
+                }
+            }
+        }
 
         // What Home's cards and tiles open.
         fun openHomeTool(t: com.agani.syncup.home.HomeTool) {
@@ -1017,7 +1052,14 @@ class MainActivity : FragmentActivity() {
                     radioOnParty = true
                     showRadio = true
                 }
-                com.agani.syncup.home.HomeTool.GROUP -> com.agani.syncup.group.GroupLink.requestOpen()
+                com.agani.syncup.home.HomeTool.GROUP -> {
+                    // In a group: what it's doing now. Not in one: the Group page (never a dead end).
+                    if (com.agani.syncup.group.GroupLink.inGroup) com.agani.syncup.group.GroupLink.requestOpen()
+                    else toolsPage = com.agani.syncup.tools.ToolsPage.GROUP
+                }
+                com.agani.syncup.home.HomeTool.CHANNELS -> toolsPage = com.agani.syncup.tools.ToolsPage.CHANNELS
+                com.agani.syncup.home.HomeTool.DECIDE -> toolsPage = com.agani.syncup.tools.ToolsPage.DECIDE
+                com.agani.syncup.home.HomeTool.SHOPPING -> toolsPage = com.agani.syncup.tools.ToolsPage.SHOPPING
                 com.agani.syncup.home.HomeTool.WATER -> toolsPage = com.agani.syncup.tools.ToolsPage.WATER
                 com.agani.syncup.home.HomeTool.STEPS -> toolsPage = com.agani.syncup.tools.ToolsPage.STEPS
                 com.agani.syncup.home.HomeTool.HABITS -> toolsPage = com.agani.syncup.tools.ToolsPage.HABITS
@@ -1073,9 +1115,10 @@ class MainActivity : FragmentActivity() {
                     )
                     AppScreen.Profile -> run {
                         ProfileScreen(
+                            page = profilePage ?: lastProfilePage,
                             user = state.user,
                             onSignIn = {
-                                showProfile = false
+                                profilePage = null
                                 showLogin = true
                             },
                             appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
@@ -1087,9 +1130,9 @@ class MainActivity : FragmentActivity() {
                             chatEnabled = chatEnabled,
                             chatUnread = state.chatUnread,
                             onOpenChat = { openChatRequest.value = true },
-                            onBack = { showProfile = false },
+                            onBack = { profilePage = null },
                             onLogout = {
-                                showProfile = false
+                                profilePage = null
                                 tabManager.wipeWork()
                                 vm.logout()
                             },
@@ -1105,7 +1148,7 @@ class MainActivity : FragmentActivity() {
                             onDeleteAccount = {
                                 val result = vm.deleteAccount()
                                 if (result.isSuccess) {
-                                    showProfile = false
+                                    profilePage = null
                                     tabManager.wipeWork()
                                 }
                                 result
@@ -1162,75 +1205,56 @@ class MainActivity : FragmentActivity() {
                         // Asked once on first launch for every install (signed in or not) — SyncUp can notify anyone.
                         RequestNotificationPermission(onceOnly = true)
                         OfferSyncUpShareTile()
-                        com.agani.syncup.home.TabFrame(com.agani.syncup.home.MainTab.HOME, onSelect = { mainTab = it }) {
-                            com.agani.syncup.home.HomeScreen(
-                                signedIn = loggedIn,
-                                userInitial = state.user?.name?.trim()?.take(1)?.uppercase(),
-                                // v7: "Good afternoon," above the first name when signed in ("SyncUp" signed out).
-                                userName = state.user?.name.takeIf { loggedIn },
-                                links = if (loggedIn) state.urls else com.agani.syncup.browser.GeneralLinks.links,
-                                onSearch = {
-                                    tabManager.focusAddressBar = true
-                                    mainTab = com.agani.syncup.home.MainTab.BROWSE
-                                },
-                                onNotifications = { showNotifications = true },
-                                onAccount = { mainTab = com.agani.syncup.home.MainTab.YOU },
-                                onTool = { openHomeTool(it) },
-                                onAllTools = { mainTab = com.agani.syncup.home.MainTab.TOOLS },
-                                onOpenLink = { link ->
-                                    tabManager.openWorkLink(link.title, link.url, link.id)
-                                    mainTab = com.agani.syncup.home.MainTab.BROWSE
-                                },
-                                onAllLinks = {
-                                    tabManager.switchTo(Section.WORK)
-                                    mainTab = com.agani.syncup.home.MainTab.BROWSE
-                                },
-                                onOpenBrowse = { mainTab = com.agani.syncup.home.MainTab.BROWSE },
-                                onSignIn = { showLogin = true },
-                                waitingPartners = if (loggedIn) waitingPartners else emptyList(),
-                                onEnablePartner = { id, password -> vm.enablePartner(id, password) },
-                                onPartnerEnabled = { name ->
-                                    android.widget.Toast.makeText(this@MainActivity, "$name turned on", android.widget.Toast.LENGTH_SHORT).show()
-                                    waitingPartners = waitingPartners.filter { it.partner != name }
-                                    // Their links arrive and the waiting count drops.
-                                    runFullRefresh(silent = true)
-                                },
-                            )
-                        }
-                    }
-                    AppScreen.ToolsHome -> com.agani.syncup.home.TabFrame(com.agani.syncup.home.MainTab.TOOLS, onSelect = { mainTab = it }) {
-                        com.agani.syncup.tools.ToolsScreen(
+                        com.agani.syncup.home.MainPage(
+                            state = mainPage,
+                            signedIn = loggedIn,
+                            userName = state.user?.name.takeIf { loggedIn },
+                            links = if (loggedIn) state.urls else com.agani.syncup.browser.GeneralLinks.links,
+                            db = browserDb,
+                            tabCount = Section.entries.sumOf { s -> tabManager.cardsIn(s).count { !it.isHome } },
                             radioAvailable = radioAvailable,
-                            onMusic = { showMusic = true },
-                            onVideos = { toolsPage = com.agani.syncup.tools.ToolsPage.VIDEOS },
-                            onRadio = { openHomeTool(com.agani.syncup.home.HomeTool.RADIO) },
-                            onChannels = { toolsPage = com.agani.syncup.tools.ToolsPage.CHANNELS },
-                            onQuickShare = { toolsPage = com.agani.syncup.tools.ToolsPage.QUICK_SHARE },
-                            onWalkie = { toolsPage = com.agani.syncup.tools.ToolsPage.WALKIE },
-                            onSensors = { toolsPage = com.agani.syncup.tools.ToolsPage.SENSORS },
-                            onCalendar = { toolsPage = com.agani.syncup.tools.ToolsPage.CALENDAR },
-                            onForest = { toolsPage = com.agani.syncup.tools.ToolsPage.FOREST },
-                            onGroup = { com.agani.syncup.group.GroupLink.requestOpen() },
-                            onTool = { toolsPage = it },
-                            onBack = { mainTab = com.agani.syncup.home.HomePrefs.startTab },
-                            inTabs = true,
-                        )
-                    }
-                    AppScreen.You -> com.agani.syncup.home.TabFrame(com.agani.syncup.home.MainTab.YOU, onSelect = { mainTab = it }) {
-                        com.agani.syncup.home.YouScreen(
-                            user = state.user.takeIf { loggedIn },
-                            chatEnabled = chatEnabled,
-                            chatUnread = state.chatUnread,
-                            hasPartners = state.hasPartners,
-                            partnersWaiting = state.partnersWaiting,
-                            appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                            onSignIn = { showLogin = true },
-                            onNotifications = { showNotifications = true },
-                            onChat = { openChatRequest.value = true },
-                            onPartners = { showPartners = true },
+                            signupEnabled = signupEnabled,
+                            announcement = announcement,
+                            chatUnread = if (loggedIn && chatEnabled) state.chatUnread else 0,
+                            waitingPartners = if (loggedIn) waitingPartners else emptyList(),
+                            onEnablePartner = { id, password -> vm.enablePartner(id, password) },
+                            onPartnerEnabled = { name ->
+                                android.widget.Toast.makeText(this@MainActivity, "$name enabled", android.widget.Toast.LENGTH_SHORT).show()
+                                waitingPartners = waitingPartners.filter { it.partner != name }
+                                // Their links arrive and the waiting count drops.
+                                runFullRefresh(silent = true)
+                            },
+                            onTool = { openHomeTool(it) },
+                            onOpenUrl = { openSite(it) },
+                            onOpenInNewTab = { url ->
+                                tabManager.newTab(Section.NORMAL, url, select = false)
+                                android.widget.Toast.makeText(this@MainActivity, "Opened in a new tab", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            onOpenLink = { link ->
+                                tabManager.openWorkLink(link.title, link.url, link.id)
+                                mainTab = com.agani.syncup.home.MainTab.BROWSE
+                            },
+                            onTabs = {
+                                tabManager.openSwitcher = true
+                                mainTab = com.agani.syncup.home.MainTab.BROWSE
+                            },
                             onLibrary = { libraryPage = it },
-                            onCustomise = { customiseHome = true },
-                            onSettings = { showProfile = true },
+                            onIncognito = {
+                                val empty = tabManager.tabsIn(Section.INCOGNITO).firstOrNull { it.isHome }
+                                if (empty != null) tabManager.select(empty) else tabManager.newTab(Section.INCOGNITO)
+                                mainTab = com.agani.syncup.home.MainTab.BROWSE
+                            },
+                            onNotifications = { showNotifications = true },
+                            onAvatar = { showAccountSheet = true },
+                            onSignIn = {
+                                authForm.creating = false
+                                showLogin = true
+                            },
+                            onCreateAccount = {
+                                authForm.creating = true
+                                showLogin = true
+                            },
+                            onSetting = { openSetting(it) },
                         )
                     }
                     AppScreen.Browser -> {
@@ -1275,7 +1299,7 @@ class MainActivity : FragmentActivity() {
                                 onOpenPartners = { showPartners = true },
                                 onOpenChat = { openChatRequest.value = true },
                                 onOpenNotifications = { showNotifications = true },
-                                onOpenSettings = { showProfile = true },
+                                onOpenSettings = { showAccountSheet = true },
                                 onOpenMusic = {
                                     if (player.isRadio) {
                                         radioOnParty = false
@@ -1284,15 +1308,15 @@ class MainActivity : FragmentActivity() {
                                         showMusic = true
                                     }
                                 },
-                                onOpenTools = { mainTab = com.agani.syncup.home.MainTab.TOOLS },
                                 onHome = { mainTab = com.agani.syncup.home.MainTab.HOME },
-                                onOpenYou = { mainTab = com.agani.syncup.home.MainTab.YOU },
+                                onOpenYou = { showAccountSheet = true },
+                                onOpenSiteSettings = { showSiteSettings = true },
                                 onOpenLibrary = { libraryPage = it },
                                 onRefreshLinks = {
                                     if (loggedIn) runFullRefresh(silent = false)
                                     else lifecycleScope.launch { com.agani.syncup.browser.GeneralLinks.refresh(spinner = true) }
                                 },
-                                backToHome = com.agani.syncup.home.HomePrefs.startOnHome,
+                                backToHome = true,
                                 linkIsStart = com.agani.syncup.home.HomePrefs.opensLink,
                             ),
                         )
@@ -1314,6 +1338,16 @@ class MainActivity : FragmentActivity() {
                         )
                         com.agani.syncup.tools.ToolsPage.GROUP -> com.agani.syncup.group.GroupModeScreen(
                             onBack = { toolsPage = null },
+                            // Start or join with music: Radio → Party (it lists every group nearby too).
+                            onMusic = {
+                                toolsPage = null
+                                radioOnParty = true
+                                showRadio = true
+                            },
+                            onWatch = {
+                                videoPartyTab = true
+                                toolsPage = com.agani.syncup.tools.ToolsPage.VIDEOS
+                            },
                         )
                         com.agani.syncup.tools.ToolsPage.WALKIE -> com.agani.syncup.walkie.WalkieScreen(
                             onBack = { toolsPage = null },
@@ -1359,25 +1393,7 @@ class MainActivity : FragmentActivity() {
                                 tabManager.newTab(Section.NORMAL, url)
                             },
                         )
-                        else -> com.agani.syncup.tools.ToolsScreen(
-                            radioAvailable = radioAvailable,
-                            onMusic = { showMusic = true },
-                            onVideos = { toolsPage = com.agani.syncup.tools.ToolsPage.VIDEOS },
-                            onRadio = {
-                                // Straight to what's going on: the party, a station playing, else Party.
-                                radioOnParty = com.agani.syncup.party.Party.active || !(player.isRadio && radioAvailable)
-                                showRadio = true
-                            },
-                            onChannels = { toolsPage = com.agani.syncup.tools.ToolsPage.CHANNELS },
-                            onQuickShare = { toolsPage = com.agani.syncup.tools.ToolsPage.QUICK_SHARE },
-                            onWalkie = { toolsPage = com.agani.syncup.tools.ToolsPage.WALKIE },
-                            onSensors = { toolsPage = com.agani.syncup.tools.ToolsPage.SENSORS },
-                            onCalendar = { toolsPage = com.agani.syncup.tools.ToolsPage.CALENDAR },
-                            onForest = { toolsPage = com.agani.syncup.tools.ToolsPage.FOREST },
-                            onGroup = { com.agani.syncup.group.GroupLink.requestOpen() },
-                            onTool = { toolsPage = it },
-                            onBack = { toolsPage = null },
-                        )
+                        else -> LaunchedEffect(Unit) { toolsPage = null }
                     }
                     AppScreen.Library -> if (libraryPage == LibraryPage.DOWNLOADS) {
                         com.agani.syncup.downloads.DownloadsScreen(
@@ -1424,7 +1440,29 @@ class MainActivity : FragmentActivity() {
                     )
                 }
             }
-            if (customiseHome) com.agani.syncup.home.CustomiseSheet(onDismiss = { customiseHome = false })
+            if (showAccountSheet && booted) {
+                com.agani.syncup.ui.AccountSheet(
+                    user = state.user.takeIf { loggedIn },
+                    themeMode = themeMode,
+                    appVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    chatEnabled = loggedIn && chatEnabled,
+                    chatUnread = state.chatUnread,
+                    hasPartners = loggedIn && state.hasPartners,
+                    partnersWaiting = state.partnersWaiting,
+                    onDismiss = { showAccountSheet = false },
+                    onSignIn = {
+                        showAccountSheet = false
+                        authForm.creating = false
+                        showLogin = true
+                    },
+                    onPage = { openSetting(it) },
+                    onSignOut = {
+                        showAccountSheet = false
+                        tabManager.wipeWork()
+                        vm.logout()
+                    },
+                )
+            }
         }
 
     }

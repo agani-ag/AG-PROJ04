@@ -103,6 +103,8 @@ data class DeviceHelloResponse(
     // The websites switched on for this install and their page tokens (the user's when signed in,
     // this phone's own when not), and the Notifications badge.
     @SerializedName("token_sites") val tokenSites: List<TokenSite>? = null,
+    // Links with an "append to User-Agent" value, as {url, append} (this phone's switched-on links).
+    @SerializedName("ua_rules") val uaRules: List<UaRule>? = null,
     @SerializedName("notifications_new") val notificationsNew: Int? = null,
 )
 
@@ -111,6 +113,12 @@ data class DeviceHelloResponse(
  * window.SyncUp.token — a different one per website. [host] is lower-case, without "www.".
  */
 data class TokenSite(val host: String? = null, val token: String? = null)
+
+/**
+ * A SyncUp link with an "append to User-Agent" value. A tab that starts at [url] carries [append]
+ * on the end of its User-Agent for the tab's whole life (see [com.agani.syncup.browser.UaTokens]).
+ */
+data class UaRule(val url: String? = null, val append: String? = null)
 
 // ---------------------------------------------------------------- notifications page
 /** One push on the Notifications page (GET /notifications). */
@@ -301,6 +309,8 @@ data class SyncResponse(
     @SerializedName("partner_count") val partnerCount: Int = 0,
     // Websites switched on for this user and their page tokens (window.SyncUp.token).
     @SerializedName("token_sites") val tokenSites: List<TokenSite>? = null,
+    // Links with an "append to User-Agent" value, as {url, append} (this user's switched-on links).
+    @SerializedName("ua_rules") val uaRules: List<UaRule>? = null,
     // Pushes not opened yet — the Notifications bell.
     @SerializedName("notifications_new") val notificationsNew: Int = 0,
 )

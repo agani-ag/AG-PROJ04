@@ -114,6 +114,7 @@ import com.agani.syncup.data.ThemeMode
 import com.agani.syncup.data.ProfileUpdateRequest
 import com.agani.syncup.data.User
 import com.agani.syncup.data.UsernameCheckResponse
+import com.agani.syncup.home.SettingsPage
 import com.agani.syncup.push.DeviceRegistrar
 import com.agani.syncup.sync.BrowserSync
 import com.agani.syncup.sync.SyncType
@@ -156,6 +157,8 @@ private fun lockGraceLabel(seconds: Int): String =
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
+    /** Which settings page: one of [SettingsPage] (account, sync, browser, privacy, appearance, notifications, about). */
+    page: String,
     user: User?,
     onSignIn: () -> Unit = {},
     appVersion: String,
@@ -209,8 +212,17 @@ fun ProfileScreen(
     var showUsername by remember { mutableStateOf(false) }
     var showDeleteSynced by remember { mutableStateOf(false) }
     var updatesOn by remember { mutableStateOf(DeviceRegistrar.updatesEnabled(context)) }
-    // Which collapsed group is open (one at a time); kept across rotation.
-    var open by rememberSaveable { mutableStateOf<String?>(null) }
+    // The one group this page shows, everything in it at once (no folding — user, 14 Nov 2026).
+    var open by rememberSaveable { mutableStateOf<String?>(page) }
+    val pageTitle = when (page) {
+        SettingsPage.ACCOUNT -> "Account"
+        SettingsPage.SYNC -> "Sync"
+        SettingsPage.BROWSER -> "Browser"
+        SettingsPage.PRIVACY -> "Privacy & security"
+        SettingsPage.APPEARANCE -> "Appearance"
+        SettingsPage.NOTIFICATIONS -> "Notifications"
+        else -> "About"
+    }
 
     // Chat isn't here any more: You has a Chat row (chatEnabled / chatUnread / onOpenChat are kept for callers).
     Scaffold(
@@ -223,7 +235,7 @@ fun ProfileScreen(
             ) {
                 BarIcon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", onClick = onBack)
                 Text(
-                    "Settings", fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.Medium,
+                    pageTitle, fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(start = 4.dp),
                 )
             }
@@ -238,7 +250,7 @@ fun ProfileScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.height(4.dp))
-            if (user != null) {
+            if (user != null && page == SettingsPage.ACCOUNT) {
                 SettingsGroup {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -258,26 +270,10 @@ fun ProfileScreen(
                         }
                     }
                 }
-            } else {
-                // Login is optional — the browser works fully without it; signing in adds SyncUp features.
-                SettingsGroup {
-                    Column(Modifier.fillMaxWidth().padding(18.dp)) {
-                        Text("SyncUp account", fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "Optional. Sign in to sync your bookmarks, history and tabs across your devices.",
-                            fontSize = 13.sp, lineHeight = 18.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(14.dp))
-                        Button(onClick = onSignIn, modifier = Modifier.height(44.dp)) { Text("Sign in", fontWeight = FontWeight.Medium) }
-                    }
-                }
             }
-            Spacer(Modifier.height(12.dp))
+            if (page == SettingsPage.ACCOUNT) Spacer(Modifier.height(12.dp))
 
-            // The groups sit together on one card. Each shows a one-line summary; opening one closes
-            // the one before.
+            // This page's group, on one card.
             val notificationsAllowed = remember { NotificationManagerCompat.from(context).areNotificationsEnabled() }
             Column(Modifier.fillMaxWidth().appCard(CardShape)) {
                 if (user != null) {
@@ -287,7 +283,6 @@ fun ProfileScreen(
                         title = "Account",
                         summary = buildString {
                             append("Sign-in details, password")
-                            if (showPartners) append(if (partnersWaiting > 0) " · $partnersWaiting partner waiting" else ", partners")
                         },
                         expanded = open == "account",
                         onToggle = { open = if (open == "account") null else "account" },
@@ -311,14 +306,6 @@ fun ProfileScreen(
                             onClick = { showUsername = true },
                         )
                         SettingRow(icon = Icons.Rounded.Lock, title = "Change password", onClick = { showChangePassword = true })
-                        if (showPartners) {
-                            SettingRow(
-                                icon = Icons.Rounded.Handshake,
-                                title = "Partners",
-                                subtitle = if (partnersWaiting > 0) "$partnersWaiting waiting for you to enable" else "Services that added you",
-                                onClick = onOpenPartners,
-                            )
-                        }
                         SettingRow(
                             icon = Icons.Rounded.DeleteOutline,
                             title = "Delete account",
@@ -475,7 +462,7 @@ fun ProfileScreen(
                     SwitchRow(
                         icon = Icons.Rounded.AutoAwesome,
                         title = "Recommended sites",
-                        subtitle = "Your most used sites, first in Shortcuts. Worked out on this phone",
+                        subtitle = "Your most used sites, first in Websites on the main page. Worked out on this phone",
                         checked = BrowserSettings.recommendedSites,
                         enabled = true,
                         onCheckedChange = { BrowserSettings.updateRecommendedSites(it) },
@@ -511,17 +498,6 @@ fun ProfileScreen(
                         enabled = true,
                         onCheckedChange = { BrowserSettings.updateAddressBarBottom(it) },
                     )
-                }
-
-                val dl = com.agani.syncup.downloads.Downloads
-                SettingsSection(
-                    icon = Icons.Rounded.Download,
-                    title = "Downloads",
-                    summary = "${dl.partsPerFile} parts per file · ${dl.atOnce} at once" + if (dl.wifiOnly) " · Wi-Fi only" else "",
-                    expanded = open == "downloads",
-                    onToggle = { open = if (open == "downloads") null else "downloads" },
-                ) {
-                    Column(Modifier.padding(vertical = 8.dp)) { com.agani.syncup.downloads.DownloadSettingsRows() }
                 }
 
                 SettingsSection(
@@ -589,17 +565,6 @@ fun ProfileScreen(
                         Text("Dark is pure black.", fontSize = 12.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(start = 4.dp, top = 8.dp))
                     }
-                }
-
-                SettingsSection(
-                    icon = Icons.Rounded.Home,
-                    title = "Home",
-                    summary = "Opens to ${if (com.agani.syncup.home.HomePrefs.startOnHome) "Home" else "Browse"} · " +
-                        "${com.agani.syncup.home.HomeCard.entries.count { com.agani.syncup.home.HomePrefs.shows(it) }} of ${com.agani.syncup.home.HomeCard.entries.size} cards shown",
-                    expanded = open == "home",
-                    onToggle = { open = if (open == "home") null else "home" },
-                ) {
-                    com.agani.syncup.home.HomeSettings(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp))
                 }
 
                 SettingsSection(
@@ -672,7 +637,15 @@ fun ProfileScreen(
                 }
             }
 
-            if (user != null) {
+            if (page == SettingsPage.BROWSER) {
+                Text(
+                    "Downloads", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(start = 6.dp, top = 22.dp, bottom = 10.dp),
+                )
+                Column(Modifier.fillMaxWidth().appCard(CardShape).padding(vertical = 8.dp)) { com.agani.syncup.downloads.DownloadSettingsRows() }
+            }
+
+            if (user != null && page == SettingsPage.ACCOUNT) {
             Spacer(Modifier.height(24.dp))
             OutlinedButton(
                 onClick = onLogout,
@@ -1190,25 +1163,25 @@ private fun SettingsGroup(content: @Composable () -> Unit) {
 @Composable
 private fun RowIcon(icon: ImageVector, danger: Boolean = false) {
     val cs = MaterialTheme.colorScheme
-    Icon(icon, contentDescription = null, tint = if (danger) cs.error else cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
+    Icon(icon, contentDescription = null, tint = if (danger) cs.error else cs.onSurfaceVariant, modifier = Modifier.size(22.dp))
 }
 
 @Composable
 private fun RowText(title: String, subtitle: String?, modifier: Modifier, danger: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     Column(modifier = modifier) {
-        Text(title, fontSize = 14.5.sp, lineHeight = 20.sp, color = if (danger) cs.error else cs.onSurface)
+        Text(title, fontSize = 16.sp, lineHeight = 21.sp, color = if (danger) cs.error else cs.onSurface)
         if (subtitle != null) {
             Text(
-                subtitle, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant,
-                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 1.dp),
+                subtitle, fontSize = 13.5.sp, lineHeight = 18.sp, color = cs.onSurfaceVariant,
+                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp),
             )
         }
     }
 }
 
 /** The padding every row inside an open group shares. */
-private fun Modifier.groupRow(): Modifier = heightIn(min = 52.dp).padding(start = 18.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)
+private fun Modifier.groupRow(): Modifier = heightIn(min = 62.dp).padding(start = 18.dp, end = 16.dp, top = 10.dp, bottom = 10.dp)
 
 /** Settings → Browser's first row: whether SyncUp opens links from other apps, and Make default / Change. */
 @Composable
@@ -1288,7 +1261,7 @@ private fun SwitchRow(
 
 /** One line under the Sync switch: off / syncing / problem / last synced. */
 @Composable
-private fun syncStatus(): String = when {
+internal fun syncStatus(): String = when {
     !BrowserSync.enabled -> "Off · this phone's data stays here"
     BrowserSync.syncing -> "Syncing…"
     BrowserSync.lastError != null -> BrowserSync.lastError!!
@@ -1460,9 +1433,8 @@ private fun UsernameDialog(
 
 
 /**
- * A collapsed settings group (one of the rows on the groups card): tile, title and a one-line
- * summary of the current state. Tapping it opens the group's rows below, on the page's grey
- * (and the screen closes whichever group was open before). [first] = no line above it.
+ * One settings group: on its own page (the account sheet opens it) everything in it shows at once, with no
+ * folding. [expanded] = it's this page's group; the other groups aren't drawn.
  */
 @Composable
 private fun SettingsSection(
@@ -1474,48 +1446,8 @@ private fun SettingsSection(
     first: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val cs = MaterialTheme.colorScheme
-    val chevron by animateFloatAsState(if (expanded) 180f else 0f, tween(200), label = "chevron")
-    val tile by animateColorAsState(if (expanded) cs.primaryContainer else cs.surfaceContainer, tween(200), label = "tile")
-    Column {
-        if (!first) Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant))
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClickLabel = if (expanded) "Collapse" else "Expand", onClick = onToggle)
-                .semantics { stateDescription = if (expanded) "Expanded" else "Collapsed" }
-                .heightIn(min = 60.dp)
-                .padding(start = 14.dp, end = 14.dp, top = 10.dp, bottom = 10.dp),
-        ) {
-            Box(
-                Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).background(tile),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(icon, null, tint = if (expanded) cs.onPrimaryContainer else cs.onSurfaceVariant, modifier = Modifier.size(20.dp))
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
-                Text(
-                    summary, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 1.dp),
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            Icon(Icons.Rounded.ExpandMore, null, tint = cs.onSurfaceVariant, modifier = Modifier.rotate(chevron))
-        }
-        androidx.compose.animation.AnimatedVisibility(
-            visible = expanded,
-            enter = expandVertically(tween(220)) + fadeIn(tween(180)),
-            exit = shrinkVertically(tween(200)) + fadeOut(tween(150)),
-        ) {
-            Column(Modifier.fillMaxWidth().background(cs.surface)) {
-                Box(Modifier.fillMaxWidth().height(1.dp).background(cs.outlineVariant))
-                content()
-            }
-        }
-    }
+    if (!expanded) return
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) { content() }
 }
 
 

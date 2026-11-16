@@ -123,6 +123,8 @@ internal fun TabSwitcher(
     onSignIn: () -> Unit,
     onUndo: (message: String, undo: () -> Unit) -> Unit,
     onClose: () -> Unit,
+    /** Closed without picking a tab (the ×). */
+    onDismiss: () -> Unit = onClose,
 ) {
     // The SyncUp link whose pages sheet is open (its group id).
     var pagesOf by remember { mutableStateOf<Long?>(null) }
@@ -166,7 +168,7 @@ internal fun TabSwitcher(
                         onPick = onShow,
                         modifier = Modifier.weight(1f),
                     )
-                    BarIcon(Icons.Rounded.Close, "Close tab switcher", tint = cs.onSurface, onClick = onClose)
+                    BarIcon(Icons.Rounded.Close, "Close tab switcher", tint = cs.onSurface, onClick = onDismiss)
                 }
 
                 HorizontalPager(
@@ -276,7 +278,7 @@ private fun SectionPage(
                 )
                 return@Box
             }
-            // SyncUp: one card per link (its latest page); elsewhere one per tab.
+            // One card per group (its latest page): a SyncUp link, or a page and the pages it opened.
             val list = tabs.cardsIn(section)
             // One SyncUp link: one tab is all there can be, so nothing new to open on that side.
             val direct = tabs.directLink.takeIf { section == Section.WORK }
@@ -313,12 +315,12 @@ private fun SectionPage(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxSize(),
                 ) {
-                    items(list, key = { if (section == Section.WORK) "g${it.groupId}" else "t${it.id}" }) { t ->
+                    items(list, key = { "g${it.groupId}" }) { t ->
                         val onScreen = tabs.activeTab(section)
-                        val link = section == Section.WORK && !t.isHome
-                        val pages = if (link) tabs.groupPages(t.groupId).size else 1
+                        val grouped = !t.isHome
+                        val pages = if (grouped) tabs.groupPages(t.groupId).size else 1
                         val current = section == tabs.section && onScreen != null &&
-                            (onScreen.id == t.id || (link && onScreen.groupId == t.groupId))
+                            (onScreen.id == t.id || (grouped && onScreen.groupId == t.groupId))
                         TabCard(
                             t, current, pages,
                             onSelect = {
@@ -327,9 +329,9 @@ private fun SectionPage(
                             },
                             onCloseTab = {
                                 if (pages > 1) {
-                                    // A link and all its pages, with Undo.
+                                    // A group and all its pages, with Undo.
                                     val closed = tabs.closeGroup(t.groupId)
-                                    onUndo("${t.workName ?: "SyncUp link"} closed (${closed.size} pages)") { tabs.reopen(closed) }
+                                    onUndo("${groupName(tabs, t.groupId)} closed (${closed.size} pages)") { tabs.reopen(closed) }
                                 } else {
                                     tabs.close(t)
                                 }
@@ -365,9 +367,16 @@ private fun SectionPage(
     }
 }
 
+/** A group's name: a SyncUp link's name, else its first page's site ("Google", "monsoonkitchen.in"). */
+internal fun groupName(tabs: TabManager, groupId: Long): String {
+    val head = tabs.groupPages(groupId).firstOrNull() ?: return "Tab"
+    if (head.isWork) return head.workName ?: "SyncUp link"
+    return head.title.ifBlank { UrlInput.hostAndPath(head.url).first }.ifBlank { "Tab" }
+}
+
 /**
- * A SyncUp link's pages: its first page and the ones its site opened in new windows. Open one, close
- * one, or close the whole link. Pages beyond the latest few are asleep and reload when opened.
+ * A group's pages: its first page and the ones it opened (a SyncUp link's, or any page's). Open one,
+ * close one, or close the whole group. Pages beyond the latest few are asleep and reload when opened.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -385,13 +394,17 @@ private fun LinkPagesSheet(
     }
     val cs = MaterialTheme.colorScheme
     val head = pages.first()
-    val name = head.workName ?: "SyncUp link"
-    val onScreen = tabs.activeTab(Section.WORK)?.id
+    val name = groupName(tabs, groupId)
+    val onScreen = tabs.activeTab(head.section)?.id
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = cs.sheet) {
         Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 12.dp)) {
                 val link = head.workLinkId?.let { KnownLinks.byId[it] }
-                if (link != null) LinkIcon(link, 48.dp) else IconTile(SyncUpMark, size = 48.dp)
+                when {
+                    link != null -> LinkIcon(link, 48.dp)
+                    head.isWork -> IconTile(SyncUpMark, size = 48.dp)
+                    else -> SiteMark(head.url, head.title, circle = 48.dp, iconSize = 26.dp)
+                }
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     Text(name, fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -401,9 +414,10 @@ private fun LinkPagesSheet(
             pages.forEach { p ->
                 val on = p.id == onScreen
                 val origin = if (p.id == head.id) {
-                    "The link itself"
+                    if (head.isWork) "The link itself" else "The first page"
                 } else {
-                    tabs.tabs.firstOrNull { it.id == p.openerId }?.let { "Opened from ${it.title.ifBlank { it.label }}" } ?: "Opened by the site"
+                    tabs.tabs.firstOrNull { it.id == p.openerId }?.let { "Opened from ${it.title.ifBlank { it.label }}" }
+                        ?: if (p.openerId == null && !p.isWork) "Opened in a new tab" else "Opened by the site"
                 }
                 val state = when {
                     on -> "Showing now"
