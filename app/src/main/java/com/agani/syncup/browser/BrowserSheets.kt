@@ -33,7 +33,7 @@ import androidx.compose.material.icons.rounded.ManageAccounts
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material3.AlertDialog
+import com.agani.syncup.ui.theme.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon

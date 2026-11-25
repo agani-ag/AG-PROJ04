@@ -68,6 +68,14 @@
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     <uses-feature android:name="android.hardware.wifi" android:required="false" />
+    <!-- Android TV (user, 17-18 Nov 2026): the same app on a TV, with its own TV main page. Nothing below is needed,
+         so Play offers SyncUp on TVs too (touchscreen, camera autofocus and GPS are otherwise implied). -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.faketouch" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <uses-feature android:name="android.hardware.location.network" android:required="false" />
 
     <queries>
         <intent>
@@ -90,6 +98,7 @@
         android:name=".SyncUpApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
+        android:banner="@drawable/tv_banner"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
@@ -109,6 +118,8 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <!-- The TV home screen's app row (the banner shows there). -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
             <!-- Long-press the icon: New tab, Incognito, Calendar, Walkie Talkie -->
             <meta-data

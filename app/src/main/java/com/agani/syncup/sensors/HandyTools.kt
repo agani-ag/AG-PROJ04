@@ -52,7 +52,7 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.WavingHand
-import androidx.compose.material3.AlertDialog
+import com.agani.syncup.ui.theme.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon

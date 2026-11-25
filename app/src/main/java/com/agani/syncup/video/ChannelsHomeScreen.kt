@@ -24,9 +24,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.MoreVert
-import androidx.compose.material3.AlertDialog
+import com.agani.syncup.ui.theme.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
+import com.agani.syncup.ui.theme.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -189,7 +189,9 @@ private fun PlaylistRow(entry: SavedPlaylistEntry, loading: Boolean, first: Bool
     var menu by remember { mutableStateOf(false) }
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().cardSlice(first, last).clickable(enabled = !loading, onClick = onClick)
+        modifier = Modifier.fillMaxWidth().cardSlice(first, last)
+            // Stays enabled while loading (a press then does nothing), so the remote's selection stays on this row.
+            .clickable { if (!loading) onClick() }
             .heightIn(min = 66.dp).padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
     ) {
         if (loading) {

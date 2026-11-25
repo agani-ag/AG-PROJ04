@@ -156,13 +156,21 @@ fun AgHubTheme(
 
     // Every page a size smaller (user, 17 Nov 2026: "small on all pages"): see AppDensity.
     val base = LocalDensity.current
-    val smaller = remember(base) { AppDensity(base) }
+    // Not on a TV: it's watched from across the room, so it keeps Android's own size.
+    val tv = remember { com.agani.syncup.home.TvMode.isTv(view.context) }
+    val smaller = remember(base, tv) { if (tv) base else AppDensity(base) }
     CompositionLocalProvider(LocalDensity provides smaller) {
         MaterialTheme(
             colorScheme = scheme,
             shapes = AppShapes,
-            content = content,
-        )
+        ) {
+            // Text and icons without a colour of their own follow the theme, not black (unreadable in Dark):
+            // e.g. the Party page's "Start a party" (19 Nov 2026).
+            CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides scheme.onSurface) {
+                // Where the remote is, on every page (a ring + tint on whatever is selected).
+                RemoteFocus(tv = tv, content = content)
+            }
+        }
     }
 }
 

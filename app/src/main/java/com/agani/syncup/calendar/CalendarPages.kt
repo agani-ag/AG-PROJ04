@@ -46,8 +46,8 @@ import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Snooze
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
+import com.agani.syncup.ui.theme.AlertDialog
+import com.agani.syncup.ui.theme.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme

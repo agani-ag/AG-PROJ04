@@ -448,9 +448,13 @@ fun MainPage(
             // Tools sit below SyncUp links (user, 16 Nov 2026).
             item(key = "tools") {
                 Header("Tools")
-                ToolGrid(tools, onTool, open = state.toolsOpen)
+                // The tools in one white card, like SyncUp links, with "Show all" at its foot (user, 17 Nov 2026).
                 // The first two rows; "Show all 18 tools" opens every tool here, under its heading (user, 16 Nov 2026).
-                Column(Modifier.padding(top = 14.dp).fillMaxWidth().appCard(CardShape)) {
+                Card {
+                    Box(Modifier.padding(start = 8.dp, end = 8.dp, top = 16.dp, bottom = 6.dp)) {
+                        ToolGrid(tools, onTool, open = state.toolsOpen)
+                    }
+                    Divider()
                     MoreLine(if (state.toolsOpen) "Show less" else "Show all ${tools.size} tools", state.toolsOpen) { state.toolsOpen = !state.toolsOpen }
                 }
             }

@@ -131,6 +131,9 @@ class MainActivity : FragmentActivity() {
     // A launcher shortcut (long-press the app icon): "new_tab", "incognito".
     private val shortcutRequest = mutableStateOf<String?>(null)
 
+    // On a TV (or a debug build previewing one): the TV main page instead of the phone's (home/TvMode).
+    private val tvMode = mutableStateOf(false)
+
     // A tapped push's Push Log id: marked read on the Notifications page once the server address is set.
     private val pushReadId = mutableStateOf<String?>(null)
 
@@ -332,6 +335,12 @@ class MainActivity : FragmentActivity() {
 
     /** Pull a link (from a reminder/push tap) off the launch intent so we can open it after unlock. */
     private fun readDeepLink(intent: Intent?) {
+        // Debug builds can look like a TV on a phone: --ez tv_preview true / false (home/TvMode).
+        if (BuildConfig.DEBUG && intent?.hasExtra("tv_preview") == true) {
+            com.agani.syncup.home.TvMode.setPreview(this, intent.getBooleanExtra("tv_preview", false))
+            intent.removeExtra("tv_preview")
+        }
+        tvMode.value = com.agani.syncup.home.TvMode.isTv(this)
         // A push was tapped: it's read on the Notifications page now ("log_id" — our extra when the app
         // was open, or the push's own data when the system tray showed it).
         intent?.getStringExtra(EXTRA_LOG_ID)?.takeIf { it.isNotBlank() }?.let {
@@ -621,6 +630,7 @@ class MainActivity : FragmentActivity() {
                 // A channel list: Channels opens with its name and link filled in, for the person to save.
                 pendingLink.value = null
                 profilePage = null
+                showAccountSheet = false // Settings is a page now: whatever was asked for shows instead
                 showSiteSettings = false
                 showDns = false
                 showMusic = false
@@ -635,6 +645,7 @@ class MainActivity : FragmentActivity() {
                 // push to this phone) — SyncUp tabs need sign-in. (The session is restored before this runs.)
                 pendingLink.value = null
                 profilePage = null
+                showAccountSheet = false // Settings is a page now: whatever was asked for shows instead
                 showSiteSettings = false
                 showDns = false
                 showMusic = false
@@ -650,6 +661,7 @@ class MainActivity : FragmentActivity() {
                 // A link from a SyncUp push/reminder is a work link: open it as a Work tab (address hidden)
                 // — the link's own tab when it's one of the user's links and already open.
                 profilePage = null
+                showAccountSheet = false // Settings is a page now: whatever was asked for shows instead
                 showSiteSettings = false
                 showDns = false
                 showMusic = false
@@ -778,6 +790,7 @@ class MainActivity : FragmentActivity() {
                 showPartners = false
                 showNotifications = false
                 profilePage = null
+                showAccountSheet = false // Settings is a page now: whatever was asked for shows instead
                 radioOnParty = true
                 showRadio = true
             }
@@ -793,6 +806,7 @@ class MainActivity : FragmentActivity() {
                 showPartners = false
                 showNotifications = false
                 profilePage = null
+                showAccountSheet = false // Settings is a page now: whatever was asked for shows instead
                 libraryPage = null
                 videoPartyTab = true
                 toolsPage = com.agani.syncup.tools.ToolsPage.VIDEOS
@@ -808,6 +822,7 @@ class MainActivity : FragmentActivity() {
             showPartners = false
             showNotifications = false
             profilePage = null
+            showAccountSheet = false // Settings is a page now: whatever was asked for shows instead
             libraryPage = null
             when (com.agani.syncup.group.GroupLink.mode) {
                 com.agani.syncup.group.GroupMode.MUSIC -> {
@@ -837,6 +852,7 @@ class MainActivity : FragmentActivity() {
                 showPartners = false
                 showNotifications = false
                 profilePage = null
+                showAccountSheet = false // Settings is a page now: whatever was asked for shows instead
                 libraryPage = null
                 toolsPage = com.agani.syncup.tools.ToolsPage.WALKIE
             }
@@ -851,6 +867,7 @@ class MainActivity : FragmentActivity() {
                 showPartners = false
                 showNotifications = false
                 profilePage = null
+                showAccountSheet = false // Settings is a page now: whatever was asked for shows instead
                 libraryPage = LibraryPage.DOWNLOADS
             }
         }
@@ -865,6 +882,7 @@ class MainActivity : FragmentActivity() {
             showPartners = false
             showNotifications = false
             profilePage = null
+            showAccountSheet = false // Settings is a page now: whatever was asked for shows instead
             libraryPage = null
             calendarTask = id.ifBlank { null }
             toolsPage = com.agani.syncup.tools.ToolsPage.CALENDAR
@@ -881,6 +899,7 @@ class MainActivity : FragmentActivity() {
             showPartners = false
             showNotifications = false
             profilePage = null
+            showAccountSheet = false // Settings is a page now: whatever was asked for shows instead
             libraryPage = null
             toolArg = arg
             toolsPage = page
@@ -895,6 +914,7 @@ class MainActivity : FragmentActivity() {
                 showPartners = false
                 showNotifications = false
                 profilePage = null
+                showAccountSheet = false // Settings is a page now: whatever was asked for shows instead
                 libraryPage = null
                 toolsPage = com.agani.syncup.tools.ToolsPage.QUICK_SHARE
             }
@@ -909,6 +929,7 @@ class MainActivity : FragmentActivity() {
             showPartners = false
             showNotifications = false
             profilePage = null
+            showAccountSheet = false // Settings is a page now: whatever was asked for shows instead
             libraryPage = null
             toolsPage = null
             if (what == "incognito") {
@@ -1226,7 +1247,33 @@ class MainActivity : FragmentActivity() {
                             onBack = { showRadio = false },
                         )
                     }
-                    AppScreen.Home -> {
+                    AppScreen.Home -> if (tvMode.value && !mainPage.searching) {
+                        // A TV: its own main page, for the remote (Search opens the phone page's search).
+                        com.agani.syncup.home.TvHome(
+                            signedIn = loggedIn,
+                            userName = state.user?.name.takeIf { loggedIn },
+                            links = if (loggedIn) state.urls else com.agani.syncup.browser.GeneralLinks.links,
+                            radioAvailable = radioAvailable,
+                            onTool = { openHomeTool(it) },
+                            onOpenLink = { link ->
+                                tabManager.openWorkLink(link.title, link.url, link.id)
+                                mainTab = com.agani.syncup.home.MainTab.BROWSE
+                            },
+                            onOpenUrl = { openSite(it) },
+                            onSearch = { mainPage.searching = true },
+                            onNotifications = { showNotifications = true },
+                            onSettings = { showAccountSheet = true },
+                            onAccount = {
+                                if (loggedIn) {
+                                    openSetting(com.agani.syncup.home.SettingsPage.ACCOUNT)
+                                } else {
+                                    authForm.creating = false
+                                    showLogin = true
+                                }
+                            },
+                            refocusKey = showLogin,
+                        )
+                    } else {
                         // Asked once on first launch for every install (signed in or not) — SyncUp can notify anyone.
                         RequestNotificationPermission(onceOnly = true)
                         OfferSyncUpShareTile()
@@ -1451,7 +1498,7 @@ class MainActivity : FragmentActivity() {
             com.agani.syncup.group.GroupOverlays()
             // Sign-in from Home, You or a tool (the browser shows its own sheet).
             if (showLogin && !loggedIn && booted && screen != AppScreen.Browser) {
-                androidx.compose.material3.ModalBottomSheet(containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLowest,
+                com.agani.syncup.ui.theme.ModalBottomSheet(containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLowest,
                     onDismissRequest = {
                         vm.clearError()
                         showLogin = false

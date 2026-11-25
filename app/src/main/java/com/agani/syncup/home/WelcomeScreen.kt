@@ -32,7 +32,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -62,6 +64,15 @@ fun WelcomeScreen(
     signInForm: @Composable () -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
+    // On a TV the remote starts on Sign in, not on Skip at the top (user, 19 Nov 2026).
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val signInFocus = remember { androidx.compose.ui.focus.FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(configLoaded) {
+        if (configLoaded && TvMode.isTv(context)) {
+            kotlinx.coroutines.delay(150)
+            runCatching { signInFocus.requestFocus() }
+        }
+    }
     if (configLoaded && !signupEnabled) {
         Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
             Row(Modifier.fillMaxWidth().padding(top = 4.dp, end = 20.dp), horizontalArrangement = Arrangement.End) {
@@ -101,6 +112,7 @@ fun WelcomeScreen(
                 Icons.AutoMirrored.Rounded.Login, ToolTint.BLUE, "Sign in",
                 "With your SyncUp or partner password",
                 highlight = true, onClick = onSignIn,
+                modifier = Modifier.focusRequester(signInFocus),
             )
             if (signupEnabled) WelcomeCard(Icons.Rounded.Add, ToolTint.VIOLET, "Create an account", "Free · takes a minute", onClick = onCreate)
         }
@@ -109,11 +121,14 @@ fun WelcomeScreen(
 }
 
 @Composable
-private fun WelcomeCard(icon: ImageVector, tint: ToolTint, title: String, sub: String, highlight: Boolean = false, onClick: () -> Unit) {
+private fun WelcomeCard(
+    icon: ImageVector, tint: ToolTint, title: String, sub: String, highlight: Boolean = false,
+    modifier: Modifier = Modifier, onClick: () -> Unit,
+) {
     val cs = MaterialTheme.colorScheme
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth().appCard(CardShape)
+        modifier = modifier.fillMaxWidth().appCard(CardShape)
             .border(if (highlight) 2.dp else 1.dp, if (highlight) cs.primary else Color.Transparent, CardShape)
             .clickable(onClick = onClick).padding(14.dp),
     ) {

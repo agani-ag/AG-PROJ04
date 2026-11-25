@@ -73,9 +73,9 @@ import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Subtitles
-import androidx.compose.material3.AlertDialog
+import com.agani.syncup.ui.theme.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
+import com.agani.syncup.ui.theme.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -151,6 +151,8 @@ class VideoPlayerActivity : ComponentActivity() {
     private var source = ""
     /** Opened from a channel list: Next, Previous and the swipes go through [ChannelQueue]. */
     private var canChangeChannel by mutableStateOf(false)
+    /** The player's controls are on screen (the remote's arrows then move between them; see [remoteKey]). */
+    private val controlsShown = mutableStateOf(true)
     /** A station's converted copy (H.264 HLS), for a video this phone can't decode; and whether it's playing that. */
     private var fallback: String? = null
     private var onFallback = false
@@ -188,22 +190,25 @@ class VideoPlayerActivity : ComponentActivity() {
         open(intent, exo)
         setContent {
             MaterialTheme(colorScheme = playerScheme(SeekRed)) {
-                LaunchedEffect(VideoSound.boost, VideoSound.style) { fx.apply(VideoSound.boost, VideoSound.style) }
-                // Tools → Sensors → Wave to control: pause / ±10 s with a wave (when switched on).
-                com.agani.syncup.sensors.WaveEffect { action ->
-                    when (action) {
-                        com.agani.syncup.sensors.WaveControl.Action.PLAY_PAUSE -> exo.playWhenReady = !exo.playWhenReady
-                        com.agani.syncup.sensors.WaveControl.Action.NEXT -> exo.seekTo((exo.currentPosition + 10_000).coerceAtMost(exo.duration.coerceAtLeast(0)))
-                        com.agani.syncup.sensors.WaveControl.Action.PREVIOUS -> exo.seekTo((exo.currentPosition - 10_000).coerceAtLeast(0))
-                        com.agani.syncup.sensors.WaveControl.Action.NOTHING -> Unit
+                // Where the remote is (a ring on whatever is selected), as in the rest of the app.
+                com.agani.syncup.ui.theme.RemoteFocus(tv = com.agani.syncup.home.TvMode.isTv(this@VideoPlayerActivity)) {
+                    LaunchedEffect(VideoSound.boost, VideoSound.style) { fx.apply(VideoSound.boost, VideoSound.style) }
+                    // Tools → Sensors → Wave to control: pause / ±10 s with a wave (when switched on).
+                    com.agani.syncup.sensors.WaveEffect { action ->
+                        when (action) {
+                            com.agani.syncup.sensors.WaveControl.Action.PLAY_PAUSE -> exo.playWhenReady = !exo.playWhenReady
+                            com.agani.syncup.sensors.WaveControl.Action.NEXT -> exo.seekTo((exo.currentPosition + 10_000).coerceAtMost(exo.duration.coerceAtLeast(0)))
+                            com.agani.syncup.sensors.WaveControl.Action.PREVIOUS -> exo.seekTo((exo.currentPosition - 10_000).coerceAtLeast(0))
+                            com.agani.syncup.sensors.WaveControl.Action.NOTHING -> Unit
+                        }
                     }
+                    PlayerScreen(
+                        exo, title, uri, inPip, volumeKeyAt, controlsShown,
+                        onBack = { finish() }, onPip = { enterPip() },
+                        onAudioOnly = { audioOnly() }, onWatchTogether = { watchTogether() },
+                        canChangeChannel = canChangeChannel, onChangeChannel = { changeChannel(it) },
+                    )
                 }
-                PlayerScreen(
-                    exo, title, uri, inPip, volumeKeyAt,
-                    onBack = { finish() }, onPip = { enterPip() },
-                    onAudioOnly = { audioOnly() }, onWatchTogether = { watchTogether() },
-                    canChangeChannel = canChangeChannel, onChangeChannel = { changeChannel(it) },
-                )
             }
         }
     }
@@ -321,8 +326,46 @@ class VideoPlayerActivity : ComponentActivity() {
         inPip = isInPictureInPictureMode
     }
 
+    /**
+     * A TV remote or a keyboard (user, 18 Nov 2026). The media keys always work. With the controls hidden, OK plays
+     * or pauses and ◀ ▶ skip 10 s (the controls come up); on a channel, ▲ ▼ and CH+ / CH- change channel. With the
+     * controls showing, the arrows move between their buttons as usual.
+     */
+    private fun remoteKey(event: KeyEvent): Boolean {
+        val exo = player ?: return false
+        val hidden = !controlsShown.value
+        val code = event.keyCode
+        val handled = when (code) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK, KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, KeyEvent.KEYCODE_MEDIA_REWIND -> true
+            KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_CHANNEL_DOWN -> canChangeChannel
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> hidden
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> hidden && canChangeChannel
+            else -> false
+        }
+        if (!handled) return false
+        if (event.action != KeyEvent.ACTION_DOWN) return true
+        fun skip(ms: Long) = exo.seekTo((exo.currentPosition + ms).coerceIn(0, exo.duration.coerceAtLeast(0)))
+        when (code) {
+            KeyEvent.KEYCODE_MEDIA_PLAY -> exo.playWhenReady = true
+            KeyEvent.KEYCODE_MEDIA_PAUSE -> exo.playWhenReady = false
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, KeyEvent.KEYCODE_DPAD_RIGHT -> skip(10_000)
+            KeyEvent.KEYCODE_MEDIA_REWIND, KeyEvent.KEYCODE_DPAD_LEFT -> skip(-10_000)
+            KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                val up = code == KeyEvent.KEYCODE_CHANNEL_UP || code == KeyEvent.KEYCODE_DPAD_UP
+                changeChannel(if (up) 1 else -1)?.let { Toast.makeText(this, it, Toast.LENGTH_SHORT).show() }
+                return true
+            }
+            else -> exo.playWhenReady = !exo.playWhenReady // OK, play/pause
+        }
+        controlsShown.value = true
+        return true
+    }
+
     // The volume keys: the phone's volume, then the booster past full volume, shown on the player's own bar.
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (!inPip && remoteKey(event)) return true
         val up = event.keyCode == KeyEvent.KEYCODE_VOLUME_UP
         if (inPip || !up && event.keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) return super.dispatchKeyEvent(event)
         if (event.action == KeyEvent.ACTION_DOWN) {
@@ -436,6 +479,7 @@ private fun PlayerScreen(
     uri: String,
     inPip: Boolean,
     volumeKeyAt: Long,
+    controlsState: androidx.compose.runtime.MutableState<Boolean>,
     onBack: () -> Unit,
     onPip: () -> Unit,
     onAudioOnly: () -> Unit,
@@ -451,7 +495,7 @@ private fun PlayerScreen(
     var duration by remember { mutableLongStateOf(0L) }
     var error by remember { mutableStateOf<String?>(null) }
     var tracks by remember { mutableStateOf(exo.currentTracks) }
-    var showControls by remember { mutableStateOf(true) }
+    var showControls by controlsState
     var locked by remember { mutableStateOf(false) }
     var zoom by remember { mutableStateOf(false) }
     var speed by remember { mutableFloatStateOf(1f) }
@@ -462,7 +506,6 @@ private fun PlayerScreen(
     var lastTouch by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var menu by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf<String?>(null) }
-    var landscapeSet by remember { mutableStateOf(false) }
     var soundOpen by remember { mutableStateOf(false) }
     var playWith by remember { mutableStateOf(false) }
     // Sleep timer: when the video pauses by itself (elapsedRealtime), 0 = off.
@@ -493,14 +536,8 @@ private fun PlayerScreen(
                 error = "Can't play this video (${e.errorCodeName.removePrefix("ERROR_CODE_").lowercase().replace('_', ' ')})"
             }
             override fun onTracksChanged(t: Tracks) { tracks = t }
-            override fun onVideoSizeChanged(size: VideoSize) {
-                // A wide video turns the screen sideways by itself (once; Rotate overrides it).
-                if (!landscapeSet && size.width > 0 && size.height > 0) {
-                    landscapeSet = true
-                    activity.requestedOrientation = if (size.width > size.height) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                    else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-                }
-            }
+            // The screen isn't turned by the video (user, 17 Nov 2026): it starts the way the phone is held, and
+            // turns when the phone turns (auto-rotate) or with Rotate.
         }
         exo.addListener(l)
         onDispose { exo.removeListener(l) }
@@ -778,7 +815,6 @@ private fun PlayerScreen(
                         LabeledBtn(Icons.Rounded.Speed, fmtSpeed(speed)) { dialog = "speed" }
                         LabeledBtn(Icons.Rounded.Subtitles, "Subtitles") { dialog = "subs" }
                         LabeledBtn(Icons.Rounded.ScreenRotation, "Rotate") {
-                            landscapeSet = true
                             val landscape = activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
                             activity.requestedOrientation = if (landscape) ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                         }

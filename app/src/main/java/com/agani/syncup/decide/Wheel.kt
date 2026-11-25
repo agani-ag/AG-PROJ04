@@ -47,8 +47,8 @@ import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material.icons.rounded.SortByAlpha
 import androidx.compose.material.icons.rounded.Timer
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
+import com.agani.syncup.ui.theme.AlertDialog
+import com.agani.syncup.ui.theme.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme

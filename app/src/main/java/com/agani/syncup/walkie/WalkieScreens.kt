@@ -56,16 +56,16 @@ import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.WifiTethering
-import androidx.compose.material3.AlertDialog
+import com.agani.syncup.ui.theme.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
+import com.agani.syncup.ui.theme.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.agani.syncup.ui.theme.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -1102,7 +1102,7 @@ private fun ActionCard(icon: ImageVector, title: String, subtitle: String, tint:
     ) {
         ToolTile(icon, tint)
         Spacer(Modifier.weight(1f).heightIn(min = 16.dp))
-        Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = cs.onSurface)
         Text(subtitle, fontSize = 12.5.sp, lineHeight = 17.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
     }
 }

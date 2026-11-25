@@ -83,17 +83,17 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.Subtitles
 import androidx.compose.material.icons.rounded.Theaters
-import androidx.compose.material3.AlertDialog
+import com.agani.syncup.ui.theme.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
+import com.agani.syncup.ui.theme.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import com.agani.syncup.ui.theme.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -201,8 +201,11 @@ class WatchPartyActivity : ComponentActivity() {
         WatchParty.playerOpen = true
         setContent {
             MaterialTheme(colorScheme = playerScheme(Rose)) {
-                LaunchedEffect(VideoSound.boost, VideoSound.style) { fx.apply(VideoSound.boost, VideoSound.style) }
-                WatchScreen(exo, inPip, volumeKeyAt, visible = { lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) }, onBack = { finish() }, onPip = { enterPip() })
+                // Where the remote is (a ring on whatever is selected), as in the rest of the app.
+                com.agani.syncup.ui.theme.RemoteFocus(tv = com.agani.syncup.home.TvMode.isTv(this@WatchPartyActivity)) {
+                    LaunchedEffect(VideoSound.boost, VideoSound.style) { fx.apply(VideoSound.boost, VideoSound.style) }
+                    WatchScreen(exo, inPip, volumeKeyAt, visible = { lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) }, onBack = { finish() }, onPip = { enterPip() })
+                }
             }
         }
     }
@@ -317,7 +320,6 @@ private fun WatchScreen(exo: ExoPlayer, inPip: Boolean, volumeKeyAt: Long, visib
     var upNextOpen by remember { mutableStateOf(false) }
     var addOpen by remember { mutableStateOf(false) }
     var confirmEnd by remember { mutableStateOf(false) }
-    var landscapeSet by remember { mutableStateOf(false) }
     // Just for this person: full screen upright (a tall video), touch lock, ⋮, subtitles / audio track.
     var portraitFull by remember { mutableStateOf(false) }
     var locked by remember { mutableStateOf(false) }
@@ -531,17 +533,8 @@ private fun WatchScreen(exo: ExoPlayer, inPip: Boolean, volumeKeyAt: Long, visib
             WatchParty.notice = null
         }
     }
-    // A wide video turns the screen sideways by itself (once).
-    LaunchedEffect(exo) {
-        while (!landscapeSet) {
-            val s = exo.videoSize
-            if (s.width > 0 && s.height > 0) {
-                landscapeSet = true
-                activity.requestedOrientation = if (s.width > s.height) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-            }
-            delay(300)
-        }
-    }
+    // The screen isn't turned by the video (user, 17 Nov 2026): it starts the way the phone is held; full screen
+    // and Rotate turn it.
     LaunchedEffect(showControls, lastTouch, soundOpen, WatchParty.stage, menu, dialog) {
         if (showControls && WatchParty.stage == WpStage.PLAYING && !soundOpen && !menu && dialog == null) {
             delay(4_000)
@@ -557,7 +550,6 @@ private fun WatchScreen(exo: ExoPlayer, inPip: Boolean, volumeKeyAt: Long, visib
 
     /** Full screen on: a wide video turns sideways; a tall one fills the screen upright. */
     fun enterFull() {
-        landscapeSet = true
         val s = exo.videoSize
         if (s.width > 0 && s.height > s.width) portraitFull = true
         else activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -566,7 +558,6 @@ private fun WatchScreen(exo: ExoPlayer, inPip: Boolean, volumeKeyAt: Long, visib
 
     /** Back to upright with the party panel. */
     fun exitFull() {
-        landscapeSet = true
         portraitFull = false
         locked = false
         if (landscape) activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
@@ -574,7 +565,6 @@ private fun WatchScreen(exo: ExoPlayer, inPip: Boolean, volumeKeyAt: Long, visib
 
     /** Turn the screen the other way (like the Video player's Rotate). */
     fun rotate() {
-        landscapeSet = true
         portraitFull = false
         activity.requestedOrientation = if (landscape) ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
     }
