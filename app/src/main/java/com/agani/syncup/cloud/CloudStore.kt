@@ -13,6 +13,8 @@ import com.google.gson.JsonParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -36,6 +38,8 @@ data class CloudPage(
     val files: List<CloudItem>,
     val usedBytes: Long? = null,
     val plan: CloudPlan? = null,
+    /** How many files each subfolder holds, at any depth, by its path; null when they couldn't be counted. */
+    val counts: Map<String, Int>? = null,
 )
 
 /**
@@ -91,7 +95,7 @@ internal fun kindOf(mime: String, name: String): String {
 internal fun kindOfFile(resourceType: String, format: String, width: Int): String = when {
     resourceType == "image" -> "photos"
     resourceType == "video" -> if (format in CloudItem.AUDIO_EXT || width <= 0) "audio" else "videos"
-    format in setOf("pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "rtf", "odt", "ods", "odp", "md", "json", "xml", "html", "htm", "epub") -> "documents"
+    format in CloudItem.DOC_EXT -> "documents"
     format in setOf("zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz") -> "archives"
     else -> "other"
 }
@@ -109,6 +113,99 @@ internal fun newPublicId(folder: String, name: String, kind: String): String {
 
 private fun parent(path: String) = path.substringBeforeLast('/', "")
 
+/** One file as Cloudinary describes it (Admin API, search): its display name with the file's extension. */
+internal fun cloudItemOf(r: JSONObject): CloudItem {
+    val pid = r.str("public_id")
+    val type = r.str("resource_type").ifBlank { "image" }
+    // A document ("raw") keeps its extension in its id, not in a format.
+    val format = r.str("format").ifBlank {
+        pid.substringAfterLast('/').substringAfterLast('.', "").takeIf { type == "raw" && it.length in 1..10 }.orEmpty().lowercase()
+    }
+    val shown = r.str("display_name").ifBlank { pid.substringAfterLast('/') }
+    return CloudItem(
+        publicId = pid,
+        resourceType = type,
+        name = if (format.isNotBlank() && !shown.endsWith(".$format", true)) "$shown.$format" else shown,
+        format = format,
+        bytes = r.optLong("bytes"),
+        width = r.optInt("width").takeIf { it > 0 },
+        height = r.optInt("height").takeIf { it > 0 },
+        url = r.str("secure_url"),
+        createdMs = isoMillis(r.str("created_at")),
+    )
+}
+
+/** A file Cloudinary has, and the folder it's in there (full path). */
+internal class Found(val folder: String, val item: CloudItem)
+
+/** A folder path as a Cloudinary search term: its reserved characters escaped (as the server does). */
+internal fun searchTerm(path: String): String =
+    path.map { c -> if (c in "!(){}[]*^~?:\\=&><\" " || c.isWhitespace()) "\\$c" else "$c" }.joinToString("")
+
+/**
+ * Every file a Cloudinary search link finds, with its folder ([fixed]: the folder is in the public id), up to
+ * [pages] × 500; null when there are more than that.
+ */
+internal fun readSearch(url: String, fixed: Boolean, pages: Int): List<Found>? {
+    val found = mutableListOf<Found>()
+    var cursor: String? = null
+    repeat(pages) {
+        val d = CloudHttp.getJson(if (cursor == null) url else "$url/${android.net.Uri.encode(cursor)}")
+        val arr = d.optJSONArray("resources")
+        for (i in 0 until (arr?.length() ?: 0)) {
+            val r = arr!!.getJSONObject(i)
+            found += Found((if (fixed) parent(r.str("public_id")) else r.str("asset_folder")).trim('/'), cloudItemOf(r))
+        }
+        cursor = d.str("next_cursor").ifBlank { null } ?: return found
+    }
+    return null
+}
+
+/** How many files each subfolder of [path] holds, at any depth, by the subfolder's full path. */
+internal fun folderCounts(path: String, found: List<Found>, gone: Set<String> = emptySet()): Map<String, Int> {
+    val prefix = if (path.isEmpty()) "" else "$path/"
+    val counted = HashSet<String>()
+    val out = HashMap<String, Int>()
+    for (f in found) {
+        val rest = f.folder.takeIf { it.startsWith(prefix) }?.removePrefix(prefix) ?: continue
+        if (rest.isEmpty() || f.item.publicId in gone || !counted.add(f.item.resourceType + "/" + f.item.publicId)) continue
+        val child = prefix + rest.substringBefore('/')
+        out[child] = (out[child] ?: 0) + 1
+    }
+    return out
+}
+
+/**
+ * One folder of an Own-folder phone: the server's list plus what Cloudinary itself has there, so files put in outside
+ * SyncUp (Cloudinary's website) show too. Cloudinary says where a file is now: one moved there shows in its new
+ * folder only. A file only on the server's list stays (just uploaded: Cloudinary's search may not have it yet).
+ * [listed]: the server's files anywhere in the person's folder, public id → name — those keep their name and can be
+ * changed; the others are [CloudItem.readOnly]. [gone]: deleted or renamed away on this phone since Cloudinary was read.
+ * Returns the subfolder names and the files.
+ */
+internal fun mergeFolder(
+    path: String,
+    serverFolders: List<String>,
+    serverFiles: List<CloudItem>,
+    found: List<Found>,
+    listed: Map<String, String>,
+    gone: Set<String>,
+): Pair<List<String>, List<CloudItem>> {
+    val there = found.filter { it.item.publicId !in gone }
+    val where = there.associate { it.item.publicId to it.folder }
+    val files = serverFiles.filter { (where[it.publicId] ?: path) == path }.toMutableList()
+    val shown = files.mapTo(HashSet()) { it.publicId }
+    for (f in there) {
+        if (f.folder != path || !shown.add(f.item.publicId)) continue
+        val name = listed[f.item.publicId]
+        files += if (name != null) f.item.copy(name = name) else f.item.copy(readOnly = true)
+    }
+    val folders = LinkedHashSet(serverFolders)
+    val prefix = "$path/"
+    for (f in there) if (f.folder.startsWith(prefix)) folders += f.folder.removePrefix(prefix).substringBefore('/')
+    return folders.sortedWith(compareBy<String>({ it.lowercase() }, { it })) to files
+}
+
 /** "2026-11-26T10:00:00Z" → millis (no java.time: the app runs from Android 7). */
 internal fun isoMillis(s: String?): Long {
     if (s.isNullOrBlank()) return 0
@@ -125,13 +222,56 @@ class OwnSource(private val context: Context, private val access: CloudAccess) :
 
     private fun rel(path: String) = path.removePrefix(root).trim('/')
 
-    override suspend fun list(path: String): CloudPage {
-        val d = server(context) { api.cloudFiles(it, folder = rel(path)) }
-        return CloudPage(
-            folders = d.folders.map { CloudFolderItem(it, if (path.isEmpty()) it else "$path/$it") },
-            files = d.files.map(CloudItem::from),
+    /** What Cloudinary itself had in the person's folder, and the server's files then (see [cloudinary]). */
+    private class Seen(val at: Long, val found: List<Found>, val listed: Map<String, String>)
+    private var seen: Seen? = null
+    private val seenLock = Mutex()
+    /** Deleted or renamed away on this phone: Cloudinary's search may still have them for a little while. */
+    private val gone: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
+
+    override suspend fun list(path: String): CloudPage = coroutineScope {
+        val cloudinary = async { cloudinary() }
+        val listing = runCatching { server(context) { api.cloudFiles(it, folder = rel(path)) } }
+        val seen = cloudinary.await()
+        val here = path.ifEmpty { root }
+        val d = listing.getOrElse { e ->
+            // A folder made on Cloudinary's website may have a name the server doesn't take: show what Cloudinary has.
+            if (seen?.found?.any { it.folder == here || it.folder.startsWith("$here/") } == true) CloudListingDto() else throw e
+        }
+        val serverFiles = d.files.map(CloudItem::from)
+        val gone = gone.toSet()
+        val (folders, files) = if (seen == null) d.folders to serverFiles
+            else mergeFolder(here, d.folders, serverFiles, seen.found, seen.listed, gone)
+        CloudPage(
+            folders = folders.map { CloudFolderItem(it, if (path.isEmpty()) it else "$path/$it") },
+            files = files,
             usedBytes = d.usedBytes, plan = d.cloud,
+            // Files this phone just added count at once: Cloudinary's search may take a moment to have them.
+            counts = seen?.let { folderCounts(here, it.found + added, gone) },
         )
+    }
+
+    /** Files uploaded from this phone while Cloud is open, with their folders (see [CloudPage.counts]). */
+    private val added = java.util.concurrent.CopyOnWriteArrayList<Found>()
+
+    /**
+     * The person's whole folder as Cloudinary itself has it, read through a search link the server signs for that
+     * folder only (the secret never leaves the server). Read when Cloud opens, again once it's [FRESH_MS] old.
+     * Null when it can't be read: then the server's list shows alone, as before.
+     */
+    private suspend fun cloudinary(): Seen? = seenLock.withLock {
+        seen?.let { if (System.currentTimeMillis() - it.at < FRESH_MS) return@withLock it }
+        runCatching {
+            val look = server(context) { api.cloudLook(it) }
+            withContext(Dispatchers.IO) {
+                val found = readSearch(look.url, fixed = access.folderMode == "fixed", pages = 20)
+                    ?: throw CloudException("More than 10,000 files: too many to read")
+                android.util.Log.d("SyncUpCloud", "Cloudinary has ${found.size} files in this folder")
+                Seen(System.currentTimeMillis(), found, look.listed)
+            }
+        }.onSuccess { seen = it }
+            .onFailure { android.util.Log.w("SyncUpCloud", "Couldn't read the folder at Cloudinary: ${it.message}") }
+        seen
     }
 
     override suspend fun upload(path: String, src: UploadSource, onProgress: (Long) -> Unit): CloudItem? {
@@ -139,7 +279,7 @@ class OwnSource(private val context: Context, private val access: CloudAccess) :
             api.cloudSign(it, mapOf("action" to "upload", "folder" to rel(path), "name" to src.name, "mime" to src.mime, "bytes" to src.size))
         }
         val result = CloudHttp.upload(signed.url, signed.params, src, onProgress)
-        return report(result, src.name)
+        return report(result, src.name)?.also { added += Found(path.ifEmpty { root }, it) }
     }
 
     /** Tell the server about the upload (it checks Cloudinary's signature) so it's on the person's list. */
@@ -154,6 +294,7 @@ class OwnSource(private val context: Context, private val access: CloudAccess) :
         val signed = server(context) { api.cloudSign(it, mapOf("action" to "destroy", "public_id" to item.publicId, "resource_type" to item.resourceType)) }
         CloudHttp.postForm(signed.url, signed.params)  // "ok", or "not found" when it was already gone
         server(context) { api.cloudDeleted(it, mapOf("public_id" to item.publicId, "resource_type" to item.resourceType)) }
+        gone += item.publicId
     }
 
     override suspend fun rename(item: CloudItem, newName: String): CloudItem {
@@ -168,6 +309,7 @@ class OwnSource(private val context: Context, private val access: CloudAccess) :
             api.cloudRenamed(it, mapOf("from_public_id" to item.publicId, "to_public_id" to to, "resource_type" to item.resourceType,
                 "name" to name, "url" to url, "version" to r.str("version")))
         }
+        if (to != item.publicId) gone += item.publicId
         return item.copy(publicId = to, name = name, url = url)
     }
 
@@ -179,6 +321,9 @@ class OwnSource(private val context: Context, private val access: CloudAccess) :
         server(context) { api.cloudFolderDelete(it, mapOf("folder" to rel(path))) }
     }
 }
+
+/** How long what a Cloudinary search found is used before it's read again. */
+private const val FRESH_MS = 30_000L
 
 // =============================================================================================== Everything
 class AdminSource(private val context: Context, private val creds: CloudCreds) : CloudSource {
@@ -246,6 +391,7 @@ class AdminSource(private val context: Context, private val creds: CloudCreds) :
     }
 
     override suspend fun list(path: String): CloudPage = withContext(Dispatchers.IO) {
+        val counting = async { runCatching { counts(path) }.getOrNull() }
         // Subfolders: Cloudinary's, plus empty folders the person made (only on the server's list).
         val folders = cloudinaryFolders(path)
 
@@ -261,7 +407,31 @@ class AdminSource(private val context: Context, private val creds: CloudCreds) :
             folders = folders.values.sortedBy { it.label.lowercase() },
             files = files.map { it.copy(name = names[it.publicId] ?: it.name) },
             plan = if (path.isEmpty()) plan else null,
+            counts = counting.await(),
         )
+    }
+
+    /** Every file under a folder, as a search found it, by folder (kept [FRESH_MS]); null = too many to count. */
+    private val under = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<Found>?>>()
+    /** Added or deleted from this phone since: Cloudinary's search may take a moment to show it. */
+    private val added = java.util.concurrent.CopyOnWriteArrayList<Found>()
+    private val gone: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
+
+    /**
+     * How many files each subfolder of [path] holds, at any depth: one Cloudinary search of everything under
+     * [path] (up to 5,000 files — beyond that nothing is counted), through a search link this phone signs.
+     */
+    private fun counts(path: String): Map<String, Int>? {
+        val now = System.currentTimeMillis()
+        val cached = under[path]?.takeIf { now - it.first < FRESH_MS }
+        val found = if (cached != null) cached.second else {
+            val field = if (folderMode == "fixed") "folder" else "asset_folder"
+            val query = JSONObject().put("max_results", 500)
+            if (path.isNotEmpty()) query.put("expression", "$field:${searchTerm(path)}/*")
+            readSearch(CloudHttp.searchLink(creds.cloudName, creds.apiSecret, query.toString()), folderMode == "fixed", pages = 10)
+                .also { under[path] = now to it }
+        }
+        return found?.let { folderCounts(path, it + added, gone.toSet()) }
     }
 
     private fun listDynamic(path: String): List<CloudItem> {
@@ -373,23 +543,7 @@ class AdminSource(private val context: Context, private val creds: CloudCreds) :
 
     private fun items(d: JSONObject): List<CloudItem> {
         val arr = d.optJSONArray("resources") ?: return emptyList()
-        return (0 until arr.length()).map { i ->
-            val r = arr.getJSONObject(i)
-            val pid = r.str("public_id")
-            val format = r.str("format")
-            val shown = r.str("display_name").ifBlank { pid.substringAfterLast('/') }
-            CloudItem(
-                publicId = pid,
-                resourceType = r.str("resource_type").ifBlank { "image" },
-                name = if (format.isNotBlank() && !shown.endsWith(".$format", true)) "$shown.$format" else shown,
-                format = format,
-                bytes = r.optLong("bytes"),
-                width = r.optInt("width").takeIf { it > 0 },
-                height = r.optInt("height").takeIf { it > 0 },
-                url = r.str("secure_url"),
-                createdMs = isoMillis(r.str("created_at")),
-            )
-        }
+        return (0 until arr.length()).map { i -> cloudItemOf(arr.getJSONObject(i)) }
     }
 
     private fun signed(params: Map<String, String>) =
@@ -411,12 +565,14 @@ class AdminSource(private val context: Context, private val creds: CloudCreds) :
             val body = JsonParser.parseString(JSONObject().put("result", r).put("name", src.name).toString()).asJsonObject
             server(context) { api.cloudUploaded(it, body) }
         }
+        item?.let { added += Found(path, it) }
         return item
     }
 
     override suspend fun delete(item: CloudItem) {
         CloudHttp.postForm("$apiBase/${item.resourceType}/destroy",
             signed(mapOf("public_id" to item.publicId, "timestamp" to now(), "invalidate" to "true")))
+        gone += item.publicId
         if (isOwnFolder(item.publicId)) runCatching {
             server(context) { api.cloudDeleted(it, mapOf("public_id" to item.publicId, "resource_type" to item.resourceType)) }
         }

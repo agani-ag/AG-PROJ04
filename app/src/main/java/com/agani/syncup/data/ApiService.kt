@@ -185,6 +185,10 @@ interface ApiService {
         @Query("path") path: String? = null,
     ): com.agani.syncup.cloud.CloudListingDto
 
+    /** A signed link to read the person's own folder straight from Cloudinary, and the files the server knows. */
+    @GET("cloud/look")
+    suspend fun cloudLook(@Header("Authorization") auth: String): com.agani.syncup.cloud.CloudLook
+
     @POST("cloud/sign")
     suspend fun cloudSign(
         @Header("Authorization") auth: String,

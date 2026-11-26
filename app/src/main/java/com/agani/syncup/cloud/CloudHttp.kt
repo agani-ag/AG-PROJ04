@@ -95,6 +95,21 @@ internal object CloudHttp {
         return MessageDigest.getInstance("SHA-1").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
     }
 
+    /**
+     * A Cloudinary search link ("cacheable search URL") for [query] (the search's JSON), signed on this phone —
+     * Everything phones only (they hold the key); Own-folder phones get theirs from the server. Its ttl changes
+     * every second, so each look is fresh.
+     */
+    fun searchLink(cloudName: String, secret: String, query: String): String {
+        val b64 = android.util.Base64.encodeToString(query.toByteArray(), android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP)
+        val ttl = 300 + (System.currentTimeMillis() / 1000 % 300).toInt()
+        return "https://res.cloudinary.com/$cloudName/search/${searchSignature(ttl, b64, secret)}/$ttl/$b64"
+    }
+
+    /** A search link's signature: SHA-256 hex of ttl + the base64 query + the secret (as Cloudinary's SDKs sign it). */
+    fun searchSignature(ttl: Int, b64: String, secret: String): String =
+        MessageDigest.getInstance("SHA-256").digest("$ttl$b64$secret".toByteArray()).joinToString("") { "%02x".format(it) }
+
     /** A signed Upload-API request sent as a form (destroy, rename). */
     suspend fun postForm(url: String, params: Map<String, String>): JSONObject = withContext(Dispatchers.IO) {
         val body = FormBody.Builder().apply { params.forEach { (k, v) -> add(k, v) } }.build()
@@ -211,6 +226,9 @@ internal object CloudHttp {
     // ---------------------------------------------------------------- Admin API (Everything accounts)
     fun adminGet(creds: CloudCreds, path: String, query: Map<String, String?> = emptyMap()): JSONObject =
         execute(adminRequest(creds, path, query).get().build())
+
+    /** A ready-made Cloudinary address (the server signed it, e.g. a folder's search link): its JSON. */
+    fun getJson(url: String): JSONObject = execute(Request.Builder().url(url).get().build())
 
     fun adminPost(creds: CloudCreds, path: String): JSONObject =
         execute(adminRequest(creds, path).post(FormBody.Builder().build()).build())

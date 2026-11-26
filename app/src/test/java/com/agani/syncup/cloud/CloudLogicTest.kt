@@ -86,4 +86,64 @@ class CloudLogicTest {
         assertEquals("", cloudFolderPath(""))
         assertEquals(10, cloudFolderPath((1..14).joinToString("/") { "f$it" }).split('/').size)
     }
+
+    private fun file(pid: String, name: String = "$pid.jpg") = CloudItem(pid, "image", name, "jpg", 1, 10, 10, "https://x/$pid.jpg", 0)
+
+    @Test
+    fun ownFolderShowsWhatCloudinaryHasThere() {
+        val root = "syncup/accounts/23"
+        val found = listOf(
+            Found(root, file("kq3x9", "Beach.jpg")),                  // put in on Cloudinary's website
+            Found(root, file("app1", "app1_ab12cd.jpg")),             // uploaded in the app: on the server's list
+            Found("$root/Trips", file("moved1", "moved1_x.jpg")),     // the app's file, moved on Cloudinary's website
+            Found("$root/Trips/2026", file("deep1")),                 // a subfolder only Cloudinary has
+            Found(root, file("gone1")),                               // deleted on this phone a moment ago
+        )
+        val listed = mapOf("app1" to "Photo 1.jpg", "moved1" to "Hills.jpg", "new1" to "Just now.jpg")
+        val server = listOf(file("app1", "Photo 1.jpg"), file("moved1", "Hills.jpg"), file("new1", "Just now.jpg"))
+
+        val (folders, files) = mergeFolder(root, listOf("Empty"), server, found, listed, gone = setOf("gone1"))
+        assertEquals(listOf("Empty", "Trips"), folders)
+        // The app's files keep their names and can be changed; one just uploaded (Cloudinary's search hasn't it yet)
+        // stays; the one moved away doesn't show here; the one put in outside SyncUp shows, read-only.
+        assertEquals(listOf("app1" to false, "new1" to false, "kq3x9" to true), files.map { it.publicId to it.readOnly })
+        assertEquals("Beach.jpg", files.last().name)
+
+        val (sub, inTrips) = mergeFolder("$root/Trips", emptyList(), emptyList(), found, listed, emptySet())
+        assertEquals(listOf("2026"), sub)
+        // Moved here on Cloudinary's website: shown here with its name from the server's list, and still changeable.
+        assertEquals(listOf(Triple("moved1", "Hills.jpg", false)), inTrips.map { Triple(it.publicId, it.name, it.readOnly) })
+    }
+
+    @Test
+    fun folderCountsHoldEverythingInsideOnce() {
+        val root = "syncup/accounts/23"
+        val found = listOf(
+            Found(root, file("top")),                          // in the folder itself: no subfolder counts it
+            Found("$root/Trips", file("t1")), Found("$root/Trips/2026", file("t2")), Found("$root/Trips/2026", file("t2")),
+            Found("$root/Work", file("w1")), Found("$root/Work", file("w2")),
+            Found("syncup/accounts/230/x", file("other")),     // another person's folder (a longer number)
+        )
+        assertEquals(mapOf("$root/Trips" to 2, "$root/Work" to 1), folderCounts(root, found, gone = setOf("w2")))
+        assertEquals(mapOf("syncup" to 6), folderCounts("", found))  // the whole cloud; t2 once
+    }
+
+    @Test
+    fun kindsForTheFilter() {
+        assertEquals("photos", item("image", "u", "jpg").kind)
+        assertEquals("documents", item("image", "u", "pdf").kind)  // Cloudinary keeps PDFs as images
+        assertEquals("videos", item("video", "u", "mp4").kind)
+        assertEquals("audio", item("video", "u", "mp3", null, null).kind)
+        assertEquals("documents", item("raw", "u", "docx").kind)
+        assertEquals("other", item("raw", "u", "zip").kind)
+    }
+
+    @Test
+    fun searchLinkSignatureMatchesCloudinarysSdk() {
+        // Cloudinary's Python SDK test (test_search.py): secret "secret", ttl 300.
+        val b64 = "eyJleHByZXNzaW9uIjoicmVzb3VyY2VfdHlwZTppbWFnZSBBTkQgdGFncz1raXR0ZW4gQU5EIHVwbG9hZGVkX2F0" +
+            "PjFkIEFORCBieXRlcz4xbSIsIm1heF9yZXN1bHRzIjozMCwic29ydF9ieSI6W3sicHVibGljX2lkIjoiZGVzYyJ9XX0="
+        assertEquals("431454b74cefa342e2f03e2d589b2e901babb8db6e6b149abf25bc0dd7ab20b7", CloudHttp.searchSignature(300, b64, "secret"))
+        assertEquals("my\\ files/a\\:b", searchTerm("my files/a:b"))
+    }
 }

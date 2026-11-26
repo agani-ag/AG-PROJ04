@@ -224,6 +224,8 @@ private fun MyFilesScreen(onBack: () -> Unit, tabs: (@Composable () -> Unit)?, s
     var sort by rememberSaveable { mutableStateOf("new") }
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
+    /** The type filter: all | photos | videos | audio | documents | other (only kinds the folder has are offered). */
+    var kind by rememberSaveable { mutableStateOf("all") }
     var sheetFile by remember { mutableStateOf<CloudItem?>(null) }
     var viewer by remember { mutableStateOf<Pair<List<CloudItem>, Int>?>(null) }
     var showAdd by remember { mutableStateOf(false) }
@@ -282,7 +284,7 @@ private fun MyFilesScreen(onBack: () -> Unit, tabs: (@Composable () -> Unit)?, s
 
     val src = source
     val here = path
-    LaunchedEffect(here) { selected = emptySet() }
+    LaunchedEffect(here) { selected = emptySet(); kind = "all" }
     LaunchedEffect(src, here, reload, CloudUploads.finished, CloudTransfers.finished) {
         if (src == null || here == null) return@LaunchedEffect
         val silent = quiet && page != null
@@ -358,18 +360,27 @@ private fun MyFilesScreen(onBack: () -> Unit, tabs: (@Composable () -> Unit)?, s
         }
     }
 
-    val shown = remember(page, sort, query) {
+    // The files that match the search, by kind: the filter offers only the kinds there are, with how many.
+    val matching = remember(page, query) {
+        val q = query.trim().lowercase()
+        page?.files?.filter { q.isEmpty() || it.name.lowercase().contains(q) }
+    }
+    val kinds = remember(matching) { matching?.groupingBy { it.kind }?.eachCount().orEmpty() }
+    val showing = if (kind in kinds) kind else "all"
+    val shown = remember(page, sort, query, matching, showing) {
         val pg = page
-        if (pg == null) null else {
+        if (pg == null || matching == null) null else {
             val q = query.trim().lowercase()
-            val files = pg.files.filter { q.isEmpty() || it.name.lowercase().contains(q) }.let { fs ->
+            val files = matching.filter { showing == "all" || it.kind == showing }.let { fs ->
                 when (sort) {
                     "name" -> fs.sortedBy { it.name.lowercase() }
                     "size" -> fs.sortedByDescending { it.bytes }
                     else -> fs.sortedByDescending { it.createdMs }
                 }
             }
-            pg.copy(folders = pg.folders.filter { q.isEmpty() || it.label.lowercase().contains(q) }, files = files)
+            // A kind picked: just those files (back to All for the folders).
+            val folders = if (showing != "all") emptyList() else pg.folders.filter { q.isEmpty() || it.label.lowercase().contains(q) }
+            pg.copy(folders = folders, files = files)
         }
     }
 
@@ -391,7 +402,8 @@ private fun MyFilesScreen(onBack: () -> Unit, tabs: (@Composable () -> Unit)?, s
                     picked.forEach { download(context, it) }
                     selected = emptySet()
                 }
-                BarIcon(Icons.Rounded.Delete, "Delete") { deletingMany = picked }
+                // Files added outside SyncUp can't be deleted here: Delete takes the others.
+                if (picked.any { !it.readOnly }) BarIcon(Icons.Rounded.Delete, "Delete") { deletingMany = picked }
             } else ToolTopBar(
                 title, onBack = { leave() },
                 subtitle = when (access?.access) { "all" -> "Everything"; "own" -> "Your own folder"; else -> null },
@@ -425,6 +437,16 @@ private fun MyFilesScreen(onBack: () -> Unit, tabs: (@Composable () -> Unit)?, s
                     placeholder = { Text("Search this folder") },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                 )
+            }
+            // The type filter: only when the folder has more than one kind of file.
+            if (kinds.size > 1) {
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    KindChip("All", matching.orEmpty().size, showing == "all") { kind = "all" }
+                    for ((id, label) in KINDS) kinds[id]?.let { n -> KindChip(label, n, showing == id) { kind = id } }
+                }
             }
 
             Box(Modifier.fillMaxSize().then(swipe)) { when {
@@ -471,6 +493,7 @@ private fun MyFilesScreen(onBack: () -> Unit, tabs: (@Composable () -> Unit)?, s
                     itemsIndexed(shown.folders, key = { _, f -> "d:" + f.path }, span = { _, _ -> GridItemSpan(maxLineSpan) }) { i, f ->
                         FolderRow(
                             f, first = i == 0, last = i == shown.folders.lastIndex,
+                            count = shown.counts?.let { it[f.path] ?: 0 },
                             onOpen = { path = f.path; page = null; query = "" },
                             onMenu = { folderMenu = f },
                             menuOpen = folderMenu == f,
@@ -602,6 +625,10 @@ private fun MyFilesScreen(onBack: () -> Unit, tabs: (@Composable () -> Unit)?, s
                                 .joinToString(" · "),
                             fontSize = 12.5.sp, color = cs.onSurfaceVariant,
                         )
+                        if (f.readOnly) Text(
+                            "Added outside SyncUp — only an admin can rename or delete it.",
+                            fontSize = 12.5.sp, color = cs.onSurfaceVariant,
+                        )
                     }
                 }
                 when {
@@ -643,13 +670,15 @@ private fun MyFilesScreen(onBack: () -> Unit, tabs: (@Composable () -> Unit)?, s
                     (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText(f.name, f.url))
                     toast("Link copied.")
                 }
-                SheetRow(Icons.Rounded.Edit, "Rename", null) {
-                    sheetFile = null
-                    renaming = f
-                }
-                SheetRow(Icons.Rounded.Delete, "Delete", null, danger = true) {
-                    sheetFile = null
-                    deleting = f
+                if (!f.readOnly) {
+                    SheetRow(Icons.Rounded.Edit, "Rename", null) {
+                        sheetFile = null
+                        renaming = f
+                    }
+                    SheetRow(Icons.Rounded.Delete, "Delete", null, danger = true) {
+                        sheetFile = null
+                        deleting = f
+                    }
                 }
             }
         }
@@ -732,11 +761,16 @@ private fun MyFilesScreen(onBack: () -> Unit, tabs: (@Composable () -> Unit)?, s
         }
     }
 
-    deletingMany?.let { items ->
+    deletingMany?.let { all ->
+        val items = all.filterNot { it.readOnly }
+        val kept = all.size - items.size
         AlertDialog(
             onDismissRequest = { deletingMany = null },
             title = { Text("Delete ${items.size} file${if (items.size == 1) "" else "s"}?") },
-            text = { Text("They're deleted from the cloud straight away. This can't be undone.") },
+            text = {
+                Text("They're deleted from the cloud straight away. This can't be undone." +
+                    if (kept > 0) " $kept added outside SyncUp stay — only an admin can delete ${if (kept == 1) "it" else "them"}." else "")
+            },
             confirmButton = {
                 TextButton(onClick = {
                     val s = src
@@ -957,6 +991,8 @@ private fun FolderRow(
     f: CloudFolderItem,
     first: Boolean,
     last: Boolean,
+    /** Files inside, at any depth; null when they couldn't be counted. */
+    count: Int?,
     onOpen: () -> Unit,
     onMenu: () -> Unit,
     menuOpen: Boolean,
@@ -976,7 +1012,13 @@ private fun FolderRow(
                 Icon(Icons.Rounded.Folder, null, tint = ToolTint.SKY.icon, modifier = Modifier.size(22.dp))
             }
             Spacer(Modifier.width(14.dp))
-            Text(f.label, fontSize = 15.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                Text(f.label, fontSize = 15.sp, color = cs.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (count != null) Text(
+                    if (count == 0) "Empty" else "%,d file%s".format(count, if (count == 1) "" else "s"),
+                    fontSize = 12.5.sp, color = cs.onSurfaceVariant,
+                )
+            }
             // Copy or delete the folder (a long-press opens the same).
             BarIcon(Icons.Rounded.MoreVert, "More for ${f.label}", onClick = onMenu)
         }
@@ -987,6 +1029,23 @@ private fun FolderRow(
                 leadingIcon = { Icon(Icons.Rounded.Delete, null, tint = cs.error) })
         }
     }
+}
+
+/** The type filter's kinds, in order (CloudItem.kind). */
+private val KINDS = listOf("photos" to "Photos", "videos" to "Videos", "audio" to "Audio", "documents" to "Documents", "other" to "Other")
+
+/** One choice of the type filter, with how many files it has. */
+@Composable
+private fun KindChip(label: String, count: Int, selected: Boolean, onClick: () -> Unit) {
+    androidx.compose.material3.FilterChip(
+        selected = selected, onClick = onClick,
+        label = {
+            Text(label)
+            Spacer(Modifier.width(6.dp))
+            Text("%,d".format(count), fontWeight = FontWeight.SemiBold,
+                color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)

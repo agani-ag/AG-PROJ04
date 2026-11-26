@@ -96,6 +96,12 @@ data class SignedRequest(
     val params: Map<String, String> = emptyMap(),
 )
 
+/**
+ * GET cloud/look: a link (signed by the server, for this person's folder only) to read the folder straight from
+ * Cloudinary, so files put there outside SyncUp show too; and the files on the server's list, public id → name.
+ */
+data class CloudLook(val root: String = "", val url: String = "", val listed: Map<String, String> = emptyMap())
+
 data class CloudPerson(val id: Long = 0, val name: String = "", val login: String = "", val access: String = "off", val root: String = "")
 data class CloudPeople(val accounts: List<CloudPerson> = emptyList())
 
@@ -117,12 +123,28 @@ data class CloudItem(
     val height: Int?,
     val url: String,
     val createdMs: Long,
+    /**
+     * In the person's folder at Cloudinary but not on the server's list (put there outside SyncUp, e.g. on
+     * Cloudinary's website): it can be opened, downloaded, shared and copied, not renamed or deleted — the server
+     * can't check it's really theirs, so it won't sign that.
+     */
+    val readOnly: Boolean = false,
 ) {
     val ext: String get() = format.ifBlank { name.substringAfterLast('.', "").takeIf { name.contains('.') }.orEmpty() }.lowercase()
     val isImage: Boolean get() = resourceType == "image"
     val isAudio: Boolean get() = resourceType == "video" && (ext in AUDIO_EXT || (width == null && height == null && ext !in VIDEO_EXT))
     val isVideo: Boolean get() = resourceType == "video" && !isAudio
     val isPdf: Boolean get() = ext == "pdf"
+
+    /** photos | videos | audio | documents | other: the Cloud page's type filter (a PDF is a document, even kept as an image). */
+    val kind: String
+        get() = when {
+            ext in DOC_EXT -> "documents"
+            isImage -> "photos"
+            isVideo -> "videos"
+            isAudio -> "audio"
+            else -> "other"
+        }
 
     /** A small square picture for the grid (Cloudinary makes it from the photo or the video's first frame). */
     val thumbUrl: String?
@@ -150,6 +172,8 @@ data class CloudItem(
     companion object {
         val AUDIO_EXT = setOf("mp3", "m4a", "aac", "wav", "ogg", "opus", "flac", "amr", "wma")
         val VIDEO_EXT = setOf("mp4", "mov", "m4v", "webm", "mkv", "avi", "3gp", "flv", "wmv", "ts", "mts")
+        val DOC_EXT = setOf("pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "rtf", "odt", "ods", "odp", "md",
+            "json", "xml", "html", "htm", "epub")
 
         fun from(d: CloudFileDto) = CloudItem(
             d.publicId, d.resourceType, d.name.ifBlank { d.publicId.substringAfterLast('/') }, d.format.orEmpty(),
