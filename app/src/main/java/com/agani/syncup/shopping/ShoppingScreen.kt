@@ -1,5 +1,6 @@
 package com.agani.syncup.shopping
 
+import com.agani.syncup.ui.theme.swipeTabs
 import android.content.Context
 import android.content.Intent
 import androidx.activity.compose.BackHandler
@@ -194,10 +195,11 @@ private fun ShoppingHome(onBack: () -> Unit, onOpen: (String) -> Unit) {
                 listOf(PillTab("Lists", Icons.Rounded.ShoppingCart), PillTab("Split bill", Icons.Rounded.Receipt)),
                 selected = tab, onSelect = { tab = it }, modifier = Modifier.padding(horizontal = 16.dp),
             )
+            val swipe = Modifier.weight(1f).swipeTabs(2, tab) { tab = it }
             if (tab == 0) {
-                ListsTab(onOpen = onOpen, onNew = { newList = true }, modifier = Modifier.weight(1f))
+                ListsTab(onOpen = onOpen, onNew = { newList = true }, modifier = swipe)
             } else {
-                SplitBillTab(Modifier.weight(1f))
+                SplitBillTab(swipe)
             }
         }
     }

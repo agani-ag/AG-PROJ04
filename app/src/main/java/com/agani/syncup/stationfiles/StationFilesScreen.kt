@@ -44,7 +44,11 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.DriveFolderUpload
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.FolderZip
@@ -242,6 +246,13 @@ fun StationFolderScreen(
     onBack: () -> Unit,
     onOpen: (FolderRef) -> Unit,
     bottom: @Composable () -> Unit = {},
+    /** In the top bar: Cloud's copies & uploads bell. */
+    top: @Composable () -> Unit = {},
+    /**
+     * Copy files to Cloud (when the account has it): the files, each with the folder path it keeps inside the
+     * chosen cloud folder ("" = straight in). Cloud asks where.
+     */
+    toCloud: ((FolderRef, List<Pair<String, StationFile>>) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val cs = MaterialTheme.colorScheme
@@ -267,7 +278,13 @@ fun StationFolderScreen(
     var photoAt by remember(ref) { mutableStateOf<Int?>(null) }
     var folderPlan by remember(ref) { mutableStateOf<List<StationFile>?>(null) }
     var walking by remember(ref) { mutableStateOf(false) }
+    var walkingCloud by remember(ref) { mutableStateOf(false) }
+    var showAdd by remember(ref) { mutableStateOf(false) }
+    // Sending a whole phone folder: reading it and making its folders on the station first.
+    var preparing by remember(ref) { mutableStateOf<String?>(null) }
     var sharingFiles by remember(ref) { mutableStateOf<List<StationFile>?>(null) }
+    // Share: send the files themselves, or links to them.
+    var shareMenu by remember(ref) { mutableStateOf<List<StationFile>?>(null) }
 
     LaunchedEffect(ref, query, reload) {
         loading = true
@@ -325,6 +342,49 @@ fun StationFolderScreen(
         }
     }
 
+    // A whole folder from this phone (Android's folder picker: no storage permission), with the folders inside.
+    val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
+        val up = uploadFolder
+        if (tree == null || up == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            preparing = "Reading the folder…"
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    com.agani.syncup.cloud.PhoneFolder.keep(context, tree)
+                    val (name, files) = com.agani.syncup.cloud.PhoneFolder.walk(context, tree)
+                    if (files.isNotEmpty()) withContext(Dispatchers.Main) { preparing = "Making the folders on ${ref.station}…" }
+                    // Its folders on the station first, then each folder's files go up like any upload.
+                    val made = HashMap<String, String>()
+                    name to files.groupBy { it.rel }.map { (rel, group) ->
+                        Stations.folderFor(ref.key, up, if (rel.isEmpty()) name else "$name/$rel", made) to group
+                    }
+                }
+            }
+            preparing = null
+            result.onSuccess { (name, groups) ->
+                val count = groups.sumOf { it.second.size }
+                if (count == 0) {
+                    Toast.makeText(context, "There are no files in “$name”.", Toast.LENGTH_SHORT).show()
+                } else {
+                    groups.forEach { (folder, group) -> StationUploads.add(ref.key, ref.station, folder, name, group.map { it.uri }) }
+                    reload++
+                    Toast.makeText(context, "Sending $count file${if (count == 1) "" else "s"} from “$name” to ${ref.name}…", Toast.LENGTH_LONG).show()
+                }
+            }.onFailure { e ->
+                if (e is Stations.PinNeeded) showPin = true
+                val message = when {
+                    e is Stations.PinNeeded -> "${ref.station} wants its PIN first."
+                    e is Stations.Gone -> "Couldn't reach ${ref.station}."
+                    e is Stations.Refused && e.error == "no_folders" -> "${ref.station}'s AudioSync can't take folders yet — update it on that PC (2.3.8 or newer)."
+                    e is Stations.Refused && e.error == "uploads_disabled" -> "${ref.station} doesn't allow uploads now."
+                    e is SecurityException -> "SyncUp can't read that folder. Please pick it again."
+                    else -> "Couldn't send that folder. Please try again."
+                }
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     fun playAudio(f: StationFile?, shuffle: Boolean) {
         val p = player ?: return
         if (audio.isEmpty()) return
@@ -371,6 +431,7 @@ fun StationFolderScreen(
                 ref.name, onBack, subtitle = if (ref.isRoot) "Shared files" else ref.station,
                 tag = if (ref.key in Stations.onSameWifi) ({ WifiTag() }) else null,
             ) {
+                top()
                 if (problem == null) BarIcon(Icons.Rounded.Search, "Search this folder") { searching = true }
                 BarIcon(Icons.Rounded.MoreVert, "More") { showMenu = true }
             }
@@ -443,7 +504,7 @@ fun StationFolderScreen(
                                     onClick = { if (selected.isEmpty()) open(f) else selected = selected.toggle(f.url) },
                                     onLongClick = { selected = selected.toggle(f.url) },
                                     trailing = if (selected.isEmpty()) ({
-                                        BarIcon(Icons.Rounded.Share, "Share ${f.name}") { sharingFiles = listOf(f) }
+                                        BarIcon(Icons.Rounded.Share, "Share ${f.name}") { shareMenu = listOf(f) }
                                         BarIcon(Icons.Rounded.Download, "Download ${f.name}") {
                                             downloadStationFile(ref.key, ref.station, f)
                                             Toast.makeText(context, "Downloading ${f.name}", Toast.LENGTH_SHORT).show()
@@ -457,18 +518,27 @@ fun StationFolderScreen(
                 }
             }
             if (uploadFolder != null && selected.isEmpty() && problem == null) {
-                FloatingActionButton(onClick = { picker.launch(arrayOf("*/*")) }, modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp)) {
-                    Icon(Icons.Rounded.Add, "Add files here")
+                FloatingActionButton(onClick = { showAdd = true }, modifier = Modifier.align(Alignment.BottomEnd).padding(18.dp)) {
+                    Icon(Icons.Rounded.Add, "Add files or a folder here")
                 }
             }
-            if (selected.isNotEmpty()) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(cs.surface).padding(16.dp),
-                ) {
+            if (selected.isNotEmpty()) Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(cs.surface).padding(16.dp),
+            ) {
+                if (toCloud != null) {
                     FilledTonalButton(
                         onClick = {
-                            sharingFiles = files.filter { it.url in selected }
+                            toCloud(ref, files.filter { it.url in selected }.map { "" to it })
+                            selected = emptySet()
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                    ) { ButtonLabel(Icons.Rounded.CloudUpload, "Copy ${selected.size} to Cloud") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FilledTonalButton(
+                        onClick = {
+                            shareMenu = files.filter { it.url in selected }
                             selected = emptySet()
                         },
                         modifier = Modifier.weight(1f).heightIn(min = 52.dp),
@@ -525,6 +595,22 @@ fun StationFolderScreen(
                     }
                 }
             }
+            if (toCloud != null && !ref.isRoot && problem == null) {
+                MenuRow(Icons.Rounded.CloudUpload, if (walkingCloud) "Finding the files…" else "Copy this folder to Cloud", "With the folders inside. Or long-press files to pick some") {
+                    if (walkingCloud) return@MenuRow
+                    walkingCloud = true
+                    scope.launch {
+                        val all = withContext(Dispatchers.IO) { runCatching { walkTree(ref.key, ref.listUrl, ref.name) }.getOrNull() }
+                        walkingCloud = false
+                        showMenu = false
+                        when {
+                            all == null -> Toast.makeText(context, "Couldn't reach ${ref.station}.", Toast.LENGTH_SHORT).show()
+                            all.isEmpty() -> Toast.makeText(context, "There are no files in it.", Toast.LENGTH_SHORT).show()
+                            else -> toCloud(ref, all)
+                        }
+                    }
+                }
+            }
             if (audio.isNotEmpty()) MenuRow(Icons.Rounded.PlayArrow, "Play all", "Songs in this folder") {
                 showMenu = false
                 playAudio(null, false)
@@ -533,6 +619,10 @@ fun StationFolderScreen(
                 showMenu = false
                 picker.launch(arrayOf("*/*"))
             }
+            if (uploadFolder != null) MenuRow(Icons.Rounded.DriveFolderUpload, "Add a folder here", "A whole folder from this phone, with the folders inside") {
+                showMenu = false
+                folderPicker.launch(null)
+            }
             if (Stations.hasRememberedPin(ref.key)) MenuRow(Icons.Rounded.LockOpen, "Forget the PIN", "Ask for it next time") {
                 Stations.forgetPin(ref.key)
                 showMenu = false
@@ -540,6 +630,34 @@ fun StationFolderScreen(
             }
             Spacer(Modifier.height(24.dp))
         }
+    }
+    if (showAdd) {
+        ModalBottomSheet(onDismissRequest = { showAdd = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            Text("Add to ${ref.name}", fontSize = 18.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp))
+            MenuRow(Icons.Rounded.UploadFile, "Files", "Any files from this phone") {
+                showAdd = false
+                picker.launch(arrayOf("*/*"))
+            }
+            MenuRow(Icons.Rounded.DriveFolderUpload, "A folder", "A whole folder, with the folders inside") {
+                showAdd = false
+                folderPicker.launch(null)
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+    preparing?.let { msg ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Adding a folder") },
+            text = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 3.dp)
+                    Spacer(Modifier.width(14.dp))
+                    Text(msg)
+                }
+            },
+            confirmButton = {},
+        )
     }
     folderPlan?.let { plan ->
         AlertDialog(
@@ -561,7 +679,39 @@ fun StationFolderScreen(
             dismissButton = { TextButton(onClick = { folderPlan = null }) { Text("Cancel") } },
         )
     }
-    photoAt?.let { at -> PhotoViewer(ref.key, ref.station, images, at, onClose = { photoAt = null }, onShare = { sharingFiles = listOf(it) }) }
+    photoAt?.let { at -> PhotoViewer(ref.key, ref.station, images, at, onClose = { photoAt = null }, onShare = { shareMenu = listOf(it) }) }
+    shareMenu?.let { list ->
+        val one = list.size == 1
+        val links = list.mapNotNull { Stations.fileLink(ref.key, it) }
+        val linkText = links.joinToString("\n")
+        val pin = if (station?.filesProtected == true) " · they'll need ${ref.station}'s PIN" else ""
+        ModalBottomSheet(onDismissRequest = { shareMenu = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+            Text(if (one) list[0].name else "${list.size} files", fontSize = 18.sp, fontWeight = FontWeight.Medium,
+                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp))
+            MenuRow(Icons.Rounded.Share, if (one) "Send the file" else "Send the files", "To any app — fetched to this phone first") {
+                shareMenu = null
+                sharingFiles = list
+            }
+            if (links.isNotEmpty()) {
+                MenuRow(Icons.Rounded.Link, if (one) "Share link" else "Share links", "Opens while ${ref.station} is online$pin") {
+                    shareMenu = null
+                    runCatching {
+                        context.startActivity(android.content.Intent.createChooser(
+                            android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, linkText),
+                            if (one) list[0].name else "${list.size} files",
+                        ))
+                    }
+                }
+                MenuRow(Icons.Rounded.ContentCopy, if (one) "Copy link" else "Copy links", "Paste it anywhere") {
+                    shareMenu = null
+                    (context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                        .setPrimaryClip(android.content.ClipData.newPlainText(if (one) list[0].name else "Links", linkText))
+                    Toast.makeText(context, if (one) "Link copied." else "${links.size} links copied.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
     sharingFiles?.let { list -> ShareDialog(ref.key, ref.station, list, onDone = { sharingFiles = null }) }
 }
 
@@ -722,6 +872,27 @@ internal fun downloadStationFile(key: String, station: String, f: StationFile) {
     Downloads.start(req, name, info)
 }
 
+/**
+ * Every file in a folder and the folders inside it, each with its folder path from [name] down ("Music/Live"),
+ * page by page. Blocking.
+ */
+private fun walkTree(key: String, listUrl: String, name: String): List<Pair<String, StationFile>> {
+    val out = ArrayList<Pair<String, StationFile>>()
+    val todo = ArrayDeque(listOf(listUrl to name))
+    while (todo.isNotEmpty() && out.size < 5000) {
+        val (url, rel) = todo.removeFirst()
+        var offset = 0
+        while (true) {
+            val page = Stations.list(key, url, "", offset, 1000)
+            page.files.forEach { out += rel to it }
+            page.folders.forEach { todo.addLast(it.listUrl to "$rel/${it.name}") }
+            offset += page.folders.size + page.files.size
+            if (page.folders.isEmpty() && page.files.isEmpty() || offset >= (page.total ?: 0)) break
+        }
+    }
+    return out
+}
+
 /** Every file in a folder and the folders inside it, page by page. Blocking. */
 private fun walk(key: String, listUrl: String): List<StationFile> {
     val out = ArrayList<StationFile>()
@@ -853,7 +1024,7 @@ private fun UploadRow(u: StationUpload, slice: Modifier) {
 // ============================================================================ PIN
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PinSheet(key: String, station: String, onDone: () -> Unit, onDismiss: () -> Unit) {
+internal fun PinSheet(key: String, station: String, onDone: () -> Unit, onDismiss: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     var pin by remember { mutableStateOf("") }

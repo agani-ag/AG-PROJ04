@@ -1,5 +1,6 @@
 package com.agani.syncup.notifications
 
+import com.agani.syncup.ui.theme.swipeTabs
 import com.agani.syncup.ui.theme.appCard
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -179,7 +180,7 @@ fun NotificationsScreen(onBack: () -> Unit, onOpen: (NotificationItem) -> Unit) 
         PullToRefreshBox(
             isRefreshing = refreshing,
             onRefresh = { refreshing = true; version++ },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().swipeTabs(2, tab.ordinal) { tab = Tab.entries[it] },
         ) {
             when {
                 loading && items.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }

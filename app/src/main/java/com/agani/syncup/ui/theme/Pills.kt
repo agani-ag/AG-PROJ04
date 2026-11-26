@@ -3,6 +3,9 @@ package com.agani.syncup.ui.theme
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.composed
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -88,3 +91,31 @@ fun PillTabs(tabs: List<PillTab>, selected: Int, onSelect: (Int) -> Unit, modifi
 @Composable
 fun PillTabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) =
     PillTabs(labels.map { PillTab(it) }, selected, onSelect, modifier)
+
+/**
+ * Swipe left / right on a page under [PillTabs] to go to the next / previous tab (user, 26 Nov 2026: "swipe should
+ * switch tabs"). Put it on the page's content, below the tabs. Sideways scrollers inside (rows, sliders) keep their
+ * own swipes; an up-down scroll never switches.
+ */
+fun Modifier.swipeTabs(count: Int, selected: Int, onSelect: (Int) -> Unit): Modifier = composed {
+    val latest = androidx.compose.runtime.rememberUpdatedState(Triple(count, selected, onSelect))
+    val threshold = with(androidx.compose.ui.platform.LocalDensity.current) { 64.dp.toPx() }
+    pointerInput(Unit) {
+        var total = 0f
+        detectHorizontalDragGestures(
+            onDragStart = { total = 0f },
+            onDragCancel = { total = 0f },
+            onDragEnd = {
+                val (n, sel, go) = latest.value
+                when {
+                    total <= -threshold && sel < n - 1 -> go(sel + 1)
+                    total >= threshold && sel > 0 -> go(sel - 1)
+                }
+                total = 0f
+            },
+        ) { change, amount ->
+            change.consume()
+            total += amount
+        }
+    }
+}

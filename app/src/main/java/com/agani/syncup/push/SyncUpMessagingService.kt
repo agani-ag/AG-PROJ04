@@ -23,6 +23,11 @@ class SyncUpMessagingService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         // Silent "sync": the to-dos changed on another phone, or trees were added from the server — fetch them, show nothing.
+        // Silent "cloud": files or the Cloud access changed — the open Cloud page and the Cloud tile follow at once.
+        if (message.data["type"] == "cloud") {
+            com.agani.syncup.cloud.CloudEvents.received(message.data["what"])
+            return
+        }
         if (message.data["type"] == "sync") {
             com.agani.syncup.sync.SyncPingWorker.enqueue(applicationContext, message.data["what"])
             return

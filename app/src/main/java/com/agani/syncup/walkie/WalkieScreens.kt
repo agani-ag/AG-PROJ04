@@ -1,5 +1,6 @@
 package com.agani.syncup.walkie
 
+import com.agani.syncup.ui.theme.swipeTabs
 import android.Manifest
 import android.app.Activity
 import android.media.AudioManager
@@ -432,7 +433,11 @@ private fun HomeView(
     onJoinGroup: (GroupRoom) -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
-    LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp)) {
+    // Swipe left / right switches Channels ↔ Groups.
+    LazyColumn(
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+        modifier = Modifier.swipeTabs(2, if (listGroups) 1 else 0) { onListGroups(it == 1) },
+    ) {
         item(key = "name") {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

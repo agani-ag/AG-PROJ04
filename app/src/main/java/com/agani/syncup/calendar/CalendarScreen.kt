@@ -1,5 +1,6 @@
 package com.agani.syncup.calendar
 
+import com.agani.syncup.ui.theme.swipeTabs
 import com.agani.syncup.ui.theme.PillTab
 import com.agani.syncup.ui.theme.PillTabs
 import com.agani.syncup.ui.theme.appCard
@@ -307,10 +308,13 @@ private fun CalendarHome(
                     prefs.edit().putBoolean("signed_out_banner_hidden", true).apply()
                 })
             }
-            if (tab == 0) {
-                MonthTab(selected, onSelect, onOpen, onDayView, ::ticked, ::deleted)
-            } else {
-                TodoTab(onOpen, ::ticked, ::deleted)
+            // Swipe left / right switches Calendar ↔ To-do (the month's own swipes still change the month).
+            Box(Modifier.fillMaxWidth().weight(1f).swipeTabs(2, tab, onTab)) {
+                if (tab == 0) {
+                    MonthTab(selected, onSelect, onOpen, onDayView, ::ticked, ::deleted)
+                } else {
+                    TodoTab(onOpen, ::ticked, ::deleted)
+                }
             }
         }
         AddButton(onAdd, Modifier.align(Alignment.BottomEnd))

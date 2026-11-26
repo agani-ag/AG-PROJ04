@@ -48,6 +48,10 @@ data class StationUpload(
     val note: String? = null,
     val finalName: String? = null,
     val error: String? = null,
+    /** A copy kept on this phone only for this upload (from Cloud): deleted once it's done or cancelled. */
+    val localFile: String? = null,
+    /** What started it, for whoever listens ([StationUploads.ended]): a Cloud → Shared move, for example. */
+    val tag: String? = null,
 ) {
     val active: Boolean get() = state == QUEUED || state == RUNNING
 
@@ -88,6 +92,12 @@ object StationUploads {
     var lastFinished: Pair<String, String>? = null
         private set
 
+    /**
+     * Told on the main thread when an upload leaves the list: done (true) or cancelled (false). Cloud listens for
+     * its moves, which delete the cloud file only once the station has it.
+     */
+    val ended = java.util.concurrent.CopyOnWriteArrayList<(StationUpload, Boolean) -> Unit>()
+
     fun init(context: Context) {
         if (::app.isInitialized) return
         app = context.applicationContext
@@ -96,7 +106,34 @@ object StationUploads {
         }.getOrNull().orEmpty()
         // Interrupted by the app closing: carry on.
         items.addAll(saved.map { if (it.state == StationUpload.RUNNING) it.copy(state = StationUpload.QUEUED, note = null) else it })
+        // Copies from Cloud that no upload needs any more (the app closed in between).
+        runCatching {
+            val keep = items.mapNotNull { it.localFile }.toSet()
+            transferDir(app).listFiles()?.forEach { dir ->
+                if (dir.listFiles().orEmpty().none { it.path in keep }) dir.deleteRecursively()
+            }
+        }
         pump()
+    }
+
+    /** Where copies waiting to go to a station are kept (app storage, so Android doesn't clear them meanwhile). */
+    fun transferDir(context: Context): java.io.File = java.io.File(context.filesDir, "station_transfers").apply { mkdirs() }
+
+    /**
+     * Send [file] (a copy on this phone, deleted afterwards) to [folder] on [key]'s station, under [name].
+     * Returns the upload's id. Main thread.
+     */
+    fun addFile(key: String, station: String, folder: String, folderName: String, file: java.io.File, name: String, tag: String? = null): Long {
+        val id = maxOf(System.currentTimeMillis(), (items.maxOfOrNull { it.id } ?: 0L) + 1)
+        items.add(0, StationUpload(id, key, station, folder, folderName, Uri.fromFile(file).toString(), name, file.length(), localFile = file.path, tag = tag))
+        save()
+        pump()
+        return id
+    }
+
+    private fun dropCopy(u: StationUpload) {
+        val f = u.localFile ?: return
+        runCatching { java.io.File(f).parentFile?.deleteRecursively() }
     }
 
     private fun prefs() = app.getSharedPreferences("station_uploads", Context.MODE_PRIVATE)
@@ -144,6 +181,8 @@ object StationUploads {
         items.remove(item)
         sent.remove(id)
         save()
+        dropCopy(item)
+        ended.forEach { runCatching { it(item, false) } }
         // Free the space on the PC too.
         item.uploadUrl?.let { url -> scope.launch { runCatching { Stations.call(item.key, url, { it.delete() }) { } } } }
         pump()
@@ -304,9 +343,11 @@ object StationUploads {
             items.removeAll { it.id == u.id }
             sent.remove(u.id)
             save()
+            dropCopy(u)
             lastFinished = u.key to u.folder
             finishedTick++
             UploadService.update(app)
+            ended.forEach { runCatching { it(done, true) } }
         }
         return done
     }

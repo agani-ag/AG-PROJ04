@@ -13,6 +13,7 @@ import androidx.compose.animation.AnimatedVisibility
 import com.agani.syncup.stationfiles.FilesTab
 import com.agani.syncup.stationfiles.FolderRef
 import com.agani.syncup.stationfiles.FolderStackSaver
+import com.agani.syncup.ui.theme.swipeTabs
 import com.agani.syncup.stationfiles.StationFolderScreen
 import com.agani.syncup.stationfiles.Stations
 import com.agani.syncup.stationfiles.WifiTag
@@ -185,15 +186,8 @@ fun RadioScreen(
     val player = LocalPlayer.current ?: return
     val cs = MaterialTheme.colorScheme
     var nowPlaying by rememberSaveable { mutableStateOf(false) }
-    // Files (stations' shared folders) lives with Live stations: both come from AudioSync, both need the admin's switch.
-    var onFiles by rememberSaveable { mutableStateOf(false) }
-    var folders by rememberSaveable(stateSaver = FolderStackSaver) { mutableStateOf(emptyList<FolderRef>()) }
-    LaunchedEffect(partyTab) { if (partyTab) onFiles = false }
-    val tab = when {
-        !liveStations || (partyTab && !onFiles) -> 0
-        onFiles -> 2
-        else -> 1
-    }
+    // Files (stations' shared folders) moved to Tools → Cloud → Shared (user, 26 Nov 2026): see StationFilesPane.
+    val tab = if (!liveStations || partyTab) 0 else 1
     val mini: @Composable () -> Unit = {
         AnimatedVisibility(
             visible = player.item != null,
@@ -204,48 +198,85 @@ fun RadioScreen(
         }
     }
 
-    // Stations and their files play in the Music player: the volume keys go on into its boost (not on Party).
-    val inFolder = folders.isNotEmpty() && liveStations
-    if (inFolder || tab != 0) MusicVolumeKeys()
-    if (inFolder) {
+    // Stations play in the Music player: the volume keys go on into its boost (not on Party).
+    if (tab != 0) MusicVolumeKeys()
+    Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
+        ToolTopBar("Radio", onBack)
+        if (liveStations) {
+            PillTabs(
+                listOf("Party", "Live stations"),
+                selected = tab,
+                onSelect = { onTab(it == 0) },
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp),
+            )
+        }
+        Box(Modifier.weight(1f).then(if (liveStations) Modifier.swipeTabs(2, tab) { onTab(it == 0) } else Modifier)) {
+            when (tab) {
+                0 -> com.agani.syncup.party.PartyTab()
+                else -> Column {
+                    NoteBox(
+                        Icons.Rounded.Info,
+                        "Private broadcasts via this organization's own AudioSync only — not public radio stations.",
+                        Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
+                    )
+                    RadioTab(player, loadStations, onOpenPlayer = { nowPlaying = true })
+                }
+            }
+            if (tab != 0 && !nowPlaying) MusicVolumeBar(Modifier.align(Alignment.CenterEnd).padding(end = 16.dp))
+        }
+        mini()
+    }
+
+    if (nowPlaying && player.item != null) NowPlayingSheet(player, onDismiss = { nowPlaying = false })
+}
+
+/**
+ * Stations' shared folders (AudioSync), in Tools → Cloud → Shared since 26 Nov 2026 (they were Radio's Files tab).
+ * Files play in the Music player. [header]: Cloud's own top bar and tabs, above the list of stations' folders; a
+ * folder opens full screen with its own bar.
+ */
+@Composable
+fun StationFilesPane(
+    header: @Composable () -> Unit,
+    contentModifier: Modifier = Modifier,
+    /** Inside a station's folder, in its top bar (Cloud's copies & uploads bell). */
+    folderTop: @Composable () -> Unit = {},
+    /** Copy station files to Cloud (when the account has Cloud): see [StationFolderScreen]. */
+    toCloud: ((com.agani.syncup.stationfiles.FolderRef, List<Pair<String, com.agani.syncup.stationfiles.StationFile>>) -> Unit)? = null,
+) {
+    val player = LocalPlayer.current ?: return
+    val cs = MaterialTheme.colorScheme
+    var nowPlaying by rememberSaveable { mutableStateOf(false) }
+    var folders by rememberSaveable(stateSaver = FolderStackSaver) { mutableStateOf(emptyList<FolderRef>()) }
+    val mini: @Composable () -> Unit = {
+        AnimatedVisibility(
+            visible = player.item != null,
+            enter = slideInVertically(tween(220)) { it } + fadeIn(tween(220)),
+            exit = slideOutVertically(tween(180)) { it } + fadeOut(tween(180)),
+        ) {
+            MiniPlayer(onOpen = { nowPlaying = true }, modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp))
+        }
+    }
+    MusicVolumeKeys()
+    if (folders.isNotEmpty()) {
         BackHandler { folders = folders.dropLast(1) }
         Box(Modifier.fillMaxSize()) {
-            StationFolderScreen(folders.last(), onBack = { folders = folders.dropLast(1) }, onOpen = { folders = folders + it }, bottom = mini)
+            StationFolderScreen(
+                folders.last(), onBack = { folders = folders.dropLast(1) }, onOpen = { folders = folders + it }, bottom = mini,
+                top = folderTop, toCloud = toCloud,
+            )
             if (!nowPlaying) MusicVolumeBar(Modifier.align(Alignment.CenterEnd).padding(end = 16.dp))
         }
     } else {
         Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
-            ToolTopBar("Radio", onBack)
-            if (liveStations) {
-                PillTabs(
-                    listOf("Party", "Live stations", "Files"),
-                    selected = tab,
-                    onSelect = {
-                        onFiles = it == 2
-                        if (it != 2) onTab(it == 0)
-                    },
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp),
-                )
-            }
-            Box(Modifier.weight(1f)) {
-                when (tab) {
-                    0 -> com.agani.syncup.party.PartyTab()
-                    2 -> FilesTab(onOpen = { folders = listOf(it) })
-                    else -> Column {
-                        NoteBox(
-                            Icons.Rounded.Info,
-                            "Private broadcasts via this organization's own AudioSync only — not public radio stations.",
-                            Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
-                        )
-                        RadioTab(player, loadStations, onOpenPlayer = { nowPlaying = true })
-                    }
-                }
-                if (tab != 0 && !nowPlaying) MusicVolumeBar(Modifier.align(Alignment.CenterEnd).padding(end = 16.dp))
+            header()
+            Box(Modifier.weight(1f).then(contentModifier)) {
+                FilesTab(onOpen = { folders = listOf(it) })
+                if (!nowPlaying) MusicVolumeBar(Modifier.align(Alignment.CenterEnd).padding(end = 16.dp))
             }
             mini()
         }
     }
-
     if (nowPlaying && player.item != null) NowPlayingSheet(player, onDismiss = { nowPlaying = false })
 }
 

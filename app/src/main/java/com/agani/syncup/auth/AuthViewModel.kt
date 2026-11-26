@@ -206,6 +206,9 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun logout(tellServer: Boolean = true) {
         val token = repository.token()
+        // Tools → Cloudinary: an Everything account's API key is only ever in memory — gone on sign-out.
+        com.agani.syncup.cloud.CloudSession.clear()
+        com.agani.syncup.cloud.CloudTransfers.forget()
         BrowserSync.onSignedOut()
         com.agani.syncup.sync.ItemSync.signedOutAll()
         repository.logout()

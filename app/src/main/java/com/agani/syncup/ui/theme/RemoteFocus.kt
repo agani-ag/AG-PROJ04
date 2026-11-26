@@ -73,10 +73,17 @@ import kotlin.math.min
  * selected tint on a TV.
  *
  * A screen with its own selected look (the TV main page) turns the window's ring off with [OwnFocusLook].
+ *
+ * TV only (user, 26 Nov 2026: "the TV's highlight is too bold on the phone — TV mode only"): on a phone or a tablet
+ * nothing changes — Android's own look, even with a keyboard.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RemoteFocus(tv: Boolean, content: @Composable () -> Unit) {
+    if (!tv) {
+        content()
+        return
+    }
     val ring = MaterialTheme.colorScheme.primary
     val view = LocalView.current
     val outer = LocalRingHost.current
@@ -152,6 +159,11 @@ private val LocalRingHost = staticCompositionLocalOf<RingHost?> { null }
  */
 @Composable
 internal fun RingArea(keepInside: Boolean, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    // Not on a TV (no ring host from RemoteFocus): just the content, as Android draws it.
+    if (LocalRingHost.current == null) {
+        Box(modifier, propagateMinConstraints = true) { content() }
+        return
+    }
     val view = LocalView.current
     val host = remember(view) { RingHost(view) }
     CompositionLocalProvider(LocalRingHost provides host) {

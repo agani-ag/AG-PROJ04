@@ -7,6 +7,9 @@
 -keep class com.agani.syncup.data.** { *; }
 # Station files: AudioSync's replies and the saved recents / uploads, read with Gson.
 -keep class com.agani.syncup.stationfiles.** { *; }
+# Cloud (Cloudinary): the server's replies (CloudAccess, CloudCreds, CloudStats, …) read with Gson — many fields
+# have no @SerializedName, so renaming them would break Cloud in release builds only.
+-keep class com.agani.syncup.cloud.** { *; }
 -keepattributes Signature, RuntimeVisibleAnnotations, AnnotationDefault, EnclosingMethod, InnerClasses
 
 # ---- Gson ----

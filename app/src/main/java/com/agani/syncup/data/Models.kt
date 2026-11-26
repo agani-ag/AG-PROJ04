@@ -40,7 +40,11 @@ data class User(
     val source: String? = null, // admin | partner | self
     // Created or added by a partner (v8): Home keeps to their partner's links. Missing = no.
     @SerializedName("partner_user") val partnerUser: Boolean? = null,
+    // Tools → Cloudinary (set by the admin per account): "off", "own" (their own folder) or "all" (everything).
+    val cloudinary: String? = null,
 ) {
+    /** Tools → Cloudinary is shown. */
+    val hasCloudinary: Boolean get() = cloudinary == "own" || cloudinary == "all"
     /** What the user signs in with, for display: email, else phone, else @username. */
     val loginLabel: String
         get() = email.ifBlank { phone?.takeIf { it.isNotBlank() }?.let(::formatPhone) ?: username?.takeIf { it.isNotBlank() }?.let { "@$it" } ?: "" }

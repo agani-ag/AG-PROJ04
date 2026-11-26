@@ -68,6 +68,7 @@ import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.LiveTv
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MusicNote
@@ -170,7 +171,7 @@ import kotlinx.coroutines.withContext
 /** What the main page can open; MainActivity knows where each one lives. */
 enum class HomeTool {
     CALENDAR, FOREST, SHARE, WALKIE, MUSIC, VIDEO, RADIO, SENSORS, PARTY, WATCH_PARTY, GROUP,
-    WATER, STEPS, HABITS, SLEEP, BREAKS, MOOD, CHANNELS, DECIDE, SHOPPING,
+    WATER, STEPS, HABITS, SLEEP, BREAKS, MOOD, CHANNELS, DECIDE, SHOPPING, CLOUDINARY,
 }
 
 /** The pages behind the account sheet (and a search result that opens one); MainActivity opens them. */
@@ -234,6 +235,8 @@ fun MainPage(
     radioAvailable: Boolean,
     signupEnabled: Boolean,
     announcement: AnnouncementDto?,
+    /** Tools → Cloud: the admin switched Cloudinary on for this account, or Live stations share files (Shared). */
+    cloudinary: Boolean = false,
     chatUnread: Int,
     waitingPartners: List<PartnerDto>,
     onEnablePartner: suspend (id: String, password: String) -> Result<PartnerDto?>,
@@ -254,7 +257,7 @@ fun MainPage(
     val cs = MaterialTheme.colorScheme
     val context = LocalContext.current
     remember { Wellbeing.init(context) }
-    val tools = mainTools(radioAvailable)
+    val tools = mainTools(radioAvailable, cloudinary)
     val voice = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
         if (!spoken.isNullOrBlank()) onOpenUrl(UrlInput.toUrl(spoken))
@@ -1062,7 +1065,7 @@ private val GROUPS = listOf("Media", "Nearby", "Everyday", "Wellbeing")
 
 /** Every tool, in group order, with what it's doing right now. */
 @Composable
-private fun mainTools(radioAvailable: Boolean): List<ToolDef> {
+private fun mainTools(radioAvailable: Boolean, cloudinary: Boolean = false): List<ToolDef> {
     val ctx = LocalContext.current
     val player = LocalPlayer.current
     @Suppress("UNUSED_VARIABLE") val wv = Water.version + Steps.version + Habits.version + Sleep.version + Mood.version + Breaks.version
@@ -1089,6 +1092,11 @@ private fun mainTools(radioAvailable: Boolean): List<ToolDef> {
             running = Walkie.active, status = com.agani.syncup.walkie.walkieStatus()),
         ToolDef(HomeTool.GROUP, Icons.Rounded.Groups, "Group", "Group", ToolTint.INDIGO, "Nearby", "Up to 8 phones: music, watch, talk, share, photos", "together friends family photos",
             running = g.active, status = if (g.active) "In a group · ${g.mode.label}" else null),
+    ) + listOfNotNull(
+        // Tools → Cloud (Cloudinary): only when the admin switched it on for this account.
+        if (cloudinary) ToolDef(HomeTool.CLOUDINARY, Icons.Rounded.Cloud, "Cloud", "Cloud", ToolTint.SKY, "Nearby",
+            "Your photos, videos & files in the cloud", "cloudinary files photos upload storage drive") else null,
+    ) + listOf(
         ToolDef(HomeTool.CALENDAR, Icons.Rounded.CalendarMonth, "Calendar", "Calendar", ToolTint.INDIGO, "Everyday", "To-dos & reminders", "todo tasks reminders countdown dates",
             status = com.agani.syncup.calendar.calendarStatus()),
         ToolDef(HomeTool.SENSORS, Icons.Rounded.Explore, "Sensors", "Sensors", ToolTint.SKY, "Everyday", "Compass, level, light & sound meters…",

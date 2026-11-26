@@ -1,5 +1,6 @@
 package com.agani.syncup.group
 
+import com.agani.syncup.ui.theme.swipeTabs
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -132,7 +133,7 @@ internal fun PhotosView() {
     Column(Modifier.fillMaxSize()) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).swipeTabs(2, tab) { tab = it },  // swipe: Photos ↔ Photo Show
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),

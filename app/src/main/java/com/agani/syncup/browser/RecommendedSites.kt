@@ -1,5 +1,6 @@
 package com.agani.syncup.browser
 
+import com.agani.syncup.ui.theme.swipeTabs
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -174,7 +175,7 @@ internal fun RecommendedPage(
     Column(Modifier.fillMaxSize().background(cs.surface)) {
         PageTopBar("Recommended", onBack)
         PillTabs(PERIODS.map { it.label }, period, { period = it }, Modifier.padding(horizontal = 16.dp))
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp)) {
+        Column(Modifier.fillMaxSize().swipeTabs(PERIODS.size, period) { period = it }.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp)) {
             when {
                 shown == null -> Unit
                 shown.isEmpty() -> Column(Modifier.fillMaxWidth().browserCard().padding(horizontal = 22.dp, vertical = 30.dp), horizontalAlignment = Alignment.CenterHorizontally) {

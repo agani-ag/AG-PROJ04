@@ -1,5 +1,6 @@
 package com.agani.syncup.decide
 
+import com.agani.syncup.ui.theme.swipeTabs
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -99,8 +100,11 @@ internal fun DecidePage(
     Column(Modifier.fillMaxSize().background(cs.surface).windowInsetsPadding(WindowInsets.safeDrawing)) {
         ToolTopBar(title, onBack, actions = actions)
         DecideSwitchRow()
+        // Swipe left / right goes to the next / previous Decide tool (a wheel's own spin still spins it).
+        val sw = LocalDecideSwitch.current
         Column(
-            Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
+            Modifier.fillMaxWidth().weight(1f).then(if (sw != null) Modifier.swipeTabs(4, sw.selected, sw.onSelect) else Modifier)
+                .verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
             content = content,
         )
     }

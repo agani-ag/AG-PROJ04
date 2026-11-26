@@ -31,6 +31,10 @@ object ApiClient {
     val service: ApiService
         get() = cached ?: build().also { cached = it }
 
+    /** The server's own address (the API's without "app/v1/"), for links people open in a browser. */
+    val siteRoot: String
+        get() = baseUrl.removeSuffix("/").removeSuffix("/app/v1") + "/"
+
     private fun build(): ApiService {
         val builder = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)

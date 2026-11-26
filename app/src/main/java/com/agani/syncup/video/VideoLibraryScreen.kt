@@ -1,5 +1,6 @@
 package com.agani.syncup.video
 
+import com.agani.syncup.ui.theme.swipeTabs
 import android.content.ActivityNotFoundException
 import android.net.Uri
 import android.widget.Toast
@@ -227,7 +228,8 @@ fun VideoLibraryScreen(onBack: () -> Unit, startWith: WatchSource? = null, onSta
     }
 
     Box(Modifier.fillMaxSize().background(cs.background).windowInsetsPadding(WindowInsets.safeDrawing)) {
-        Column(Modifier.fillMaxSize()) {
+        // Swipe left / right switches My videos ↔ Watch Party.
+        Column(Modifier.fillMaxSize().swipeTabs(2, tab) { tab = it }) {
             ToolTopBar("Videos", onBack)
             PillTabs(
                 listOf("My videos", "Watch Party"), selected = tab, onSelect = { tab = it },

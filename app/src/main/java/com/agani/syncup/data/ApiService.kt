@@ -169,4 +169,54 @@ interface ApiService {
         @Header("X-Device-Id") deviceId: String?,
         @Header("X-Device-Secret") deviceSecret: String?,
     ): NotificationsCountResponse
+
+    // ---- Tools → Cloudinary (the server only signs; the phone talks to Cloudinary itself) ----
+    @GET("cloud/access")
+    suspend fun cloudAccess(@Header("Authorization") auth: String): com.agani.syncup.cloud.CloudAccess
+
+    /** Everything accounts only: the API key for Cloudinary's full API on this phone (kept in memory). */
+    @POST("cloud/credentials")
+    suspend fun cloudCredentials(@Header("Authorization") auth: String): com.agani.syncup.cloud.CloudCreds
+
+    @GET("cloud/files")
+    suspend fun cloudFiles(
+        @Header("Authorization") auth: String,
+        @Query("folder") folder: String? = null,
+        @Query("path") path: String? = null,
+    ): com.agani.syncup.cloud.CloudListingDto
+
+    @POST("cloud/sign")
+    suspend fun cloudSign(
+        @Header("Authorization") auth: String,
+        @Body body: Map<String, @JvmSuppressWildcards Any?>,
+    ): com.agani.syncup.cloud.SignedRequest
+
+    @POST("cloud/uploaded")
+    suspend fun cloudUploaded(@Header("Authorization") auth: String, @Body body: com.google.gson.JsonObject): com.google.gson.JsonObject
+
+    @POST("cloud/deleted")
+    suspend fun cloudDeleted(@Header("Authorization") auth: String, @Body body: Map<String, @JvmSuppressWildcards Any?>): com.google.gson.JsonObject
+
+    @POST("cloud/renamed")
+    suspend fun cloudRenamed(@Header("Authorization") auth: String, @Body body: Map<String, @JvmSuppressWildcards Any?>): com.google.gson.JsonObject
+
+    @POST("cloud/folders")
+    suspend fun cloudFolderCreate(@Header("Authorization") auth: String, @Body body: Map<String, @JvmSuppressWildcards Any?>): com.google.gson.JsonObject
+
+    @POST("cloud/folders/delete")
+    suspend fun cloudFolderDelete(@Header("Authorization") auth: String, @Body body: Map<String, @JvmSuppressWildcards Any?>): com.google.gson.JsonObject
+
+    @GET("cloud/accounts")
+    suspend fun cloudAccounts(@Header("Authorization") auth: String): com.agani.syncup.cloud.CloudPeople
+
+    @GET("cloud/pending")
+    suspend fun cloudPending(@Header("Authorization") auth: String): com.agani.syncup.cloud.CloudPending
+
+    /** The Storage details: the person's own folder by kind and file type, and the shared plan. */
+    @GET("cloud/stats")
+    suspend fun cloudStats(@Header("Authorization") auth: String): com.agani.syncup.cloud.CloudStats
+
+    /** Everything accounts pass on Cloudinary's usage report, so everyone sees the plan's use. */
+    @POST("cloud/usage")
+    suspend fun cloudUsage(@Header("Authorization") auth: String, @Body body: com.google.gson.JsonObject): com.google.gson.JsonObject
 }

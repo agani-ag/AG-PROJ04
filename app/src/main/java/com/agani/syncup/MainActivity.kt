@@ -160,6 +160,7 @@ class MainActivity : FragmentActivity() {
         com.agani.syncup.browser.BrowserSettings.init(this)
         com.agani.syncup.downloads.Downloads.init(this) // carries on downloads the app was closed in the middle of
         com.agani.syncup.stationfiles.Stations.init(this)
+        com.agani.syncup.cloud.CloudTransfers.init(this) // before uploads: Cloud → Shared moves finish after a restart too
         com.agani.syncup.stationfiles.StationUploads.init(this) // and uploads to stations
         com.agani.syncup.quickshare.QuickShare.init(this)
         com.agani.syncup.party.Party.init(this)
@@ -536,6 +537,11 @@ class MainActivity : FragmentActivity() {
             lifecycleScope.launch(Dispatchers.IO) { ReminderSync.sync(applicationContext) }  // GET /reminders
             BrowserSync.syncNow()                                                            // POST /browser/sync
             com.agani.syncup.sync.ItemSync.syncAllNow()                                      // Calendar, Shopping
+        }
+
+        // Cloud access changed by the admin (silent push): fetch the account again, so the Cloud tile and page follow.
+        LaunchedEffect(com.agani.syncup.cloud.CloudEvents.access) {
+            if (com.agani.syncup.cloud.CloudEvents.access > 0) runFullRefresh(silent = true)
         }
 
         // The app shows its first screen at once (the launch screen adds no wait); this sets up the server side behind it.
@@ -1083,6 +1089,7 @@ class MainActivity : FragmentActivity() {
                 com.agani.syncup.home.HomeTool.CHANNELS -> toolsPage = com.agani.syncup.tools.ToolsPage.CHANNELS
                 com.agani.syncup.home.HomeTool.DECIDE -> toolsPage = com.agani.syncup.tools.ToolsPage.DECIDE
                 com.agani.syncup.home.HomeTool.SHOPPING -> toolsPage = com.agani.syncup.tools.ToolsPage.SHOPPING
+                com.agani.syncup.home.HomeTool.CLOUDINARY -> toolsPage = com.agani.syncup.tools.ToolsPage.CLOUDINARY
                 com.agani.syncup.home.HomeTool.WATER -> toolsPage = com.agani.syncup.tools.ToolsPage.WATER
                 com.agani.syncup.home.HomeTool.STEPS -> toolsPage = com.agani.syncup.tools.ToolsPage.STEPS
                 com.agani.syncup.home.HomeTool.HABITS -> toolsPage = com.agani.syncup.tools.ToolsPage.HABITS
@@ -1294,6 +1301,7 @@ class MainActivity : FragmentActivity() {
                             radioAvailable = radioAvailable,
                             signupEnabled = signupEnabled,
                             announcement = announcement,
+                            cloudinary = (loggedIn && state.user?.hasCloudinary == true) || radioAvailable,
                             chatUnread = if (loggedIn && chatEnabled) state.chatUnread else 0,
                             waitingPartners = if (loggedIn) waitingPartners else emptyList(),
                             onEnablePartner = { id, password -> vm.enablePartner(id, password) },
@@ -1449,6 +1457,11 @@ class MainActivity : FragmentActivity() {
                             onOpenGroup = { toolsPage = com.agani.syncup.tools.ToolsPage.GROUP },
                         )
                         com.agani.syncup.tools.ToolsPage.SHOPPING -> com.agani.syncup.shopping.ShoppingScreen(onBack = { toolsPage = null })
+                        com.agani.syncup.tools.ToolsPage.CLOUDINARY -> com.agani.syncup.cloud.CloudinaryScreen(
+                            onBack = { toolsPage = null },
+                            myFiles = loggedIn && state.user?.hasCloudinary == true,
+                            sharedFiles = radioAvailable,
+                        )
                         com.agani.syncup.tools.ToolsPage.FOREST -> com.agani.syncup.forest.ForestScreen(onBack = { toolsPage = null })
                         com.agani.syncup.tools.ToolsPage.WATER -> com.agani.syncup.wellbeing.WaterScreen(onBack = { toolsPage = null })
                         com.agani.syncup.tools.ToolsPage.STEPS -> com.agani.syncup.wellbeing.StepsScreen(onBack = { toolsPage = null })

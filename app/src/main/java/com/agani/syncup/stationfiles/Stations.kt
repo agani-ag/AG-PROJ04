@@ -103,6 +103,15 @@ internal fun lanBase(lanUrl: String): String? {
     return "http://$host:${u.port}"
 }
 
+/**
+ * A folder path as a station's folders: no < > : " \ | ? * or control characters (AudioSync refuses them), no
+ * leading / trailing dots or spaces; at most 20 deep.
+ */
+internal fun stationFolderPath(path: String): String =
+    path.replace('\\', '/').split('/')
+        .map { it.replace(Regex("""[<>:"|?*\x00-\x1f]"""), "_").trim().trim('.').trim().take(120) }
+        .filter { it.isNotEmpty() }.take(20).joinToString("/")
+
 /** A folder listing's address with search and paging added. */
 internal fun listQuery(listUrl: String, q: String, offset: Int, limit: Int): String = buildString {
     append(listUrl)
@@ -151,6 +160,37 @@ object Stations {
 
     /** Stations sharing folders that the app can reach. */
     val sharing: List<RadioChannel> get() = all.filter { it.filesEnabled && it.key.isNotBlank() && base(it) != null }
+
+    /**
+     * Stations that take new files now (AudioSync's "Allow uploads", one switch for all its folders). A PIN
+     * station counts until it says otherwise: it asks for its PIN first. Compose state, for Copy / Move to Shared.
+     */
+    var takesFiles by mutableStateOf<Set<String>>(emptySet()); private set
+
+    /** Look again which stations take files: one peek into each station's first shared folder. */
+    suspend fun checkTakesFiles() {
+        refresh()
+        val out = HashSet<String>()
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            for (s in sharing) {
+                val ok = runCatching {
+                    val first = list(s.key, ROOT, "", 0, 20).shares?.firstOrNull() ?: return@runCatching false
+                    list(s.key, first.listUrl, "", 0, 1).uploadFolder != null
+                }.getOrElse { it is PinNeeded }
+                if (ok) out += s.key
+            }
+        }
+        main.post { takesFiles = out }
+    }
+
+    /**
+     * A station file's lasting link: SyncUp's address, which forwards to wherever the station is now (its own
+     * address changes each time AudioSync restarts). Null for anything that isn't a file on it.
+     */
+    fun fileLink(key: String, f: StationFile): String? {
+        if (key.isBlank() || !f.url.startsWith("/files/")) return null
+        return com.agani.syncup.data.ApiClient.siteRoot + "s/" + key + f.url
+    }
 
     fun station(key: String): RadioChannel? = byKey[key]
 
@@ -413,7 +453,14 @@ object Stations {
      * remembered PIN. A break on the Wi-Fi route tries again the public way. Throws [Gone] when it can't be
      * reached, [PinNeeded] when it wants a PIN. Blocking.
      */
-    internal fun <T> call(key: String, path: String, build: (Request.Builder) -> Request.Builder = { it }, read: (Response) -> T): T {
+    internal fun <T> call(key: String, path: String, build: (Request.Builder) -> Request.Builder = { it }, read: (Response) -> T): T =
+        open(key, path, build).use(read)
+
+    /**
+     * Like [call], but the reply stays open for the caller to read (and close): a station file streamed straight
+     * on to the cloud, without a copy on the phone. Blocking.
+     */
+    internal fun open(key: String, path: String, build: (Request.Builder) -> Request.Builder = { it }): Response {
         var signedIn = false
         repeat(3) {
             val r = resolve(stationUri(key, path))
@@ -425,22 +472,22 @@ object Stations {
                 if (r.direct) return@repeat
                 throw Gone(name(key))
             }
-            resp.use {
-                if (it.code == 401) {
-                    tokenRejected(key)
-                    if (!signedIn && signInAgain(key)) {
-                        signedIn = true
-                        return@repeat
-                    }
-                    throw PinNeeded(key)
+            if (resp.code == 401) {
+                resp.close()
+                tokenRejected(key)
+                if (!signedIn && signInAgain(key)) {
+                    signedIn = true
+                    return@repeat
                 }
-                // Cloudflare answers for a tunnel that's gone (530, 1033 pages): the station moved or left.
-                if (it.code == 502 || it.code == 530 || it.code == 521 || it.code == 522) {
-                    markStale()
-                    throw Gone(name(key))
-                }
-                return read(it)
+                throw PinNeeded(key)
             }
+            // Cloudflare answers for a tunnel that's gone (530, 1033 pages): the station moved or left.
+            if (resp.code == 502 || resp.code == 530 || resp.code == 521 || resp.code == 522) {
+                resp.close()
+                markStale()
+                throw Gone(name(key))
+            }
+            return resp
         }
         throw Gone(name(key))
     }
@@ -449,6 +496,41 @@ object Stations {
     internal fun refused(r: Response): Refused {
         val e = runCatching { gson.fromJson(r.body?.charStream(), StationError::class.java) }.getOrNull()
         return Refused(r.code, e?.error, e?.retryAfter ?: r.header("Retry-After")?.toIntOrNull(), e?.received)
+    }
+
+    /**
+     * Make the folder [name] inside a folder that takes uploads ([uploadFolder], a listing's upload_folder) and
+     * return the new folder's upload_folder. One that's already there is used as it is. AudioSync makes folders
+     * only through its network-drive address (WebDAV MKCOL, 2.3.8+), with "Allow uploads" on. Blocking.
+     */
+    fun makeFolder(key: String, uploadFolder: String, name: String): String {
+        val base = uploadFolder.substringBefore('?').let { if (it.endsWith("/")) it else "$it/" }
+        if (!base.startsWith("/api/files/")) throw Refused(400, "bad_folder", null, null)
+        val enc = android.net.Uri.encode(name)
+        call(key, "/files/" + base.removePrefix("/api/files/") + enc, { it.method("MKCOL", null) }) { r ->
+            when (r.code) {
+                201, 405 -> Unit // made, or already there
+                501 -> throw Refused(501, "no_folders", null, null) // an AudioSync before 2.3.8
+                403 -> throw Refused(403, "uploads_disabled", null, null)
+                409 -> throw Refused(409, "destination_gone", null, null)
+                else -> throw refused(r)
+            }
+        }
+        return "$base$enc/"
+    }
+
+    /**
+     * The upload_folder of [rel] ("Trips/2026") inside [base], making each folder on the way that isn't there yet.
+     * [made] remembers them for the next files of the same batch. Blocking.
+     */
+    fun folderFor(key: String, base: String, rel: String, made: MutableMap<String, String>): String {
+        val path = stationFolderPath(rel)
+        if (path.isEmpty()) return base
+        made[path]?.let { return it }
+        val parent = path.substringBeforeLast('/', "")
+        val up = makeFolder(key, folderFor(key, base, parent, made), path.substringAfterLast('/'))
+        made[path] = up
+        return up
     }
 
     /** One page of a folder (or the shared roots for "/api/files/"). Blocking. */
